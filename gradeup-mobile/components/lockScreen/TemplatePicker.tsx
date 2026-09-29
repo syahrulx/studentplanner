@@ -38,7 +38,8 @@ export interface TemplatePickerProps extends StudioPanelProps {
 const TEMPLATES: readonly { id: LockTemplateId; label: TranslationKey; sub: TranslationKey }[] = [
   { id: 'today', label: 'lsTplToday', sub: 'lsTplTodaySub' },
   { id: 'week', label: 'lsTplWeek', sub: 'lsTplWeekSub' },
-  { id: 'glance', label: 'lsTplGlance', sub: 'lsTplGlanceSub' },
+  { id: 'timetable', label: 'lsTplTimetable', sub: 'lsTplTimetableSub' },
+  { id: 'grid', label: 'lsTplGrid', sub: 'lsTplGridSub' },
 ];
 
 const MAX_CARD_W = 58;
@@ -72,9 +73,9 @@ export function TemplatePicker({
   tRef.current = T;
   const stableT = useCallback((key: TranslationKey) => tRef.current(key), []);
 
-  // Glance's sub-label ("Just what's first. Fits with widgets") needs two
-  // lines in a third of the tray, so two are always reserved and the columns
-  // line up, at whatever size Dynamic Type draws them.
+  // Sub-labels like "Whole week, with rooms" need two lines in a quarter of
+  // the tray, so two are always reserved and the columns line up, at whatever
+  // size Dynamic Type draws them.
   const { fontScale } = useWindowDimensions();
   const textScale = Math.min(fontScale, LABEL_MAX_SCALE);
   const subH = Math.ceil(SUB_LINE * 2 * textScale);

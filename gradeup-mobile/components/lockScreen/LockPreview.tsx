@@ -45,7 +45,6 @@ import type {
   LockScreenConfig,
   LockScreenDayModel,
   LockSize,
-  LockTemplateId,
 } from '@/src/lib/lockScreen/types';
 import { getTodayISO } from '@/src/utils/date';
 
@@ -172,11 +171,9 @@ function clamp(value: number, lo: number, hi: number): number {
 }
 
 /** Where LockCanvas draws the card horizontally (mirrors its panelFrame). */
-function panelGeometry(template: LockTemplateId, W: number, s: number) {
-  const glance = template === 'glance';
-  const inset = (glance ? LOCK_METRICS.glance.insetX : LOCK_METRICS.panel.insetX) * s;
-  const radius = (glance ? LOCK_METRICS.glance.radius : LOCK_METRICS.panel.radius) * s;
-  return { left: inset, width: W - 2 * inset, radius };
+function panelGeometry(W: number, s: number) {
+  const inset = LOCK_METRICS.panel.insetX * s;
+  return { left: inset, width: W - 2 * inset, radius: LOCK_METRICS.panel.radius * s };
 }
 
 // ─── The drag ────────────────────────────────────────────────────────────────
@@ -259,7 +256,8 @@ export function useLockPanelDrag({
     return list;
   }, [rangeModels, model]);
   const panelMaxH = useMemo(() => maxPanelHeight(models, config, s), [models, config, s]);
-  const next = config.template === 'glance' ? null : SMALLER[config.size] ?? null;
+  // Timetable and Grid always show all that fits, so they have no size to step down.
+  const next = config.template === 'timetable' || config.template === 'grid' ? null : SMALLER[config.size] ?? null;
   const nextPanelMaxH = useMemo(
     () => (next ? maxPanelHeight(models, { ...config, size: next }, s) : 0),
     [models, config, next, s],
@@ -458,7 +456,7 @@ export function useLockPanelDrag({
     onAccessibilityAction,
   };
 
-  const geometry = panelGeometry(config.template, W, s);
+  const geometry = panelGeometry(W, s);
   const liftBox: ViewStyle = {
     left: geometry.left,
     width: geometry.width,

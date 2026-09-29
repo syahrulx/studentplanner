@@ -41,6 +41,9 @@ const ROWS: readonly { key: keyof LockShowOptions; label: TranslationKey; hint?:
   { key: 'weekNo', label: 'lsShowWeekNo' },
 ];
 
+/** The Timetable and Grid pictures are undated and taskless, so only what's on a class applies. */
+const TIMETABLE_KEYS: ReadonlySet<keyof LockShowOptions> = new Set(['rooms', 'group']);
+
 const TRACK_OFF = 'rgba(255,255,255,0.16)';
 /**
  * A near-white accent (Mono, Spider) would put the white thumb on a white
@@ -66,6 +69,9 @@ export function ShowPanel({
     [config.show, update],
   );
 
+  const undated = config.template === 'timetable' || config.template === 'grid';
+  const rows = undated ? ROWS.filter((r) => TIMETABLE_KEYS.has(r.key)) : ROWS;
+
   if (timetableEmpty) {
     return (
       <EmptyTimetableCard
@@ -90,7 +96,7 @@ export function ShowPanel({
       alwaysBounceVertical={false}
       showsVerticalScrollIndicator={false}
     >
-      {ROWS.map((row, i) => (
+      {rows.map((row, i) => (
         <Animated.View key={row.key} entering={trayRowEntering(i, reduceMotion)}>
           <View style={styles.row}>
             <Text style={styles.rowLabel} numberOfLines={1} maxFontSizeMultiplier={1.2}>
@@ -113,7 +119,7 @@ export function ShowPanel({
           ) : null}
         </Animated.View>
       ))}
-      <Animated.View entering={trayRowEntering(ROWS.length, reduceMotion)} style={styles.privacy}>
+      <Animated.View entering={trayRowEntering(rows.length, reduceMotion)} style={styles.privacy}>
         <Feather name="lock" size={11} color="rgba(255,255,255,0.45)" />
         <Text style={styles.privacyText} numberOfLines={2} maxFontSizeMultiplier={1.2}>
           {T('lsPrivacyNote')}

@@ -7,10 +7,11 @@ import type { ThemePalette } from '@/constants/Themes';
 import type { TranslationKey } from '@/src/i18n';
 import { LOCK_METRICS, fitModel } from '@/src/lib/lockScreen/lockScreenGeometry';
 import { resolveLockInk, type LockInk } from '@/src/lib/lockScreen/lockScreenPalette';
-import type { LockScreenConfig, LockScreenDayModel, LockTemplateId } from '@/src/lib/lockScreen/types';
+import type { LockScreenConfig, LockScreenDayModel } from '@/src/lib/lockScreen/types';
 
 import LockBackground from './LockBackground';
-import GlanceTemplate from './templates/GlanceTemplate';
+import TimetableTemplate from './templates/TimetableTemplate';
+import GridTemplate from './templates/GridTemplate';
 import TodayTemplate from './templates/TodayTemplate';
 import WeekTemplate, { type LockTemplateProps } from './templates/WeekTemplate';
 
@@ -69,18 +70,8 @@ interface PanelFrame {
   padX: number;
 }
 
-function panelFrame(template: LockTemplateId, W: number, s: number): PanelFrame {
-  if (template === 'glance') {
-    const g = LOCK_METRICS.glance;
-    return {
-      left: g.insetX * s,
-      width: W - 2 * g.insetX * s,
-      radius: g.radius * s,
-      padTop: g.padV * s,
-      padBottom: g.padV * s,
-      padX: g.padX * s,
-    };
-  }
+/** The card every template draws in. */
+function panelFrame(W: number, s: number): PanelFrame {
   const p = LOCK_METRICS.panel;
   return {
     left: p.insetX * s,
@@ -241,7 +232,7 @@ export function LockCanvas({
     () => resolveLockInk(config.panel, theme, darkMinimal),
     [config.panel, theme, darkMinimal],
   );
-  const frame = panelFrame(config.template, W, s);
+  const frame = panelFrame(W, s);
 
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
@@ -274,10 +265,12 @@ export function LockCanvas({
 
   const templateProps: LockTemplateProps = { fit, source: model, config, ink, W, s, T };
   const body =
-    config.template === 'glance' ? (
-      <GlanceTemplate {...templateProps} />
-    ) : config.template === 'week' ? (
+    config.template === 'week' ? (
       <WeekTemplate {...templateProps} />
+    ) : config.template === 'timetable' ? (
+      <TimetableTemplate {...templateProps} />
+    ) : config.template === 'grid' ? (
+      <GridTemplate {...templateProps} />
     ) : (
       <TodayTemplate {...templateProps} />
     );

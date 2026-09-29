@@ -48,7 +48,8 @@ type SetupPatch = Partial<LockScreenSetupState>;
 
 // ─── Validation ──────────────────────────────────────────────────────────────
 
-const TEMPLATES: readonly LockTemplateId[] = ['today', 'week', 'glance'];
+// 'glance' is gone: a stored one isn't in this list, so it falls back to the default (Today).
+const TEMPLATES: readonly LockTemplateId[] = ['today', 'week', 'timetable', 'grid'];
 const BACKGROUNDS: readonly LockBackgroundId[] = [
   'dusk',
   'lagoon',

@@ -10,7 +10,7 @@
 
 // ─── Config (per user, AsyncStorage) ─────────────────────────────────────────
 
-export type LockTemplateId = 'today' | 'week' | 'glance';
+export type LockTemplateId = 'today' | 'week' | 'timetable' | 'grid';
 export type LockGradientId =
   | 'dusk'
   | 'lagoon'
@@ -148,6 +148,15 @@ export interface LockWeekCell {
   firstColor: string | null;
 }
 
+/** One day of the Timetable template: every class that weekday, whatever the date. */
+export interface LockTimetableDay {
+  /** 0=Sun..6=Sat */
+  weekday: number;
+  /** 'MON' / 'ISN' */
+  dayShort: string;
+  classes: LockClassRow[];
+}
+
 export interface LockNextClass {
   dayShort: string;
   /** Formatted time. */
@@ -165,8 +174,6 @@ export interface LockScreenDayModel {
   weekday: number;
   /** 'TUE · 30 SEP' ('' for the fallback). */
   headerDate: string;
-  /** 'TUE 30 SEP' ('' for the fallback). */
-  glanceDate: string;
   /** 'WEEK 5' | 'STUDY WEEK' | 'EXAM WEEK' | 'SEMESTER BREAK' | null */
   weekLabel: string | null;
   /** True in study, exam and semester-break weeks: no classes are drawn. */
@@ -180,6 +187,13 @@ export interface LockScreenDayModel {
   week: LockWeekCell[];
   /** '29 SEP – 5 OCT' ('' for the fallback). */
   weekRange: string;
+  /**
+   * The weekly timetable for the Timetable template, in week order: the first
+   * five days always, a later day only when it has a class. Undated and
+   * blind to break weeks on purpose — it is the picture Android saves once and
+   * keeps, so nothing in it may go stale.
+   */
+  timetable: LockTimetableDay[];
   /** 'as of Sat 11:40 PM'. Excluded from the signature. */
   asOf: string;
   uses24h: boolean;

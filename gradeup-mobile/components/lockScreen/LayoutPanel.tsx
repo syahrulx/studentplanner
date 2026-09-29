@@ -22,8 +22,8 @@ import { trayRowEntering, type StudioPanelProps } from './StudioTabs';
  *   `topFrac`, so the card snaps to that preset's recommended spot.
  * - Android and iPad have no presets (one fixed safe band, lockSafeZone),
  *   so the question is hidden there.
- * - Size is hidden for Glance, which has one fixed height; its description
- *   takes the row so the tab doesn't jump.
+ * - Size is hidden for Timetable and Grid, which always show every class
+ *   that fits; a note takes the row so the tab doesn't jump.
  */
 
 export interface LayoutPanelProps extends StudioPanelProps {
@@ -80,10 +80,10 @@ export function LayoutPanel({ config, update, T, reduceMotion, accent }: LayoutP
         <Text style={styles.label} numberOfLines={1} maxFontSizeMultiplier={1.2}>
           {T('lsSize')}
         </Text>
-        {config.template === 'glance' ? (
-          <View style={styles.glanceNote}>
-            <Text style={styles.glanceText} numberOfLines={2} maxFontSizeMultiplier={1.2}>
-              {T('lsTplGlanceSub')}
+        {config.template === 'timetable' || config.template === 'grid' ? (
+          <View style={styles.sizeNote}>
+            <Text style={styles.sizeNoteText} numberOfLines={2} maxFontSizeMultiplier={1.2}>
+              {T('lsTtSizeNote')}
             </Text>
           </View>
         ) : (
@@ -139,14 +139,14 @@ const styles = StyleSheet.create({
   sizeBlock: {
     marginTop: 10,
   },
-  glanceNote: {
+  sizeNote: {
     height: 32,
     justifyContent: 'center',
     paddingHorizontal: 12,
     borderRadius: 10,
     backgroundColor: 'rgba(118,118,128,0.14)',
   },
-  glanceText: {
+  sizeNoteText: {
     color: 'rgba(255,255,255,0.55)',
     fontSize: 12,
     fontWeight: '600',

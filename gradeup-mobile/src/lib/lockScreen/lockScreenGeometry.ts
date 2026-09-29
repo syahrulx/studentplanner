@@ -1,6 +1,6 @@
 import { Dimensions, PixelRatio, Platform } from 'react-native';
 
-import { lockClassDetail } from './lockScreenFormat';
+import { lockClassDetail, normalizeClock } from './lockScreenFormat';
 
 import type {
   LockScreenConfig,
@@ -104,13 +104,45 @@ const weekParts = {
   footerH: 14,
 } as const;
 
-const glance = {
-  /** Glance card: left 24s, width W − 48s, fixed height. */
-  insetX: 24,
-  height: 104,
-  radius: 24,
-  padV: 14,
-  padX: 16,
+const timetableParts = {
+  headerH: 18,
+  headerGap: 10,
+  /** Day name column on the left of each day's lines. */
+  dayColW: 38,
+  dayColGap: 8,
+  /** One class, the "No classes" line, or the "+n more" line. */
+  lineH: 20,
+  timeColW: 52,
+  /** Margin above and below the divider between two days. */
+  dayGap: 5,
+  /**
+   * Lines per day before trimming; a day with more classes ends on "+n more".
+   * Only the tall cap is ever used: a timetable that hides classes it has room
+   * for is wrong, so this template has no size and always starts from tall
+   * (see startSize). The others stay so the table is complete.
+   */
+  linesPerDay: { short: 2, medium: 3, tall: 6 },
+  /** Trimming never goes below this: one class and the "+n more" line. */
+  minLinesPerDay: 2,
+} as const;
+
+const gridParts = {
+  headerH: 18,
+  headerGap: 8,
+  /** Day names over the columns. */
+  dayHeadH: 16,
+  dayHeadGap: 4,
+  /** Hour labels on the left. */
+  gutterW: 20,
+  colGap: 3,
+  /** Height of one hour: starts at max, steps down until the card fits. */
+  hourHMax: 40,
+  hourHMin: 22,
+  hourHStep: 2,
+  /** The span never shrinks below this many hours, so a light day doesn't draw a sliver. */
+  minSpanHours: 6,
+  /** Where an empty timetable's span starts. */
+  defaultStartHour: 8,
 } as const;
 
 function deepFreeze<T>(value: T): T {
@@ -154,7 +186,19 @@ export const LOCK_METRICS = deepFreeze({
     /** Divider with its margins, above either summary (21). */
     summaryTopH: weekParts.summaryGap * 2 + dividerH,
   },
-  glance,
+  timetable: {
+    ...timetableParts,
+    /** Padding, header and its gap (54). No footer: the picture carries no date to be "as of". */
+    chrome: panel.padTop + timetableParts.headerH + timetableParts.headerGap + panel.padBottom,
+    /** Divider with its margins, between two days (11). */
+    daySepH: timetableParts.dayGap * 2 + dividerH,
+  },
+  grid: {
+    ...gridParts,
+    /** Padding, header, day names and their gaps (72). The hours are the rest. */
+    chrome:
+      panel.padTop + gridParts.headerH + gridParts.headerGap + gridParts.dayHeadH + gridParts.dayHeadGap + panel.padBottom,
+  },
 } as const);
 
 /** What the Week template draws under its strip. */
@@ -180,8 +224,44 @@ export interface LockFit {
   roomRows: boolean;
   /** Latest class end on the day ('HH:MM'), from the untrimmed model, for "ends 6:00 PM". */
   lastClassEnd: string | null;
-  /** Tasks due on the day before trimming (the Week due pill, the Glance ring). */
+  /** Tasks due on the day before trimming (the Week due pill). */
   dueCount: number;
+  /** Timetable template: lines drawn per day, the last one "+n more" when a day has more. Else 0. */
+  ttLines: number;
+  /** Grid template: height of one hour in pt. Else 0. */
+  gridHourH: number;
+}
+
+/**
+ * The whole hours the Grid template spans: from the earliest class start to
+ * the latest end across the week, widened to minSpanHours. Unreadable times
+ * are left out rather than stretching the grid to midnight.
+ */
+export function lockGridHourSpan(model: LockScreenDayModel): { startHour: number; endHour: number } {
+  const g = LOCK_METRICS.grid;
+  let first = Infinity;
+  let last = -Infinity;
+  for (const day of model.timetable) {
+    for (const c of day.classes) {
+      const start = normalizeClock(c.start);
+      const end = normalizeClock(c.end);
+      if (!start || !end) continue;
+      first = Math.min(first, Number(start.slice(0, 2)));
+      last = Math.max(last, Number(end.slice(0, 2)) + (end.slice(3) === '00' ? 0 : 1));
+    }
+  }
+  if (!Number.isFinite(first) || last <= first) {
+    return { startHour: g.defaultStartHour, endHour: g.defaultStartHour + g.minSpanHours };
+  }
+  let startHour = first;
+  let endHour = Math.min(24, Math.max(last, first + 1));
+  // Widen evenly-ish: later first, then earlier, within the day.
+  while (endHour - startHour < g.minSpanHours) {
+    if (endHour < 24) endHour++;
+    else if (startHour > 0) startHour--;
+    else break;
+  }
+  return { startHour, endHour };
 }
 
 export interface LockSafeZone {
@@ -277,11 +357,20 @@ interface Layout {
   chipRows: number;
   summary: LockWeekSummary;
   roomRows: boolean;
+  /** Timetable lines per day. */
+  ttLines: number;
+  /** Grid hour height, design units. */
+  gridHourH: number;
   height: number;
 }
 
 function normalizedSize(size: LockSize): LockSize {
   return SIZES_DESC.includes(size) ? size : 'medium';
+}
+
+/** The size a template is laid out from. Timetable and Grid have none of their own: they show all that fits. */
+function startSize(template: LockTemplateId, size: LockSize): LockSize {
+  return template === 'timetable' || template === 'grid' ? 'tall' : normalizedSize(size);
 }
 
 function maxChips(model: LockScreenDayModel): number {
@@ -318,7 +407,11 @@ function measureUnits(
   config: LockScreenConfig,
   l: Layout,
 ): number {
-  if (template === 'glance') return LOCK_METRICS.glance.height;
+  if (template === 'timetable') return timetableUnits(model, l.ttLines);
+  if (template === 'grid') {
+    const { startHour, endHour } = lockGridHourSpan(model);
+    return LOCK_METRICS.grid.chrome + (endHour - startHour) * l.gridHourH;
+  }
   const fallback = model.kind === 'fallback';
 
   if (template === 'today') {
@@ -351,8 +444,37 @@ function measureUnits(
   return h;
 }
 
+/**
+ * Timetable: each day is as many lines as it has classes, capped at `ttLines`
+ * (a free day still takes one, for its "No classes" line), with a divider
+ * block between days.
+ */
+function timetableUnits(model: LockScreenDayModel, ttLines: number): number {
+  const t = LOCK_METRICS.timetable;
+  const days = model.timetable;
+  const lines = days.reduce((sum, d) => sum + Math.max(1, Math.min(d.classes.length, ttLines)), 0);
+  return t.chrome + lines * t.lineH + Math.max(0, days.length - 1) * t.daySepH;
+}
+
 /** Removes one row or chip row, in the order the spec trims. False when nothing is left to cut. */
 function trimOnce(template: LockTemplateId, model: LockScreenDayModel, l: Layout): boolean {
+  if (template === 'grid') {
+    const g = LOCK_METRICS.grid;
+    if (l.gridHourH - g.hourHStep >= g.hourHMin) {
+      l.gridHourH -= g.hourHStep;
+      return true;
+    }
+    return false;
+  }
+  if (template === 'timetable') {
+    // Only worth a step when some day actually loses a line to it.
+    const busiest = model.timetable.reduce((max, d) => Math.max(max, d.classes.length), 0);
+    if (l.ttLines > LOCK_METRICS.timetable.minLinesPerDay && busiest >= l.ttLines) {
+      l.ttLines--;
+      return true;
+    }
+    return false;
+  }
   if (hasRows(template, model, l)) {
     // Tasks go down to one first, then classes, then the last task: the due
     // count stays visible in the header pills either way.
@@ -393,6 +515,8 @@ function layoutAt(
       : 0,
     summary: 'none',
     roomRows: false,
+    ttLines: template === 'timetable' ? LOCK_METRICS.timetable.linesPerDay[size] : 0,
+    gridHourH: template === 'grid' ? LOCK_METRICS.grid.hourHMax : 0,
     height: 0,
   };
   if (template === 'week' && model.kind === 'day') {
@@ -428,8 +552,7 @@ function fitLayout(
   config: LockScreenConfig,
   avail: number,
 ): Layout {
-  const start = normalizedSize(config.size);
-  if (template === 'glance') return layoutAt(template, model, config, start, Infinity).layout;
+  const start = startSize(template, config.size);
   const sizes = SIZES_DESC.slice(SIZES_DESC.indexOf(start));
   for (let i = 0; ; i++) {
     const { layout, fits } = layoutAt(template, model, config, sizes[i], avail);
@@ -444,7 +567,7 @@ export function measurePanel(
   config: LockScreenConfig,
   s: number,
 ): number {
-  return layoutAt(template, model, config, normalizedSize(config.size), Infinity).layout.height * s;
+  return layoutAt(template, model, config, startSize(template, config.size), Infinity).layout.height * s;
 }
 
 /** Tallest panel across the given days at the current size: what the drag clamp reserves. */
@@ -519,5 +642,7 @@ export function fitModel(
     roomRows: layout.roomRows,
     lastClassEnd,
     dueCount: model.tasks.length,
+    ttLines: layout.ttLines,
+    gridHourH: layout.gridHourH * s,
   };
 }

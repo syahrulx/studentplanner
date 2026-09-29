@@ -13,7 +13,6 @@ import {
   dayInitial,
   dayShortName,
   fmtAsOf,
-  fmtGlanceDate,
   fmtHeaderDate,
   fmtRange,
   fmtTimeInline,
@@ -29,6 +28,7 @@ import type {
   LockScreenConfig,
   LockScreenDayModel,
   LockTaskRow,
+  LockTimetableDay,
   LockWeekCell,
   LockWeekChip,
 } from './types';
@@ -351,6 +351,24 @@ function firstWeekday(input: LockScreenModelInput): number {
   return input.weekStartsOn === 'sunday' ? 0 : 1;
 }
 
+/**
+ * Every weekday's classes in the student's week order. The first five days are
+ * always there, so an empty weekday reads as free rather than missing; a later
+ * day (the weekend, for a Monday week) only when it has a class — the same rule
+ * as the week grid on the Timetable tab.
+ */
+function timetableDays(input: LockScreenModelInput, derived: Derived): LockTimetableDay[] {
+  const start = firstWeekday(input);
+  const days: LockTimetableDay[] = [];
+  for (let i = 0; i < 7; i++) {
+    const weekday = (start + i) % 7;
+    const classes = derived.classesByWeekday[weekday];
+    if (i >= 5 && classes.length === 0) continue;
+    days.push({ weekday, dayShort: dayShortName(weekday, input.T).toUpperCase(), classes: classes.slice() });
+  }
+  return days;
+}
+
 export function lockScreenRenderDates(todayISO: string): string[] {
   return Array.from({ length: RENDER_DAYS }, (_, i) => addDaysISO(todayISO, i));
 }
@@ -377,7 +395,6 @@ export function buildLockScreenDayModel(input: LockScreenModelInput, dateISO: st
     dateISO: focus,
     weekday,
     headerDate: fmtHeaderDate(focus, T),
-    glanceDate: fmtGlanceDate(focus, T),
     weekLabel: period.weekLabel,
     noClassesPeriod: period.noClassesPeriod,
     classes,
@@ -386,6 +403,7 @@ export function buildLockScreenDayModel(input: LockScreenModelInput, dateISO: st
     next: classes.length ? null : nextClassAfter(input, derived, focus),
     week,
     weekRange: fmtRange(week[0].dateISO, week[6].dateISO, T),
+    timetable: timetableDays(input, derived),
     asOf: fmtAsOf(input.nowMs, T, uses24h),
     uses24h,
   };
@@ -404,7 +422,6 @@ export function buildLockScreenFallbackModel(input: LockScreenModelInput): LockS
     dateISO: null,
     weekday: -1,
     headerDate: '',
-    glanceDate: '',
     weekLabel: null,
     noClassesPeriod: false,
     classes: [],
@@ -413,6 +430,7 @@ export function buildLockScreenFallbackModel(input: LockScreenModelInput): LockS
     next: null,
     week: Array.from({ length: 7 }, (_, i) => weekCell(input, derived, (start + i) % 7, null)),
     weekRange: '',
+    timetable: timetableDays(input, derived),
     asOf: '',
     uses24h: input.uses24h,
   };

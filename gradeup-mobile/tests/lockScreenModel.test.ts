@@ -21,7 +21,6 @@ import type { AcademicCalendar, Task, TimetableEntry } from '../src/types';
 import { DEFAULT_LOCK_SCREEN_CONFIG, type LockScreenConfig } from '../src/lib/lockScreen/types';
 import {
   fmtAsOf,
-  fmtGlanceDate,
   fmtHeaderDate,
   fmtRange,
   fmtTime,
@@ -128,7 +127,6 @@ function testFormat(): void {
   assert.equal(fmtHeaderDate('2026-09-29', T), 'TUE · 29 SEP');
   assert.equal(fmtHeaderDate('2026-09-29', T_MS), 'SEL · 29 SEP');
   assert.equal(fmtHeaderDate('2026-09-29', T_MISSING), 'TUE · 29 SEP', 'missing lists fall back to English');
-  assert.equal(fmtGlanceDate('2026-09-29', T), 'TUE 29 SEP');
   assert.equal(fmtRange('2026-09-28', '2026-10-04', T), '28 SEP – 4 OCT');
   assert.equal(fmtRange('2026-10-05', '2026-10-11', T), '5 – 11 OCT');
 
@@ -320,7 +318,6 @@ function testFallback(): void {
   assert.equal(fallback.dateISO, null);
   assert.equal(fallback.weekday, -1);
   assert.equal(fallback.headerDate, '');
-  assert.equal(fallback.glanceDate, '');
   assert.equal(fallback.weekRange, '');
   assert.equal(fallback.asOf, '');
   assert.equal(fallback.weekLabel, null);
@@ -372,6 +369,32 @@ function testSharedTasks(): void {
   assert.equal(collectLockScreenTasks(own, null, 'u1'), own, 'no shared tasks keeps the same array');
 }
 
+function testTimetable(): void {
+  const input = makeInput();
+  const tue = buildLockScreenDayModel(input, '2026-09-29');
+  const days = tue.timetable.map((d) => `${d.dayShort}:${d.classes.map((c) => c.label).join('+')}`);
+  // Monday week: the five weekdays always, free ones included; no weekend without a class.
+  assert.deepEqual(days, ['MON:BIO110', 'TUE:CSC301+MAT210', 'WED:English', 'THU:', 'FRI:']);
+  assert.equal(tue.timetable[1].classes[0].room, 'Online', 'a class with no room reads Online, as on the grid');
+
+  // Undated on purpose: a study-week day and the fallback carry the same timetable.
+  const studyWeek = buildLockScreenDayModel(input, '2027-01-05');
+  assert.equal(studyWeek.noClassesPeriod, true);
+  assert.deepEqual(studyWeek.timetable, tue.timetable, 'break weeks do not empty the timetable');
+  assert.deepEqual(buildLockScreenFallbackModel(input).timetable, tue.timetable);
+
+  // A weekend day joins only when it has a class.
+  const withSat = makeInput({ timetable: [...TIMETABLE, entry('c-sat', 'Saturday', 'LAB900', '09:00', '11:00')] });
+  assert.deepEqual(
+    buildLockScreenDayModel(withSat, '2026-09-29').timetable.map((d) => d.dayShort),
+    ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'],
+  );
+
+  // A Sunday week (Kedah/Kelantan/Terengganu) leads with Sunday and ends on Thursday.
+  const sunWeek = buildLockScreenDayModel(makeInput({ weekStartsOn: 'sunday' }), '2026-09-29');
+  assert.deepEqual(sunWeek.timetable.map((d) => d.dayShort), ['SUN', 'MON', 'TUE', 'WED', 'THU']);
+}
+
 function main(): void {
   testFormat();
   testRenderDates();
@@ -382,6 +405,7 @@ function main(): void {
   testFallback();
   testSignature();
   testSharedTasks();
+  testTimetable();
   console.log('lockScreenModel: all assertions passed');
 }
 

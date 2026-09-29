@@ -181,13 +181,6 @@ export function fmtHeaderDate(dateISO: string, T: LockTranslate): string {
   return `${dayShortName(d.getDay(), T).toUpperCase()} · ${d.getDate()} ${monthShortName(d.getMonth(), T).toUpperCase()}`;
 }
 
-/** 'TUE 30 SEP' */
-export function fmtGlanceDate(dateISO: string, T: LockTranslate): string {
-  const d = dateFromISO(dateISO);
-  if (!d) return '';
-  return `${dayShortName(d.getDay(), T).toUpperCase()} ${d.getDate()} ${monthShortName(d.getMonth(), T).toUpperCase()}`;
-}
-
 /** '29 SEP – 5 OCT', or '6 – 12 OCT' inside one month. */
 export function fmtRange(startISO: string, endISO: string, T: LockTranslate): string {
   const a = dateFromISO(startISO);

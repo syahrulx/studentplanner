@@ -40,6 +40,7 @@ const {
   clampTopFrac,
   fitModel,
   getLockCanvasSize,
+  lockGridHourSpan,
   lockStripHeight,
   lockWeekColumnWidth,
   maxPanelHeight,
@@ -100,15 +101,23 @@ function week(chipsPerDay: number): LockWeekCell[] {
   }));
 }
 
+/** Timetable days holding these many classes each. */
+function timetable(counts: number[]): LockScreenDayModel['timetable'] {
+  return counts.map((n, d) => ({
+    weekday: (d + 1) % 7,
+    dayShort: 'MON',
+    classes: Array.from({ length: n }, (_, i) => ({ ...classRow(i, 'BK21'), key: `d${d}c${i}` })),
+  }));
+}
+
 function day(
-  opts: { classes?: number; tasks?: number; room?: string | null; chips?: number } = {},
+  opts: { classes?: number; tasks?: number; room?: string | null; chips?: number; tt?: number[] } = {},
 ): LockScreenDayModel {
   return {
     kind: 'day',
     dateISO: '2026-09-29',
     weekday: 2,
     headerDate: 'TUE · 29 SEP',
-    glanceDate: 'TUE 29 SEP',
     weekLabel: 'WEEK 5',
     noClassesPeriod: false,
     classes: Array.from({ length: opts.classes ?? 0 }, (_, i) => classRow(i, opts.room ?? null)),
@@ -117,6 +126,7 @@ function day(
     next: null,
     week: week(opts.chips ?? 0),
     weekRange: '28 SEP – 4 OCT',
+    timetable: timetable(opts.tt ?? []),
     asOf: 'as of Mon 11:40 PM',
     uses24h: false,
   };
@@ -129,7 +139,6 @@ function fallback(chips: number): LockScreenDayModel {
     dateISO: null,
     weekday: -1,
     headerDate: '',
-    glanceDate: '',
     weekLabel: null,
     weekRange: '',
   };
@@ -340,7 +349,7 @@ function fallback(chips: number): LockScreenDayModel {
   assert.equal(measurePanel('week', day({ chips: 1 }), noTasks, 1), 80 + (12 + 14 + 26 + 6 + 18) + 21 + 20);
 }
 
-// ─── Fallback and Glance ─────────────────────────────────────────────────────
+// ─── Fallback ─────────────────────────────────────────────────────
 
 {
   const fb = fallback(5);
@@ -350,14 +359,6 @@ function fallback(chips: number): LockScreenDayModel {
   const fit = fitModel(fb, config({ template: 'week' }), H, 1);
   assert.equal(fit.summary, 'none', 'the fallback never has a summary');
   assert.equal(fit.chipRows, 3);
-
-  const glanceCfg = config({ template: 'glance', size: 'tall' });
-  const busy = day({ classes: 6, tasks: 6, chips: 5 });
-  const glance = fitModel(busy, glanceCfg, H, 1);
-  assert.equal(glance.panelH, 104, 'Glance is always 104s');
-  assert.equal(glance.model, busy, 'Glance never trims');
-  assert.equal(glance.chipRows, 0);
-  near(glance.topPx, 0.312 * H, 'Glance sits under the clock by default');
 }
 
 // ─── Palette ─────────────────────────────────────────────────────────────────
@@ -386,6 +387,66 @@ function fallback(chips: number): LockScreenDayModel {
   assert.deepEqual(themeGradient(THEMES.light), ['#2563EB', '#60A5FA', '#1D4ED8', '#F8FAFC']);
   assert.equal(themeGradient(MONO_THEME_OVERRIDE)[0], '#000000', 'Mono is not an all-white picture');
   assert.equal(themeGradient({ ...THEMES.dark, primary: '#abc' })[0], '#AABBCC', 'short hex is expanded');
+}
+
+// ─── Timetable template ──────────────────────────────────────────────────────
+
+{
+  const t = LOCK_METRICS.timetable;
+  assert.equal(t.chrome, 54, 'Timetable chrome is (14+18+10+12)s: no footer');
+  assert.equal(t.daySepH, 11, 'a divider block between days');
+
+  // Every class is a line; a free day still takes its "No classes" line. The
+  // stored size is ignored: a timetable always starts from tall.
+  const cfg = config({ template: 'timetable', size: 'medium' });
+  const week = day({ tt: [1, 4, 0, 3, 1] });
+  near(measurePanel('timetable', week, cfg, 1), 54 + (1 + 4 + 1 + 3 + 1) * 20 + 4 * 11, 'all four classes shown at "medium"');
+  near(measurePanel('timetable', week, config({ template: 'timetable', size: 'short' }), 1), measurePanel('timetable', week, cfg, 1), 'size does not matter');
+
+  // A day with more classes than the cap ends on "+n more", inside the cap.
+  const busy = day({ tt: [8, 1, 1, 1, 1] });
+  near(measurePanel('timetable', busy, cfg, 1), 54 + (6 + 4) * 20 + 4 * 11, 'a day is capped at 6 lines');
+
+  // Too tall for the zone: lines per day are trimmed, never below two.
+  const heavy = day({ tt: [7, 7, 7, 7, 7] });
+  const tall = config({ template: 'timetable', size: 'tall' });
+  const fit = fitModel(heavy, tall, H, 1);
+  const zoneBottom = 0.86 * H; // standard preset's maxBottom
+  assert.ok(fit.topPx + fit.panelH <= zoneBottom + 1, `trimmed card fits: ${fit.topPx + fit.panelH} <= ${zoneBottom}`);
+  assert.ok(fit.ttLines >= t.minLinesPerDay && fit.ttLines < t.linesPerDay.tall, `trimmed to ${fit.ttLines} lines a day`);
+  near(fit.panelH, 54 + 5 * fit.ttLines * 20 + 4 * 11, 'panel matches what the template draws');
+
+  // Nothing to gain from trimming a week of one-class days.
+  const light = fitModel(day({ tt: [1, 1, 1, 1, 1] }), tall, H, 1);
+  assert.equal(light.ttLines, t.linesPerDay.tall, 'no trim when no day uses its lines');
+
+  // The other templates carry no timetable lines.
+  assert.equal(fitModel(week, config({ template: 'week' }), H, 1).ttLines, 0);
+}
+
+// ─── Grid template ───────────────────────────────────────────────────────────
+
+{
+  const g = LOCK_METRICS.grid;
+  assert.equal(g.chrome, 72, 'Grid chrome is (14+18+8+16+4+12)s');
+
+  // classRow(i) runs (8+i):00–(8+i):50, so 4 classes span 08:00–12:00 (widened to 6 hours).
+  const light = day({ tt: [4, 1] });
+  assert.deepEqual(lockGridHourSpan(light), { startHour: 8, endHour: 14 }, 'short week widened to minSpanHours');
+  const long = day({ tt: [10] });
+  assert.deepEqual(lockGridHourSpan(long), { startHour: 8, endHour: 18 }, '8:00 to the 17:50 class');
+  assert.deepEqual(lockGridHourSpan(day({ tt: [] })), { startHour: 8, endHour: 14 }, 'empty timetable gets a default span');
+
+  const cfg = config({ template: 'grid', size: 'short' });
+  near(measurePanel('grid', long, cfg, 1), 72 + 10 * g.hourHMax, 'starts at the tallest hour whatever the size');
+
+  // Too tall for the zone: the hour shrinks, in whole steps, never below the minimum.
+  const fit = fitModel(long, cfg, H, 1);
+  assert.ok(fit.gridHourH < g.hourHMax && fit.gridHourH >= g.hourHMin, `hour shrank to ${fit.gridHourH}`);
+  assert.equal((g.hourHMax - fit.gridHourH) % g.hourHStep, 0, 'in whole steps');
+  assert.ok(fit.topPx + fit.panelH <= 0.86 * H + 1, 'and the card fits the standard zone');
+  near(fit.panelH, 72 + 10 * fit.gridHourH, 'panel matches what the template draws');
+  assert.equal(fitModel(light, config({ template: 'today' }), H, 1).gridHourH, 0, 'other templates carry no hour height');
 }
 
 console.log('lockScreenGeometry: all assertions passed');
