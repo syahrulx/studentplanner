@@ -1386,9 +1386,9 @@ export async function uploadAvatar(base64Image: string, ext: string = 'jpeg'): P
 // SHARED GOALS (Accountability Pacts)
 // =============================================================================
 
-export async function fetchSharedGoals(): Promise<SharedGoal[]> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user?.id) return [];
+export async function fetchSharedGoals(knownUserId?: string): Promise<SharedGoal[]> {
+  const uid = knownUserId ?? (await supabase.auth.getUser()).data.user?.id;
+  if (!uid) return [];
 
   const { data, error } = await withPgrstRetry(async () =>
     supabase
@@ -1398,7 +1398,7 @@ export async function fetchSharedGoals(): Promise<SharedGoal[]> {
       creator_profile:profiles!shared_goals_user_id_fkey(id, name, avatar_url),
       friend_profile:profiles!shared_goals_friend_id_fkey(id, name, avatar_url)
     `)
-      .or(`user_id.eq.${user.id},friend_id.eq.${user.id}`)
+      .or(`user_id.eq.${uid},friend_id.eq.${uid}`)
       .order('updated_at', { ascending: false }),
   );
 
@@ -1610,16 +1610,16 @@ export async function syncCircleSharedTasks(circleId: string): Promise<number> {
   return Number(data) || 0;
 }
 
-export async function getIncomingSharedTasks(): Promise<SharedTask[]> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user?.id) return [];
+export async function getIncomingSharedTasks(knownUserId?: string): Promise<SharedTask[]> {
+  const uid = knownUserId ?? (await supabase.auth.getUser()).data.user?.id;
+  if (!uid) return [];
 
   const { data, error } = await withAuthRetry(() =>
     withPgrstRetry(async () =>
       supabase
         .from('shared_tasks')
         .select('*')
-        .eq('recipient_id', user.id)
+        .eq('recipient_id', uid)
         .eq('status', 'pending')
         .order('created_at', { ascending: false }),
     ),
@@ -1650,9 +1650,9 @@ export async function getIncomingSharedTasks(): Promise<SharedTask[]> {
   })) as SharedTask[];
 }
 
-export async function getAcceptedSharedTasks(): Promise<SharedTask[]> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user?.id) return [];
+export async function getAcceptedSharedTasks(knownUserId?: string): Promise<SharedTask[]> {
+  const uid = knownUserId ?? (await supabase.auth.getUser()).data.user?.id;
+  if (!uid) return [];
 
   const { data, error } = await withAuthRetry(() =>
     withPgrstRetry(async () =>
@@ -1660,7 +1660,7 @@ export async function getAcceptedSharedTasks(): Promise<SharedTask[]> {
         .from('shared_tasks')
         .select('*')
         .eq('status', 'accepted')
-        .or(`recipient_id.eq.${user.id},owner_id.eq.${user.id}`)
+        .or(`recipient_id.eq.${uid},owner_id.eq.${uid}`)
         .order('created_at', { ascending: false }),
     ),
   );
@@ -1973,14 +1973,14 @@ export async function shareAllTasksWithCircle(
   return (data || []) as SharedTask[];
 }
 
-export async function getTaskShareStreams(): Promise<TaskShareStream[]> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user?.id) return [];
+export async function getTaskShareStreams(knownUserId?: string): Promise<TaskShareStream[]> {
+  const uid = knownUserId ?? (await supabase.auth.getUser()).data.user?.id;
+  if (!uid) return [];
 
   const { data, error } = await supabase
     .from('task_share_streams')
     .select('*')
-    .eq('owner_id', user.id);
+    .eq('owner_id', uid);
 
   if (error) {
     console.error('Error fetching task share streams:', error);

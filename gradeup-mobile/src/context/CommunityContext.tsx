@@ -336,10 +336,13 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     }
   }, [userId]);
 
+  // These pass userId so the API calls skip auth.getUser(). That's a round
+  // trip to the Auth server each time. Called this way, these four refreshes
+  // were ~46k /auth/v1/user calls an hour (2026-10-01), nearly all of them.
   const refreshSharedGoals = useCallback(async () => {
     if (!userId) return;
     try {
-      const data = await communityApi.fetchSharedGoals();
+      const data = await communityApi.fetchSharedGoals(userId);
       setSharedGoals(data);
     } catch (e) {
       // Ignore
@@ -350,8 +353,8 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     if (!userId) return;
     try {
       const [incoming, accepted] = await Promise.all([
-        communityApi.getIncomingSharedTasks().catch(() => [] as SharedTask[]),
-        communityApi.getAcceptedSharedTasks().catch(() => [] as SharedTask[]),
+        communityApi.getIncomingSharedTasks(userId).catch(() => [] as SharedTask[]),
+        communityApi.getAcceptedSharedTasks(userId).catch(() => [] as SharedTask[]),
       ]);
       setIncomingSharedTasks(incoming);
       setAcceptedSharedTasks(accepted);
@@ -363,7 +366,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   const refreshShareStreams = useCallback(async () => {
     if (!userId) return;
     try {
-      const data = await communityApi.getTaskShareStreams().catch(() => []);
+      const data = await communityApi.getTaskShareStreams(userId).catch(() => []);
       setShareStreams(data);
     } catch (e) {
       // Ignore

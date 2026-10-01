@@ -1983,7 +1983,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .then(() => offlineSync.flushOfflineSync(uid))
         .then(async (status) => {
           if (status.pendingCount > 0 || updated.parentTaskId) return;
-          const shared = await getAcceptedSharedTasks();
+          const shared = await getAcceptedSharedTasks(uid);
           const asRecipient = shared.filter((s) => s.task_id === taskId && s.recipient_id === uid);
           for (const st of asRecipient) {
             void updateSharedTaskCompletion(st.id, updated.isDone).catch(() => {});
