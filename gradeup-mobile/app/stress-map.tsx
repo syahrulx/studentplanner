@@ -182,7 +182,23 @@ export default function StressMap() {
           })}
         </View>
         {maxLoadInAnyWeek === 0 ? (
-          <Text style={[styles.emptyHint, isMonoTheme && { color: '#a3a3a3' }]}>{T('tasksPulseNoTasks')}</Text>
+          /* Was a plain Text reading "Add sow". It looked tappable, did
+             nothing, and borrowed tasksPulseNoTasks — a string the Home screen
+             uses to mean "no tasks", so it could not be reworded without
+             changing Home too. Now a real button to the same place as
+             Settings > Scheme of work. */
+          <Pressable
+            onPress={() => router.push('/upload-sow' as any)}
+            accessibilityRole="button"
+            accessibilityLabel={T('stressMapAddSow')}
+            hitSlop={8}
+            style={({ pressed }) => [styles.addSowBtn, pressed && { opacity: 0.75 }]}
+          >
+            <Feather name="plus" size={15} color={isMonoTheme ? '#e5e5e5' : '#FFFFFF'} />
+            <Text style={[styles.addSowText, isMonoTheme && { color: '#e5e5e5' }]}>
+              {T('stressMapAddSow')}
+            </Text>
+          </Pressable>
         ) : null}
         {tasksOutsideTeachingWindow > 0 ? (
           <Text style={[styles.emptyHint, { marginTop: 8 }, isMonoTheme && { color: '#a3a3a3' }]}>
@@ -360,6 +376,22 @@ const styles = StyleSheet.create({
   },
   barWeekLabelCurrent: {
     color: '#ffffff',
+    fontWeight: '800',
+  },
+  addSowBtn: {
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+  },
+  addSowText: {
+    color: '#FFFFFF',
+    fontSize: 14,
     fontWeight: '800',
   },
   emptyHint: {
