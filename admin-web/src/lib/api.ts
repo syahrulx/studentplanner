@@ -2373,6 +2373,44 @@ export interface AdminSupportReportMessage {
 
 const USER_REPORTS_COLUMNS = '*';
 
+export type UserAiSummary = {
+  plan: 'free' | 'plus' | 'pro';
+  subscriptionStatus: string | null;
+  subscriptionExpires: string | null;
+  periodType: string | null;
+  monthlyTokensUsed: number;
+  monthlyTokenLimit: number;
+  dailyRequestsUsed: number;
+  dailyRequestLimit: number;
+  /** True when this person has been given a limit of their own. */
+  limitIsOverride: boolean;
+};
+
+/**
+ * Plan and AI usage for one person, for the support screen.
+ *
+ * The limits come back from the database rather than being repeated here: the
+ * numbers that actually enforce them live in the Edge Functions, and a third
+ * copy in the admin panel would be the one nobody remembers to update.
+ */
+export async function getUserAiSummary(userId: string): Promise<UserAiSummary | null> {
+  const { data, error } = await supabase.rpc('admin_user_ai_summary', { p_user_id: userId });
+  if (error) throw toError(error);
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return null;
+  return {
+    plan: (row.plan ?? 'free') as UserAiSummary['plan'],
+    subscriptionStatus: row.subscription_status ?? null,
+    subscriptionExpires: row.subscription_expires ?? null,
+    periodType: row.period_type ?? null,
+    monthlyTokensUsed: Number(row.monthly_tokens_used ?? 0),
+    monthlyTokenLimit: Number(row.monthly_token_limit ?? 0),
+    dailyRequestsUsed: Number(row.daily_requests_used ?? 0),
+    dailyRequestLimit: Number(row.daily_request_limit ?? 0),
+    limitIsOverride: Boolean(row.limit_is_override),
+  };
+}
+
 export async function listUserReports(opts: {
   status?: UserReportStatus | 'all';
   kind?: UserReportKind | 'all';

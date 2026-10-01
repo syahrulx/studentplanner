@@ -175,11 +175,17 @@ export function ConfessionsRoute() {
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const loadRows = useCallback(async () => {
-    if (!campus && !(allCampuses && uni)) return;
+    // A search runs everywhere, so it does not wait for a university and a
+    // campus to be picked first. Without this the box looked broken: typing a
+    // word and pressing Enter returned here and never asked the database, so
+    // nothing ever appeared. Browsing still starts from a campus, because a
+    // list of every confession ever posted is not a useful first screen.
+    if (!appliedSearch && !campus && !(allCampuses && uni)) return;
     setRowsLoading(true);
     try {
       setRows(await listConfessions({
-        university: campus?.university_id ?? uni,
+        // While searching, an unset university or campus means "everywhere".
+        university: appliedSearch && !campus && !allCampuses ? null : (campus?.university_id ?? uni),
         // null means "every campus", which is not the same as '' — that is the
         // key for posts with no campus at all.
         campus: campus ? campusKey(campus.campus) : null,
@@ -370,7 +376,36 @@ export function ConfessionsRoute() {
           <div className="mb-4">{crumbs}</div>
 
           {/* ── Universities ── */}
-          {!uni && (
+          {/* Search sits above the university and campus pickers because it
+              searches all of them. It used to live inside the table block,
+              which only renders once a campus is chosen, so there was no way
+              to look for a word without first knowing where it was posted —
+              exactly the thing you search when you do not know. */}
+          <div className="mb-4 flex items-center gap-2">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { setAppliedSearch(search); setPage(0); } }}
+              placeholder="Search every confession…"
+              className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-1.5 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+            />
+            <button
+              onClick={() => { setAppliedSearch(search); setPage(0); }}
+              className={`rounded-full px-4 py-1.5 text-sm font-bold ${PILL_ON}`}
+            >
+              Search
+            </button>
+            {appliedSearch ? (
+              <button
+                onClick={() => { setSearch(''); setAppliedSearch(''); setPage(0); }}
+                className="rounded-full px-4 py-1.5 text-sm font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+
+          {!uni && !appliedSearch && (
             unisLoading ? (
               <div className={`${CARD} flex items-center justify-center py-20 text-sm font-semibold text-slate-400`}>
                 Loading…
@@ -415,7 +450,7 @@ export function ConfessionsRoute() {
           )}
 
           {/* ── Campuses ── */}
-          {uni && !campus && !allCampuses && (
+          {uni && !campus && !allCampuses && !appliedSearch && (
             campusLoading ? (
               <div className={`${CARD} flex items-center justify-center py-20 text-sm font-semibold text-slate-400`}>
                 Loading…
@@ -487,7 +522,7 @@ export function ConfessionsRoute() {
           )}
 
           {/* ── Posts ── */}
-          {(campus || allCampuses) && (
+          {(campus || allCampuses || appliedSearch) && (
             <>
               <div className="mb-4 flex flex-wrap items-center gap-2">
                 {([['', 'All'], ['active', 'Live'], ['flagged', 'Flagged'], ['removed', 'Removed']] as const).map(

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Pressable,
+  ScrollView,
   StyleSheet,
   View,
   type LayoutChangeEvent,
@@ -65,6 +66,26 @@ const TAB_LABEL: Record<StudioTabId, TranslationKey> = {
 };
 
 export const STUDIO_TRAY_HEIGHT = 156;
+
+/**
+ * The tray height each tab needs.
+ *
+ * Background carries three rows — swatches, Dim and Card — which measure about
+ * 198pt together, so at 156 the Card row sat outside the box with no way to
+ * reach it. A student reported exactly that: "saya tak dapat tengok features
+ * yang lain kat bawah tu".
+ *
+ * Only Background is made taller. Raising the shared height would take the
+ * same space from the preview on every tab, and on a short phone — where the
+ * preview is already down to its 160pt floor — that could push the Save button
+ * off the bottom instead.
+ */
+export const STUDIO_TRAY_HEIGHT_FOR: Record<StudioTabId, number> = {
+  template: STUDIO_TRAY_HEIGHT,
+  background: 210,
+  layout: STUDIO_TRAY_HEIGHT,
+  show: STUDIO_TRAY_HEIGHT,
+};
 export const STUDIO_TRAY_PAD_X = 16;
 
 /** Applies a config patch; the Studio passes the hook's update, or its wrapper around it. */
@@ -232,7 +253,7 @@ export interface StudioTrayProps {
 export function StudioTray({ tab, children, reduceMotion, style }: StudioTrayProps) {
   const fade = reduceMotion ? 150 : TRAY_FADE_MS;
   return (
-    <View style={[styles.tray, style]}>
+    <View style={[styles.tray, { height: STUDIO_TRAY_HEIGHT_FOR[tab] ?? STUDIO_TRAY_HEIGHT }, style]}>
       {/* Both panels are absolutely filled while the old one fades out, so they cross-fade in place. */}
       <Animated.View
         key={tab}
@@ -240,7 +261,15 @@ export function StudioTray({ tab, children, reduceMotion, style }: StudioTrayPro
         exiting={FadeOut.duration(fade)}
         style={styles.trayPage}
       >
-        {children}
+        {/* Scrollable as a backstop. The heights above are measured for normal
+            text; a student on a large accessibility text size can still outgrow
+            them, and scrolling to a row beats the row not existing. */}
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.trayScrollContent}
+        >
+          {children}
+        </ScrollView>
       </Animated.View>
     </View>
   );
@@ -274,7 +303,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   tray: {
+    // Height is set per tab at the call site; this is only the fallback.
     height: STUDIO_TRAY_HEIGHT,
+  },
+  trayScrollContent: {
+    paddingBottom: 4,
   },
   trayPage: {
     ...StyleSheet.absoluteFillObject,

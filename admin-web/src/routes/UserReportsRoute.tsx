@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   deleteUserReport,
   listSupportAdmins,
+  getUserAiSummary,
   listUserReports,
   listUserReportMessages,
   replyToUserReport,
@@ -10,6 +11,7 @@ import {
   updateUserReportWorkflow,
   type AdminSupportReportMessage,
   type AdminUserReportRow,
+  type UserAiSummary,
   type UserReportKind,
   type UserReportStatus,
   type SupportAdminOption,
@@ -514,10 +516,27 @@ function ReportDetailModal({
   onWorkflow: (patch: Parameters<typeof updateUserReportWorkflow>[1]) => void | Promise<void>;
 }) {
   const [notes, setNotes] = useState(row.admin_notes ?? '');
+  // Who this person is and how much AI they have left. Loaded here rather than
+  // with the list: the list would need one lookup per row to show something an
+  // admin only reads once they have opened a report.
+  const [ai, setAi] = useState<UserAiSummary | null>(null);
+  const [aiError, setAiError] = useState('');
   const [messages, setMessages] = useState<AdminSupportReportMessage[]>([]);
   const [reply, setReply] = useState('');
   const [replyBusy, setReplyBusy] = useState(false);
   const [replyError, setReplyError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    const uid = row.reporter_id;
+    if (!uid) { setAi(null); return; }
+    setAi(null);
+    setAiError('');
+    getUserAiSummary(uid)
+      .then((res) => { if (active) setAi(res); })
+      .catch((e) => { if (active) setAiError(e instanceof Error ? e.message : 'Could not load plan'); });
+    return () => { active = false; };
+  }, [row.reporter_id]);
   const [tags, setTags] = useState((row.internal_tags ?? []).join(', '));
   const [escalationReason, setEscalationReason] = useState(row.escalation_reason ?? '');
   useEffect(() => {
@@ -582,6 +601,44 @@ function ReportDetailModal({
           <Detail label="Reporter email">{row.reporter_email_snapshot || '—'}</Detail>
           <Detail label="Contact Info (User Provided)">{row.contact_info || '—'}</Detail>
           <Detail label="Reporter id" mono>{row.reporter_id || '—'}</Detail>
+          <Detail label="Plan">
+            {aiError
+              ? <span className="text-rose-600 dark:text-rose-400">{aiError}</span>
+              : !ai
+                ? '…'
+                : (
+                  <span>
+                    <span className="font-semibold uppercase">{ai.plan}</span>
+                    {ai.subscriptionStatus ? ` · ${ai.subscriptionStatus}` : ''}
+                    {ai.subscriptionExpires
+                      ? ` · until ${new Date(ai.subscriptionExpires).toLocaleDateString()}`
+                      : ''}
+                  </span>
+                )}
+          </Detail>
+          <Detail label="AI this month">
+            {!ai ? '…' : (
+              <span>
+                {ai.monthlyTokensUsed.toLocaleString()} / {ai.monthlyTokenLimit.toLocaleString()} tokens
+                {' · '}
+                <span className={ai.monthlyTokenLimit - ai.monthlyTokensUsed <= 0 ? 'font-semibold text-rose-600 dark:text-rose-400' : ''}>
+                  {Math.max(0, ai.monthlyTokenLimit - ai.monthlyTokensUsed).toLocaleString()} left
+                </span>
+                {ai.limitIsOverride ? ' (custom limit)' : ''}
+              </span>
+            )}
+          </Detail>
+          <Detail label="AI today">
+            {!ai ? '…' : (
+              <span>
+                {ai.dailyRequestsUsed} / {ai.dailyRequestLimit} requests
+                {' · '}
+                <span className={ai.dailyRequestLimit - ai.dailyRequestsUsed <= 0 ? 'font-semibold text-rose-600 dark:text-rose-400' : ''}>
+                  {Math.max(0, ai.dailyRequestLimit - ai.dailyRequestsUsed)} left
+                </span>
+              </span>
+            )}
+          </Detail>
           <Detail label="Reported user handle">{row.target_user_handle || '—'}</Detail>
           <Detail label="Platform">{row.platform || '—'}</Detail>
           <Detail label="App version">{row.app_version || '—'}</Detail>
