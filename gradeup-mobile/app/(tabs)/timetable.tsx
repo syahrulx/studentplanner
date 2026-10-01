@@ -36,6 +36,8 @@ import { getUniversityById } from '@/src/lib/universities';
 import { getSlotColorForSubjectCode, getTimetableEntryColor } from '@/src/lib/timetableSlotColors';
 import type { TimetableEntry, DayOfWeek } from '@/src/types';
 import { formatClockTime, formatHourLabel } from '@/src/utils/date';
+import { ExportCanvas, saveExportCanvas } from '@/components/ViewShotCompat';
+import type ViewShot from 'react-native-view-shot';
 import {
   type WeekStartsOn,
   getTimetableSlotDetailsVisibility,
@@ -68,6 +70,18 @@ function orderedDays(weekStartsOn: WeekStartsOn) {
 }
 
 const HOUR_HEIGHT = 56;
+/**
+ * How many pixels the saved picture gets per point.
+ *
+ * Two, not the device's own ratio: three on a modern phone makes a picture
+ * around 3000x6500 that some phones run out of memory capturing, and a
+ * wallpaper does not need it.
+ */
+const SCREEN_PX_SCALE = 2;
+
+/** The day-name row above the grid; gridColHead's minHeight. */
+const GRID_HEADER_H = 48;
+
 const START_HOUR = 7;
 // END_HOUR is exclusive. Use 23 so the 22:00 row is visible.
 const END_HOUR = 23;
@@ -219,6 +233,18 @@ export default function TimetableScreen() {
   const [pdfOrientation, setPdfOrientation] = useState<TimetablePdfOrientation>('portrait');
   // null until read, so the NEW badge never flashes for someone who already opened the Studio.
   const [lockStudioSeen, setLockStudioSeen] = useState<boolean | null>(null);
+  // Saving the week as a picture. The student positions and sizes the grid
+  // themselves because the picture is meant to become a wallpaper, where the
+  // clock and the lock screen furniture sit over the top of it and cover
+  // whatever happens to be there.
+  const [wallpaperOpen, setWallpaperOpen] = useState(false);
+  const [wallLandscape, setWallLandscape] = useState(false);
+  /** Where the grid sits in the picture, as a fraction of the spare room: 0 top, 1 bottom. */
+  const [wallPosition, setWallPosition] = useState(0.5);
+  const [wallZoom, setWallZoom] = useState(1);
+  const [wallSaving, setWallSaving] = useState(false);
+  const wallShotRef = useRef<ViewShot | null>(null);
+
   const [slotDetails, setSlotDetails] = useState<TimetableSlotDetailsVisibility>({
     courseName: false,
     scrollAllDaysInCompact: false,
@@ -624,6 +650,7 @@ export default function TimetableScreen() {
         ) : null}
         {renderHeader(true)}
         {renderTimetableMenu()}
+        {renderWallpaperModal()}
         <Modal
           visible={showNonUitmIntro}
           transparent
@@ -877,6 +904,7 @@ export default function TimetableScreen() {
         onLockScreen={go(() => router.push('/lock-wallpaper' as any))}
         pdfOrientation={pdfOrientation}
         onExportPdf={(orientation) => void exportPdf(orientation)}
+        onSaveImage={() => { setMenuOpen(false); setWallpaperOpen(true); }}
         exportingPdf={exportingPdf}
         onReset={go(confirmResetTimetable)}
       />
@@ -1085,10 +1113,164 @@ export default function TimetableScreen() {
   }
 
   /* ── Week grid: one column per day (scroll horizontally if needed) ─ */
-  function renderWeekGrid() {
+  /**
+   * The week grid.
+   *
+   * `forExport` draws the same grid for a picture instead of the screen: every
+   * hour at once with no scrolling, at a width it is given rather than the
+   * window's. Everything about how a slot looks is shared, so the saved picture
+   * cannot drift from what the student sees — which is the reason this takes an
+   * argument instead of a second copy of the layout.
+   */
+  /**
+   * The picture the student is about to save, drawn once and used twice: on
+   * screen as the preview, and off screen at full pixel size for the capture.
+   * One function so what they position is exactly what lands in Photos.
+   */
+  function renderWallpaper(boxW: number, boxH: number) {
+    // The grid is drawn at the picture's width, then scaled by the student's
+    // zoom. Its natural height is every hour at once, so most of the time it is
+    // taller than the picture and `position` chooses which part shows.
+    const gridW = boxW * wallZoom;
+    const gridH = (GRID_HEADER_H + gridBodyHeight + 8) * wallZoom;
+    const spare = boxH - gridH;
+    // When the grid is shorter than the picture the fraction places it in the
+    // gap; when it is taller the same fraction chooses the visible slice, since
+    // `spare` goes negative and slides the grid up past the top edge.
+    const top = spare * wallPosition;
+    return (
+      <View style={{ width: boxW, height: boxH, backgroundColor: theme.background, overflow: 'hidden' }}>
+        <View
+          style={{
+            position: 'absolute',
+            left: (boxW - gridW) / 2,
+            top,
+            width: gridW,
+            transform: [{ scale: wallZoom }],
+            transformOrigin: 'top left',
+          }}
+        >
+          <View style={{ width: boxW }}>{renderWeekGrid({ width: boxW })}</View>
+        </View>
+      </View>
+    );
+  }
+
+  function renderWallpaperModal() {
+    if (!wallpaperOpen) return null;
+    // The picture is the phone's own screen, so it fits as a wallpaper without
+    // cropping. Landscape is the same pixels turned, for anyone who wants it on
+    // a tablet or to print.
+    const shotW = Math.round(winW * SCREEN_PX_SCALE);
+    const shotH = Math.round(winH * SCREEN_PX_SCALE);
+    const outW = wallLandscape ? shotH : shotW;
+    const outH = wallLandscape ? shotW : shotH;
+    // Preview: the same shape, sized to sit above the controls.
+    const previewH = Math.min(winH * 0.46, 380);
+    const previewW = previewH * (outW / outH);
+
+    return (
+      <Modal visible transparent animationType="fade" onRequestClose={() => setWallpaperOpen(false)}>
+        <View style={s.wallRoot}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => !wallSaving && setWallpaperOpen(false)} />
+          <View style={[s.wallSheet, { backgroundColor: theme.card }]}>
+            <Text style={[s.wallTitle, { color: theme.text }]}>{T('timetableSaveImageTitle')}</Text>
+            <Text style={[s.wallHint, { color: theme.textSecondary }]}>{T('timetableSaveImageHint')}</Text>
+
+            <View style={[s.wallPreviewFrame, { width: previewW, height: previewH, borderColor: theme.border }]}>
+              {renderWallpaper(previewW, previewH)}
+            </View>
+
+            <View style={s.wallRow}>
+              {([[false, 'timetableSaveImagePortrait'], [true, 'timetableSaveImageLandscape']] as const).map(([land, key]) => (
+                <Pressable
+                  key={String(land)}
+                  onPress={() => setWallLandscape(land)}
+                  style={[s.wallPill, { borderColor: theme.border }, wallLandscape === land && { backgroundColor: theme.primary, borderColor: theme.primary }]}
+                >
+                  <Text style={[s.wallPillText, { color: wallLandscape === land ? theme.textInverse : theme.text }]}>
+                    {(T as any)(key)}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {/* Position and size, as steppers rather than a slider: a slider
+                inside a modal fights the modal's own gestures, and a tap target
+                is easier than a drag on a small preview. */}
+            <View style={s.wallRow}>
+              <Text style={[s.wallLabel, { color: theme.textSecondary }]}>{T('timetableSaveImagePosition')}</Text>
+              <Pressable onPress={() => setWallPosition((v) => Math.max(0, Math.round((v - 0.1) * 100) / 100))} style={[s.wallStep, { borderColor: theme.border }]}>
+                <Feather name="chevron-up" size={18} color={theme.text} />
+              </Pressable>
+              <Pressable onPress={() => setWallPosition((v) => Math.min(1, Math.round((v + 0.1) * 100) / 100))} style={[s.wallStep, { borderColor: theme.border }]}>
+                <Feather name="chevron-down" size={18} color={theme.text} />
+              </Pressable>
+            </View>
+
+            <View style={s.wallRow}>
+              <Text style={[s.wallLabel, { color: theme.textSecondary }]}>{T('timetableSaveImageSize')}</Text>
+              <Pressable onPress={() => setWallZoom((v) => Math.max(0.5, Math.round((v - 0.1) * 100) / 100))} style={[s.wallStep, { borderColor: theme.border }]}>
+                <Feather name="minus" size={18} color={theme.text} />
+              </Pressable>
+              <Text style={[s.wallZoomText, { color: theme.text }]}>{Math.round(wallZoom * 100)}%</Text>
+              <Pressable onPress={() => setWallZoom((v) => Math.min(2, Math.round((v + 0.1) * 100) / 100))} style={[s.wallStep, { borderColor: theme.border }]}>
+                <Feather name="plus" size={18} color={theme.text} />
+              </Pressable>
+            </View>
+
+            <Pressable
+              onPress={saveWallpaper}
+              disabled={wallSaving}
+              style={({ pressed }) => [s.wallSave, { backgroundColor: theme.primary }, (wallSaving || pressed) && { opacity: 0.85 }]}
+            >
+              <Text style={[s.wallSaveText, { color: theme.textInverse }]}>
+                {wallSaving ? T('timetableSaveImageSaving') : T('timetableSaveImageSave')}
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* The real picture: full pixel size, parked off screen so it is in
+              the window for captureRef without ever being seen. */}
+          <ExportCanvas
+            ref={wallShotRef}
+            format="png"
+            quality={1}
+            style={{ position: 'absolute', left: -(outW + 400), top: 0, width: outW, height: outH }}
+          >
+            {renderWallpaper(outW, outH)}
+          </ExportCanvas>
+        </View>
+      </Modal>
+    );
+  }
+
+  async function saveWallpaper() {
+    if (wallSaving) return;
+    setWallSaving(true);
+    try {
+      // PNG: a timetable is flat colour and thin lines, which JPEG smears.
+      const result = await saveExportCanvas(wallShotRef.current, { format: 'png', quality: 1 });
+      if (result === 'saved') setWallpaperOpen(false);
+    } catch {
+      // saveExportCanvas reports its own failures to the student.
+    } finally {
+      setWallSaving(false);
+    }
+  }
+
+  function renderWeekGrid(forExport?: { width: number }) {
     const hours = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
-    const hScrollWeekOrCompactAllDays = slotDetails.scrollAllDaysInCompact || daysForWeekGrid.length > 5;
-    const minTableW = hScrollWeekOrCompactAllDays ? Math.max(gridContentWidth, winW) : gridContentWidth;
+    const hScrollWeekOrCompactAllDays = !forExport
+      && (slotDetails.scrollAllDaysInCompact || daysForWeekGrid.length > 5);
+    const exportColW = forExport
+      ? Math.max(50, Math.floor((forExport.width - TIME_GUTTER) / Math.max(1, daysForWeekGrid.length)))
+      : dayColumnWidth;
+    const dayColW = exportColW;
+    const exportTableW = TIME_GUTTER + daysForWeekGrid.length * dayColW;
+    const minTableW = forExport
+      ? exportTableW
+      : hScrollWeekOrCompactAllDays ? Math.max(gridContentWidth, winW) : gridContentWidth;
 
     return (
       <View style={s.gridRoot}>
@@ -1111,7 +1293,7 @@ export default function TimetableScreen() {
                     style={[
                       s.gridColHead,
                       {
-                        width: dayColumnWidth,
+                        width: dayColW,
                         borderLeftColor: theme.border,
                         backgroundColor: theme.backgroundSecondary ?? theme.card,
                       },
@@ -1129,7 +1311,8 @@ export default function TimetableScreen() {
             </View>
 
             <ScrollView
-              style={{ maxHeight: gridScrollMaxH }}
+              scrollEnabled={!forExport}
+              style={forExport ? { height: gridBodyHeight + 8 } : { maxHeight: gridScrollMaxH }}
               nestedScrollEnabled
               showsVerticalScrollIndicator
               bounces={false}
@@ -1155,7 +1338,7 @@ export default function TimetableScreen() {
                       style={[
                         s.gridDayCol,
                         {
-                          width: dayColumnWidth,
+                          width: dayColW,
                           minHeight: gridBodyHeight,
                           borderLeftColor: theme.border,
                           backgroundColor: 'transparent',
@@ -1466,6 +1649,7 @@ export default function TimetableScreen() {
       ) : null}
       {renderHeader(true)}
       {renderTimetableMenu()}
+      {renderWallpaperModal()}
       {renderClassDetailsModal()}
       {viewMode === 'week' ? renderWeekGrid() : renderListView()}
     </View>
@@ -1602,6 +1786,19 @@ const s = StyleSheet.create({
   },
   gridColCountText: { color: '#fff', fontSize: 11, fontWeight: '800' },
   gridBodyRow: { flexDirection: 'row' },
+  wallRoot: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  wallSheet: { width: '100%', maxWidth: 420, borderRadius: 22, padding: 18, alignItems: 'center', gap: 10 },
+  wallTitle: { fontSize: 17, fontWeight: '800' },
+  wallHint: { fontSize: 12, fontWeight: '600', textAlign: 'center', marginBottom: 2 },
+  wallPreviewFrame: { borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
+  wallRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  wallLabel: { fontSize: 13, fontWeight: '700', minWidth: 68 },
+  wallPill: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 999, borderWidth: 1 },
+  wallPillText: { fontSize: 13, fontWeight: '800' },
+  wallStep: { width: 38, height: 34, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  wallZoomText: { fontSize: 13, fontWeight: '800', minWidth: 48, textAlign: 'center' },
+  wallSave: { marginTop: 4, alignSelf: 'stretch', paddingVertical: 13, borderRadius: 14, alignItems: 'center' },
+  wallSaveText: { fontSize: 15, fontWeight: '800' },
   gridTimeCol: { paddingRight: 2 },
   gridHourText: { fontSize: 10, fontWeight: '600' },
   gridDayCol: {

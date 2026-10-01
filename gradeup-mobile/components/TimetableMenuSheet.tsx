@@ -56,6 +56,9 @@ export interface TimetableMenuSheetProps {
   /** Last orientation used; the Page control starts on it. */
   pdfOrientation: TimetablePdfOrientation;
   onExportPdf: (orientation: TimetablePdfOrientation) => void;
+  /** Opens the save-as-picture sheet. Separate from the PDF: a PNG is what a
+   *  student sets as a wallpaper, a PDF is what they print or send. */
+  onSaveImage: () => void;
   /** While the PDF is being made the row shows a spinner and ignores taps. */
   exportingPdf: boolean;
   onReset: () => void;
@@ -167,6 +170,7 @@ function SheetContent({
   onLockScreen,
   pdfOrientation,
   onExportPdf,
+  onSaveImage,
   exportingPdf,
   onReset,
 }: TimetableMenuSheetProps) {
@@ -269,6 +273,17 @@ function SheetContent({
             variant={segmentVariant}
             style={styles.segmentWide}
           />
+        </Row>
+        <Row
+          theme={theme}
+          icon="image"
+          tile={TILE.purple}
+          label={T('timetableSaveImageTitle')}
+          sub={T('timetableSaveImageSub')}
+          onPress={onSaveImage}
+          divider
+        >
+          <Feather name="download" size={18} color={theme.textSecondary} />
         </Row>
         <Row
           theme={theme}
