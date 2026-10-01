@@ -23,6 +23,7 @@ import {
   getViewCountToday,
   incrementViewCount,
   deleteSnap,
+  reportSnap,
 } from '@/src/lib/snapApi';
 import { Avatar } from '@/components/Avatar';
 import type { StudySnap, SnapReaction } from '@/src/types';
@@ -165,6 +166,37 @@ export default function SnapViewer() {
     );
   };
 
+  /**
+   * Report someone else's snap.
+   *
+   * Required the moment a snap can travel past the author's friends list: a
+   * photo reaching a whole campus needs a way down that does not wait for an
+   * admin to notice it. Three reports hide it automatically.
+   */
+  const handleReport = () => {
+    if (!snap) return;
+    Alert.alert(
+      'Report this snap',
+      'Tell us if this breaks the rules. Repeated reports hide it while we check.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Report',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await reportSnap(snap.id, user.id!);
+              Alert.alert('Thanks', 'We have got it. Our team will take a look.');
+            } catch (e) {
+              console.warn('[SnapViewer] report error:', e);
+              Alert.alert('Could not report', 'Something went wrong. Please try again.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   if (loading) {
     return (
       <View style={[s.container, { backgroundColor: '#000' }]}>
@@ -240,9 +272,19 @@ export default function SnapViewer() {
             <Text style={s.timestamp}>{timeAgo(snap.createdAt)}</Text>
           </View>
         </View>
-        {snap.userId === user.id && (
+        {snap.userId === user.id ? (
           <Pressable onPress={handleDelete} style={s.deleteBtn} hitSlop={12}>
             <Feather name="trash-2" size={20} color="#ff4444" />
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={handleReport}
+            style={s.deleteBtn}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Report this snap"
+          >
+            <Feather name="flag" size={18} color="rgba(255,255,255,0.8)" />
           </Pressable>
         )}
       </View>

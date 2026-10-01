@@ -543,6 +543,7 @@ export default function CommunityMap() {
     locationVisibility,
     setLocationVisibility,
     friendSnaps,
+    sharedSnaps,
     friendStreaks,
     myStreak,
     userId,
@@ -1545,7 +1546,30 @@ export default function CommunityMap() {
                 );
               })}
 
-              {snapRowFriends.length === 0 && (
+              {sharedSnaps.length > 0 && (
+                <View style={[styles.snapRowDivider, { backgroundColor: theme.border }]} />
+              )}
+
+              {sharedSnaps.map((snap) => (
+                <Pressable
+                  key={snap.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open a snap from ${snap.authorName || 'a student'}`}
+                  style={({ pressed }) => [styles.snapBubbleWrap, pressed && { opacity: 0.75 }]}
+                  onPress={() => openSnap(snap.id)}
+                >
+                  {/* A different ring on purpose: this is not a friend, and a
+                      student should be able to see that before they tap. */}
+                  <View style={[styles.snapBubbleRing, { borderColor: theme.primary }]}>
+                    <Image source={{ uri: snap.imageUrl }} style={styles.snapBubbleImage} contentFit="cover" transition={160} />
+                  </View>
+                  <Text style={[styles.snapBubbleName, { color: theme.textSecondary }]} numberOfLines={1}>
+                    {snap.authorName || 'Student'}
+                  </Text>
+                </Pressable>
+              ))}
+
+              {snapRowFriends.length === 0 && sharedSnaps.length === 0 && (
                 <View style={styles.snapRowEmpty}>
                   <Text style={[styles.snapRowEmptyText, { color: theme.textSecondary }]} numberOfLines={2}>
                     No snaps from friends yet today.
@@ -3237,6 +3261,7 @@ const styles = StyleSheet.create({
   },
   snapBubbleStreakText: { fontSize: 10, fontWeight: '800', color: '#ffffff' },
   snapBubbleName: { fontSize: 11, fontWeight: '600', marginTop: 5, maxWidth: SNAP_BUBBLE + 14 },
+  snapRowDivider: { width: StyleSheet.hairlineWidth, alignSelf: 'stretch', marginVertical: 8 },
   snapRowEmpty: { justifyContent: 'center', paddingLeft: 4, maxWidth: 190 },
   snapRowEmptyText: { fontSize: 12, fontWeight: '600' },
   bottomSheetTitle: { fontSize: 22, fontWeight: '800' },

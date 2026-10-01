@@ -267,6 +267,15 @@ export interface ChatMessage {
 
 /* ── Study Snap ────────────────────────────────────────── */
 
+/**
+ * Who can see a snap, chosen per snap when it is posted.
+ *
+ * 'friends' is the default and the only value every snap posted before
+ * 2026-10-01 has. The wider two are bounded by the author's own university —
+ * there is no app-wide audience.
+ */
+export type SnapAudience = 'friends' | 'campus' | 'university';
+
 export interface StudySnap {
   id: string;
   userId: string;
@@ -274,6 +283,7 @@ export interface StudySnap {
   caption?: string;
   createdAt: string;
   expiresAt: string;
+  audience: SnapAudience;
   /** Joined author profile info */
   authorName?: string;
   authorAvatar?: string;
