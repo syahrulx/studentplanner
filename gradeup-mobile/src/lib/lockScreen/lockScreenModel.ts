@@ -46,8 +46,19 @@ import type {
 /** Bump when a template's drawing changes, so every live picture is redrawn. */
 export const LOCK_SCREEN_TEMPLATE_VERSION = 2;
 
-/** today..today+6: the intent serves the fallback past the last one. */
-const RENDER_DAYS = 7;
+/**
+ * today..today+13: the intent serves the undated fallback past the last one.
+ *
+ * Fourteen, not seven. Pictures are only drawn while the app is open, so a
+ * student who did not open Rencana for a week found the morning automation
+ * still running but serving the same undated fallback every day — reported as
+ * the lock screen "not updating by day". Two weeks covers a quiet stretch.
+ *
+ * The cost is a one-off: the render host redraws only the days whose signature
+ * changed, one canvas at a time, so a day rollover is still a single picture.
+ * Only the first pass after this change draws the extra seven.
+ */
+const RENDER_DAYS = 14;
 /** How far ahead "Next: Wed 8:00 AM" looks on a day with no classes. */
 const NEXT_CLASS_LOOKAHEAD_DAYS = 14;
 /**

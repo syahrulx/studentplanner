@@ -139,13 +139,25 @@ function testFormat(): void {
 }
 
 function testRenderDates(): void {
+  // Crossing a year end.
   assert.deepEqual(lockScreenRenderDates('2026-12-28'), [
     '2026-12-28', '2026-12-29', '2026-12-30', '2026-12-31', '2027-01-01', '2027-01-02', '2027-01-03',
+    '2027-01-04', '2027-01-05', '2027-01-06', '2027-01-07', '2027-01-08', '2027-01-09', '2027-01-10',
   ]);
   // US DST ends 1 Nov 2026; a 24 h step from midnight would repeat a day there.
   assert.deepEqual(lockScreenRenderDates('2026-10-30'), [
     '2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05',
+    '2026-11-06', '2026-11-07', '2026-11-08', '2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12',
   ]);
+  // Two weeks, so a student who does not open the app for a week still gets
+  // their own day rather than the undated fallback. Asserted as a count too,
+  // so a change to RENDER_DAYS fails here and is noticed rather than silently
+  // shortening how long the lock screen keeps working.
+  assert.equal(lockScreenRenderDates('2026-10-30').length, 14);
+  // Every date distinct and in order, whatever the DST offset did.
+  const d = lockScreenRenderDates('2026-10-30');
+  assert.deepEqual(d, [...d].sort());
+  assert.equal(new Set(d).size, d.length);
 }
 
 function testDayRows(): void {
@@ -327,7 +339,7 @@ function testFallback(): void {
   assert.deepEqual(fallback.week.map((c) => c.chips.length), [1, 2, 1, 0, 0, 0, 0]);
 
   const all = buildLockScreenModels(makeInput(), '2026-09-27');
-  assert.equal(all.dates.length, 7);
+  assert.equal(all.dates.length, 14);
   assert.equal(all.days['2026-09-29'].headerDate, 'TUE · 29 SEP');
   assert.equal(all.fallback.kind, 'fallback');
 }
