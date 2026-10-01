@@ -35,6 +35,7 @@ import * as roomsApi from '@/src/lib/campusRoomsApi';
 import { getUniversityById } from '@/src/lib/universities';
 import { getSlotColorForSubjectCode, getTimetableEntryColor } from '@/src/lib/timetableSlotColors';
 import type { TimetableEntry, DayOfWeek } from '@/src/types';
+import { formatClockTime, formatHourLabel } from '@/src/utils/date';
 import {
   type WeekStartsOn,
   getTimetableSlotDetailsVisibility,
@@ -224,6 +225,7 @@ export default function TimetableScreen() {
     room: true,
     lecturer: true,
     group: true,
+    use12HourTime: false,
   });
   /** When true, week grid shows + on free hours and class cards open the editor. */
   const [gridEditMode, setGridEditMode] = useState(false);
@@ -898,7 +900,7 @@ export default function TimetableScreen() {
             <View style={{ gap: 12 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <Feather name="clock" size={16} color={theme.primary} />
-                <Text style={{ color: theme.text, fontSize: 15 }}>{(T as any)(DAY_META[selectedClass.day].fullKey)}, {selectedClass.startTime} - {selectedClass.endTime}</Text>
+                <Text style={{ color: theme.text, fontSize: 15 }}>{(T as any)(DAY_META[selectedClass.day].fullKey)}, {formatClockTime(selectedClass.startTime, slotDetails.use12HourTime)} - {formatClockTime(selectedClass.endTime, slotDetails.use12HourTime)}</Text>
               </View>
               {selectedClass.location && selectedClass.location !== '-' && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -1137,7 +1139,7 @@ export default function TimetableScreen() {
                   {hours.map((h) => (
                     <View key={h} style={{ height: HOUR_HEIGHT, paddingTop: 2 }}>
                       <Text style={[s.gridHourText, { color: isPurpleTheme ? '#4f5f86' : theme.textSecondary }]}>
-                        {h.toString().padStart(2, '0')}:00
+                        {formatHourLabel(h, slotDetails.use12HourTime)}
                       </Text>
                     </View>
                   ))}
@@ -1357,10 +1359,11 @@ export default function TimetableScreen() {
                   const cardStyle = [s.listCard, { backgroundColor: theme.background, borderLeftColor: color }];
                   const cardInner = (
                     <>
-                      <View style={s.listTimeCol}>
-                        <Text style={[s.listTime, { color: theme.primary }]}>{e.startTime}</Text>
+                      {/* 50pt holds "13:00" but not "12:00 PM" at 13pt bold. */}
+                      <View style={[s.listTimeCol, slotDetails.use12HourTime && { width: 64 }]}>
+                        <Text style={[s.listTime, { color: theme.primary }]}>{formatClockTime(e.startTime, slotDetails.use12HourTime)}</Text>
                         <Text style={[s.listTimeDash, { color: theme.textSecondary }]}>-</Text>
-                        <Text style={[s.listTime, { color: theme.primary }]}>{e.endTime}</Text>
+                        <Text style={[s.listTime, { color: theme.primary }]}>{formatClockTime(e.endTime, slotDetails.use12HourTime)}</Text>
                       </View>
                       <View style={s.listCardBody}>
                         <Text style={[s.listCode, { color }]} numberOfLines={2}>{primaryLabel}</Text>

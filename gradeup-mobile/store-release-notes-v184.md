@@ -5,68 +5,87 @@ release-notes field. The in-app prompt is driven by `supabase-whats-new-v184.sql
 and uses bullets, because `src/components/WhatsNewPrompt.tsx` renders one card
 per bullet line and has no concept of a section heading.
 
-Covers 1.8.3 -> 1.8.4 only. 1.8.3 (iOS 159, Android 170) is live on both
-stores, so everything before it has already been announced there.
+## Range: 1.8.1 -> 1.8.4, not 1.8.3 -> 1.8.4
 
-No platform difference: shared app code, so both bodies are identical. It
-matters most on Android, which cannot refresh a wallpaper and so saves the
-picture once — that is what the two templates are for.
+1.8.2 and 1.8.3 were never built. Neither was 1.8.0. The last build that
+reached students is **1.8.1** (iOS 155, Android versionCode 166), so
+everything in those three versions arrives here at once and the copy has to
+carry all of it. That is why this file replaced a shorter one written when
+1.8.4 looked like its own small release, and why `store-release-notes-v183.md`
+is now history rather than a paste target — its contents are folded in below.
 
-Length: 471 characters, inside Play's 500 cap.
+## Lengths
+
+App Store 780 characters, Play 493. Play caps release notes at 500 and the App
+Store at 4000, so for once the two bodies differ in substance and not just
+wording: the App Store body says things the Play one has no room for. Where
+Play forced a cut, the more-felt item won.
+
+Cut from the Play body, in order of what went first:
+- the template names (Today, Week, Timetable, Grid)
+- "and a week you set by hand no longer carries over" — the semester-week fix
+  keeps its headline, loses its detail
+- "Rencana warns you when your phone is full"
+- "instead of \"something went wrong\"" on the friend-request line
 
 ## Title
 
 ```
-Your whole week on your lock screen
+Your week on your lock screen
 ```
 
-## Body — App Store and Play Console (identical)
+## Body — App Store
 
 ```
 New
-1. Lock screen templates Timetable and Grid: your whole week with times and rooms
-2. Neither shows a date, so on Android you can save one as your wallpaper and it stays right all semester
-3. Friend search shows who's already a friend or has a request waiting, and lets you accept right there
-
-Changes
-1. The Glance template is gone. If you used it, you're on Today now
+1. Lock screen planner: your day or week as a wallpaper, with Today, Week, Timetable and Grid templates
+2. Week and Task List widgets for home and lock screen
+3. Timetable options: grid or list, pick what each class shows, and 12-hour time
+4. Export your timetable as a PDF
+5. Confession replies notify you, and can be turned off per post
 
 Fixes
-1. Adding someone who's already your friend now says so, instead of "Something went wrong"
+1. Your semester week is correct again, and a week you set by hand no longer carries over
+2. Handwriting stays as you wrote it
+3. Smoother zoom in notes, and no more cut-off pages
+4. The small Classes widget shows four classes again
+5. Subject colours match on every device
+6. Widgets roll over at midnight again
+7. Friend requests say what went wrong instead of "something went wrong"
+8. Rencana warns you when your phone is full
 ```
 
-## What changed
+## Body — Play Console
 
-`b61d617`. Two lock screen templates read a new undated model field,
-`timetable` (first five week days always, a later day only with a class; blind
-to break weeks):
+```
+New
+1. Lock screen planner: your day or week as a wallpaper
+2. Week and Task List widgets
+3. Timetable options: grid or list, what each class shows, 12-hour time
+4. Export your timetable as a PDF
+5. Confession replies notify you, and can be turned off
 
-1. Timetable (`TimetableTemplate.tsx`): a line per class — time, code, room,
-   and group when that switch is on.
-2. Grid (`GridTemplate.tsx`): a column per day, an hour scale, class blocks
-   placed by time with the subject colour down the edge.
-
-Neither has a size. Fitting only trims when the card would not fit (lines per
-day down to two; the hour down to 22 pt), so no class is hidden while there is
-room.
-
-Glance is removed: it drew only the day's first class, so a picture drawn
-once a day was wrong from that class on. A stored Glance choice is not in the
-template list any more and falls back to the default, Today.
-
-`587fb70`. Friends: search shows Friends / Sent / Accept instead of "Add" for
-everyone, and a request that can't be sent says why ("Already friends",
-"Already sent", "You're now friends") instead of "Something went wrong". The
-database side (one row per pair, only the addressee accepts, only the blocker
-unblocks) went out as migration `20260929000001` ahead of the build, so it
-already holds for 1.8.3.
+Fixes
+1. Your semester week is correct again
+2. Handwriting stays as you wrote it
+3. Smoother zoom in notes, no cut-off pages
+4. Widgets show the right day and four classes
+5. Subject colours match on every device
+6. Friend requests say why
+```
 
 ## Not listed
 
-The friendship RLS and trigger hardening — not something to advertise, and
-already live for every build.
+- The two-finger crash on a scrolling list. Real and fatal, but a student who
+  hit it has no name for it, so the line would mean nothing to them.
+- Admin user search, the community-push key fix, and the friendships integrity
+  migration. Staff console and server work.
+- The Glance lock screen template is gone. Anyone using it is on Today now.
+  Worth a line if the in-app prompt has room; it is not worth one of the very
+  few the stores allow.
 
 ## Ship order
 
-No migration. Run `supabase-whats-new-v184.sql` only once the build is live on
-both stores.
+The `20260929000001_friendships_integrity` migration must be run before this
+build reaches students: the app now reads a pair as a list and reports what a
+failed request actually was, which relies on one row per pair.

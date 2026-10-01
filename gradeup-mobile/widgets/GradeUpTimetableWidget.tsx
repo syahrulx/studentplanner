@@ -61,10 +61,16 @@ function GradeUpTimetableWidgetView(props: HomeWidgetProps | null | undefined, _
     );
   }
 
-  // WidgetKit's systemSmall and systemMedium families are both short. Capping
-  // their rows prevents the 3–6 class layout from extending below the widget;
-  // the header still reports the full class count.
-  const maxItems = small ? 2 : family === 'systemMedium' ? 4 : 6;
+  // WidgetKit's systemSmall and systemMedium families are both short, so the
+  // rows are capped and the header still reports the full class count.
+  //
+  // Small is four, not two. Two silently disabled the dense layout below:
+  // it turns on at `cls.length > 2`, so a cap of two meant a small widget
+  // could never reach it and fell back to a flat list that showed half a
+  // student's day — "3 classes" in the header with two listed. Four fills the
+  // two-by-two grid the dense layout is built for. Six is left to the large
+  // family, where the third row has somewhere to go.
+  const maxItems = small ? 4 : family === 'systemMedium' ? 4 : 6;
   const cls = p.classes.slice(0, maxItems);
   const isDense = cls.length > 2;
   const denseSmall = small && isDense;
