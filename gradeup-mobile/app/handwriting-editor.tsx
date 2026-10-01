@@ -19,6 +19,8 @@ import {
 } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 import * as FileSystem from 'expo-file-system/legacy';
+import { ensurePdfJsViewer, needsPdfJsViewer, pdfViewerUriFor } from '@/src/lib/pdfPageViewer';
+import { captureError } from '@/src/lib/monitoring';
 import {
   Gesture,
   GestureDetector,
@@ -186,8 +188,19 @@ function ContinuousPage({
       return;
     }
     setLoadingPdf(true);
-    void loadPdfPage(page.pdfPageNumber).then((uri) => {
+    void loadPdfPage(page.pdfPageNumber).then(async (uri) => {
       if (!active) return;
+      // Android's WebView cannot draw a PDF; it shows white. Point it at the
+      // PDF.js viewer instead. iOS renders PDFs natively and is left as it is.
+      // If the viewer could not be prepared, fall through to the raw file:
+      // that is what shipped before, so a failure here is never a regression.
+      if (uri && needsPdfJsViewer()) {
+        const viewer = await ensurePdfJsViewer();
+        if (!active) return;
+        setPdfUri(viewer ? pdfViewerUriFor(viewer, uri) : uri);
+        setLoadingPdf(false);
+        return;
+      }
       setPdfUri(uri);
       setLoadingPdf(false);
     });
@@ -206,6 +219,24 @@ function ContinuousPage({
             scrollEnabled={false}
             originWhitelist={['*']}
             allowFileAccess
+            // The viewer page imports pdf.min.mjs and reads the page file from
+            // the same folder, which a file:// document may not do by default.
+            allowFileAccessFromFileURLs
+            allowUniversalAccessFromFileURLs
+            // A page that cannot be drawn says so on screen. Reported here too,
+            // because this bug lived from July to October looking like an empty
+            // PDF rather than a viewer that never ran.
+            onMessage={(e) => {
+              try {
+                const msg = JSON.parse(e.nativeEvent.data) as { type?: string; where?: string; detail?: string };
+                if (msg?.type === 'pdf-error') {
+                  captureError(new Error(`PDF page did not render: ${msg.where} — ${msg.detail}`), {
+                    operation: 'pdf_page_render',
+                    platform: Platform.OS,
+                  });
+                }
+              } catch {}
+            }}
           />
         ) : null}
         {loadingPdf ? (
@@ -627,10 +658,23 @@ export default function HandwritingEditor() {
     }
     void getNoteAttachmentUrl(note.attachmentPath).then(async ({ url }) => {
       if (!active) return;
-      if (!url) return;
+      // Each of these used to return in silence, so a note that would not open
+      // looked identical whether the link failed, the download failed or the
+      // file would not parse — and nothing reached Sentry either way.
+      if (!url) {
+        captureError(new Error('PDF note: no signed URL for the attachment'), {
+          operation: 'pdf_note_load', platform: Platform.OS,
+        });
+        return;
+      }
       try {
         const response = await fetch(url);
-        if (!response.ok) return;
+        if (!response.ok) {
+          captureError(new Error(`PDF note: attachment download failed (${response.status})`), {
+            operation: 'pdf_note_load', platform: Platform.OS,
+          });
+          return;
+        }
         const document = await PDFDocument.load(await response.arrayBuffer(), {
           ignoreEncryption: true,
         });
@@ -645,8 +689,12 @@ export default function HandwritingEditor() {
           }),
         ));
         setPdfPageCount(document.getPageCount());
-      } catch {
-        // The editor still opens page one if page counting is unavailable.
+      } catch (e) {
+        // The editor still opens, but with no source document every page comes
+        // out blank, so this is worth knowing about rather than swallowing.
+        captureError(e instanceof Error ? e : new Error('PDF note: could not read the document'), {
+          operation: 'pdf_note_load', platform: Platform.OS,
+        });
       }
     });
     return () => { active = false; };
