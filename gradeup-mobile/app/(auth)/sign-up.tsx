@@ -318,7 +318,15 @@ export default function SignUp() {
         email: trimmedEmail,
         password,
         options: {
-          data: { full_name: trimmedName, university: university.name },
+          // handle_new_user builds the profile from these. With email
+          // confirmation on there is no session yet, so the upsert below
+          // can't run and this metadata is all the profile gets.
+          data: {
+            full_name: trimmedName,
+            university: university.name,
+            university_id: university.id,
+            country,
+          },
           // After the user clicks the confirm link in their inbox, Supabase
           // verifies the token and then redirects the browser to this URL.
           // It MUST be HTTPS so iOS Safari accepts it; the landing page itself
@@ -343,20 +351,22 @@ export default function SignUp() {
         return;
       }
       if (data.user) {
-        try {
-          await supabase.from('profiles').upsert(
-            {
-              id: data.user.id,
-              name: trimmedName,
-              university: university.name,
-              university_id: university.id,
-              country,
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: 'id' }
-          );
-        } catch {}
+        // Only with a session: without one this goes out as anon and RLS
+        // rejects it (42501) — handle_new_user has already written the row.
         if (data.session) {
+          try {
+            await supabase.from('profiles').upsert(
+              {
+                id: data.user.id,
+                name: trimmedName,
+                university: university.name,
+                university_id: university.id,
+                country,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: 'id' }
+            );
+          } catch {}
           router.replace('/(tabs)');
         } else {
           setError('Check your email to confirm your account, then log in.');
