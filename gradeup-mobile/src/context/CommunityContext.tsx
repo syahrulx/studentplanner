@@ -53,6 +53,12 @@ const SNAP_FILTER_MAX_IDS = 100;
 // AppState going active). Anything asked for within this window of a run is served
 // by that run instead of starting a second one.
 const REFRESH_ALL_COALESCE_MS = 3_000;
+// Coming back to the foreground skips the full refresh if the last one
+// finished less than this long ago. Students flip in and out of the app all
+// the time: on 1.8.5 this refresh ran ~5.5 times per user per hour, ~12 requests
+// each, the largest share of all API traffic (2026-10-01). Realtime already
+// pushes the changes that matter in between. Pull-to-refresh is not affected.
+const FOREGROUND_REFRESH_MIN_GAP_MS = 60_000;
 
 // =============================================================================
 // CONTEXT TYPE
@@ -568,7 +574,9 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
     const appStateSub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
-        void refreshAll();
+        if (Date.now() - refreshAllFinishedAtRef.current >= FOREGROUND_REFRESH_MIN_GAP_MS) {
+          void refreshAll();
+        }
         startPolling();
       } else {
         stopPolling();
