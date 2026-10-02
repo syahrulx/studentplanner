@@ -1871,7 +1871,13 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
-    borderLeftWidth: StyleSheet.hairlineWidth,
+    // A full point, not a hairline. A hairline is one device pixel, and at the
+    // border colour against a dark background that sits right on the edge of
+    // visible: scrolled half a column, or looked at in a scaled screenshot,
+    // some day separators drop below the threshold while their neighbours stay
+    // and the grid looks like it has a line missing. The horizontal hour lines
+    // stay hairlines — they are the quieter grid, and they never disappeared.
+    borderLeftWidth: 1,
   },
   gridColHeadLabel: { fontSize: 12, fontWeight: '800' },
   gridColCount: {
@@ -1902,7 +1908,9 @@ const s = StyleSheet.create({
   gridHourText: { fontSize: 10, fontWeight: '600' },
   gridDayCol: {
     position: 'relative',
-    borderLeftWidth: StyleSheet.hairlineWidth,
+    // Matches gridColHead above, so the header's separator and the body's line
+    // up as one unbroken line down the grid.
+    borderLeftWidth: 1,
   },
   gridHourLine: {
     position: 'absolute',
