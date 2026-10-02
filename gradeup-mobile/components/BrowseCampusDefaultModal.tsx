@@ -19,6 +19,12 @@ type Props = {
   suggestedCampusId?: string | null;
   onPickCampus: (campusId: string) => void;
   onPickAllCampuses: () => void;
+  /**
+   * Closed without choosing. Nothing is saved, so the prompt comes back next
+   * time — which is the point: a student who is not ready to answer should not
+   * have a preference written for them.
+   */
+  onDismiss: () => void;
 };
 
 /**
@@ -32,13 +38,28 @@ export default function BrowseCampusDefaultModal({
   suggestedCampusId,
   onPickCampus,
   onPickAllCampuses,
+  onDismiss,
 }: Props) {
   const theme = useTheme();
 
+  // Every ordinary way out works. This used to have an empty onRequestClose,
+  // no close control and a dead backdrop, so the sheet could only be left by
+  // picking something — and on Android the back button was swallowed too,
+  // which leaves a student genuinely stuck on the Services tab.
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={() => {}}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onDismiss}>
       <View style={styles.overlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onDismiss} accessibilityRole="button" accessibilityLabel="Close" />
         <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Pressable
+            onPress={onDismiss}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+            style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.6 }]}
+          >
+            <Feather name="x" size={20} color={theme.textSecondary} />
+          </Pressable>
           <View style={[styles.iconWrap, { backgroundColor: theme.primary + '18' }]}>
             <Feather name="map-pin" size={28} color={theme.primary} />
           </View>
@@ -98,6 +119,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.55)',
     justifyContent: 'center',
     paddingHorizontal: 22,
+  },
+  closeBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
   },
   card: {
     borderRadius: 18,

@@ -1575,6 +1575,15 @@ export default function ServicesBoard() {
           holdsCampusModalLockRef.current = false;
           releaseBrowseCampusModal(userId, userUni);
         }}
+        onDismiss={() => {
+          // Closed without answering. No preference is written, so the prompt
+          // returns next time; the board still has to be let go, or it waits
+          // on a campus that is never coming and spins for ever.
+          setShowCampusDefaultModal(false);
+          setBrowseCampusReady(true);
+          holdsCampusModalLockRef.current = false;
+          if (userId && userUni) releaseBrowseCampusModal(userId, userUni);
+        }}
       />
     </View>
   );
