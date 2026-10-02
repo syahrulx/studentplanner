@@ -373,6 +373,34 @@ export default function TimetableScreen() {
     : null;
 
   const gridBodyHeight = (END_HOUR - START_HOUR) * HOUR_HEIGHT;
+
+  /**
+   * What a saved picture should actually contain.
+   *
+   * On screen the whole 07:00-23:00 window is drawn, because scrolling past the
+   * empty parts costs nothing. A picture cannot scroll, so every empty hour and
+   * every classless day is dead space that makes the real classes smaller. So
+   * the export keeps only the days that have a class, and only the hours
+   * between the first start and the last finish.
+   */
+  const exportRange = useMemo(() => {
+    const days = daysForWeekGrid.filter((d) => timetable.some((e) => e.day === d.key));
+    const useDays = days.length > 0 ? days : daysForWeekGrid;
+    const shown = timetable.filter((e) => useDays.some((d) => d.key === e.day));
+
+    let startHour = START_HOUR;
+    let endHour = END_HOUR;
+    if (shown.length > 0) {
+      const first = Math.min(...shown.map((e) => timeToMinutes(e.startTime)));
+      const last = Math.max(...shown.map((e) => timeToMinutes(e.endTime)));
+      startHour = Math.max(START_HOUR, Math.floor(first / 60));
+      // A class ending at 10:30 needs the 11:00 line, one ending at 10:00 does
+      // not — hence ceil on the hour rather than on the minute.
+      endHour = Math.min(END_HOUR, Math.ceil(last / 60));
+      if (endHour <= startHour) endHour = Math.min(END_HOUR, startHour + 1);
+    }
+    return { days: useDays, startHour, endHour, bodyHeight: (endHour - startHour) * HOUR_HEIGHT };
+  }, [daysForWeekGrid, timetable]);
   const gridContentWidth = TIME_GUTTER + daysForWeekGrid.length * dayColumnWidth;
   const gridScrollMaxH = Math.max(280, Math.min(gridBodyHeight + 8, winH - (Platform.OS === 'ios' ? 210 : 190)));
 
@@ -1131,6 +1159,20 @@ export default function TimetableScreen() {
    * argument instead of a second copy of the layout.
    */
   /**
+   * How tall one hour is in a picture of a given height.
+   *
+   * On screen an hour is a fixed 56pt and the grid scrolls. A picture cannot
+   * scroll, so once the empty hours are cropped away the remaining ones are
+   * stretched to fill the canvas instead — that is what makes the classes big
+   * rather than a small timetable floating in a lot of nothing. Never smaller
+   * than the screen's own 56pt, or the text inside a cell stops fitting.
+   */
+  function exportHourHeight(canvasH: number) {
+    const hourCount = Math.max(1, exportRange.endHour - exportRange.startHour);
+    return Math.max(HOUR_HEIGHT, Math.floor((canvasH - GRID_HEADER_H - 8) / hourCount));
+  }
+
+  /**
    * The picture the student is about to save, drawn once and used twice: on
    * screen as the preview, and off screen at full pixel size for the capture.
    * One function so what they position is exactly what lands in Photos.
@@ -1139,8 +1181,9 @@ export default function TimetableScreen() {
     // The grid is drawn at the picture's width, then scaled by the student's
     // zoom. Its natural height is every hour at once, so most of the time it is
     // taller than the picture and `position` chooses which part shows.
+    const hourCount = Math.max(1, exportRange.endHour - exportRange.startHour);
     const gridW = boxW * wallZoom;
-    const gridH = (GRID_HEADER_H + gridBodyHeight + 8) * wallZoom;
+    const gridH = (GRID_HEADER_H + hourCount * exportHourHeight(boxH) + 8) * wallZoom;
     const spare = boxH - gridH;
     // When the grid is shorter than the picture the fraction places it in the
     // gap; when it is taller the same fraction chooses the visible slice, since
@@ -1158,7 +1201,7 @@ export default function TimetableScreen() {
             transformOrigin: 'top left',
           }}
         >
-          <View style={{ width: boxW }}>{renderWeekGrid({ width: boxW })}</View>
+          <View style={{ width: boxW }}>{renderWeekGrid({ width: boxW, height: boxH })}</View>
         </View>
       </View>
     );
@@ -1283,7 +1326,8 @@ export default function TimetableScreen() {
    * push it bigger if they would rather crop than shrink.
    */
   function openWallpaper() {
-    const naturalH = GRID_HEADER_H + gridBodyHeight + 8;
+    const hourCount = Math.max(1, exportRange.endHour - exportRange.startHour);
+    const naturalH = GRID_HEADER_H + hourCount * exportHourHeight(winH) + 8;
     // Rounded down to the steppers' own 0.01 grid, so the first press of minus
     // or plus lands on a round number rather than drifting off it.
     const fit = Math.floor((winH / naturalH) * 100) / 100;
@@ -1306,15 +1350,23 @@ export default function TimetableScreen() {
     }
   }
 
-  function renderWeekGrid(forExport?: { width: number }) {
-    const hours = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
+  function renderWeekGrid(forExport?: { width: number; height: number }) {
+    // A picture is cropped to the timetabled days and hours; the screen keeps
+    // the full window, because scrolling past the empty parts costs nothing.
+    const gridDays = forExport ? exportRange.days : daysForWeekGrid;
+    const firstHour = forExport ? exportRange.startHour : START_HOUR;
+    const lastHour = forExport ? exportRange.endHour : END_HOUR;
+    const hourH = forExport ? exportHourHeight(forExport.height) : HOUR_HEIGHT;
+    const bodyH = (lastHour - firstHour) * hourH;
+
+    const hours = Array.from({ length: lastHour - firstHour }, (_, i) => firstHour + i);
     const hScrollWeekOrCompactAllDays = !forExport
       && (slotDetails.scrollAllDaysInCompact || daysForWeekGrid.length > 5);
     const exportColW = forExport
-      ? Math.max(50, Math.floor((forExport.width - TIME_GUTTER) / Math.max(1, daysForWeekGrid.length)))
+      ? Math.max(50, Math.floor((forExport.width - TIME_GUTTER) / Math.max(1, gridDays.length)))
       : dayColumnWidth;
     const dayColW = exportColW;
-    const exportTableW = TIME_GUTTER + daysForWeekGrid.length * dayColW;
+    const exportTableW = TIME_GUTTER + gridDays.length * dayColW;
     const minTableW = forExport
       ? exportTableW
       : hScrollWeekOrCompactAllDays ? Math.max(gridContentWidth, winW) : gridContentWidth;
@@ -1332,7 +1384,7 @@ export default function TimetableScreen() {
           <View style={{ width: minTableW }}>
             <View style={[s.gridHeaderRow, { borderBottomColor: theme.border }]}>
               <View style={[s.gridCorner, { width: TIME_GUTTER }]} />
-              {daysForWeekGrid.map(({ key, shortKey }) => {
+              {gridDays.map(({ key, shortKey }) => {
                 const count = timetable.filter((e) => e.day === key).length;
                 return (
                   <View
@@ -1359,15 +1411,15 @@ export default function TimetableScreen() {
 
             <ScrollView
               scrollEnabled={!forExport}
-              style={forExport ? { height: gridBodyHeight + 8 } : { maxHeight: gridScrollMaxH }}
+              style={forExport ? { height: bodyH + 8 } : { maxHeight: gridScrollMaxH }}
               nestedScrollEnabled
               showsVerticalScrollIndicator
               bounces={false}
             >
-              <View style={[s.gridBodyRow, { minHeight: gridBodyHeight }]}>
+              <View style={[s.gridBodyRow, { minHeight: bodyH }]}>
                 <View style={[s.gridTimeCol, { width: TIME_GUTTER }]}>
                   {hours.map((h) => (
-                    <View key={h} style={{ height: HOUR_HEIGHT, paddingTop: 2 }}>
+                    <View key={h} style={{ height: hourH, paddingTop: 2 }}>
                       <Text style={[s.gridHourText, { color: isPurpleTheme ? '#4f5f86' : theme.textSecondary }]}>
                         {formatHourLabel(h, slotDetails.use12HourTime)}
                       </Text>
@@ -1375,7 +1427,7 @@ export default function TimetableScreen() {
                   ))}
                 </View>
 
-                {daysForWeekGrid.map(({ key }) => {
+                {gridDays.map(({ key }) => {
                   const items = timetable
                     .filter((e) => e.day === key)
                     .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
@@ -1386,7 +1438,7 @@ export default function TimetableScreen() {
                         s.gridDayCol,
                         {
                           width: dayColW,
-                          minHeight: gridBodyHeight,
+                          minHeight: bodyH,
                           borderLeftColor: theme.border,
                           backgroundColor: 'transparent',
                         },
@@ -1398,7 +1450,7 @@ export default function TimetableScreen() {
                           style={[
                             s.gridHourLine,
                             {
-                              top: (h - START_HOUR) * HOUR_HEIGHT,
+                              top: (h - firstHour) * hourH,
                               backgroundColor: theme.border,
                             },
                           ]}
@@ -1414,8 +1466,8 @@ export default function TimetableScreen() {
                               style={[
                                 s.gridAddCell,
                                 {
-                                  top: (h - START_HOUR) * HOUR_HEIGHT,
-                                  height: HOUR_HEIGHT,
+                                  top: (h - firstHour) * hourH,
+                                  height: hourH,
                                 },
                               ]}
                               onPress={() =>
@@ -1435,8 +1487,8 @@ export default function TimetableScreen() {
                       {items.map((entry) => {
                         const startMin = timeToMinutes(entry.startTime);
                         const endMin = timeToMinutes(entry.endTime);
-                        const top = ((startMin / 60) - START_HOUR) * HOUR_HEIGHT;
-                        const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 26);
+                        const top = ((startMin / 60) - firstHour) * hourH;
+                        const height = Math.max(((endMin - startMin) / 60) * hourH, 26);
                         const color = resolveSlotColor(entry);
                         const title = entryDisplayTitle(entry);
                         const primaryLabel = entryPrimaryLabel(entry, slotDetails.courseName);

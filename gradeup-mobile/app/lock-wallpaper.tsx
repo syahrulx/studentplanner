@@ -122,7 +122,16 @@ const UPDATE_CAPTION_VISITS = 3;
 const FALLBACK_BANNER_KEY = 'lock_screen_fallback_banner_v1';
 
 /** The scrubber's Backup chip, after today..today+6. */
-const BACKUP_INDEX = 7;
+/**
+ * The backup chip's index, deliberately outside any array.
+ *
+ * It used to be 7, which was free only while the scrubber showed exactly seven
+ * days. When RENDER_DAYS became 14 the eighth day took index 7 too: React saw
+ * two chips keyed `7`, and `isBackup` matched that real day, so tapping it
+ * showed the fallback design instead of its timetable. A negative sentinel can
+ * never be a day index, however many days are rendered.
+ */
+const BACKUP_INDEX = -1;
 
 const AUTO_SETUP_DELAY_MS = 350;
 const BANNER_MS = 6000;
