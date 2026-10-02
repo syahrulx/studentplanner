@@ -71,7 +71,7 @@ import {
   type PlannerViewMode,
   type WeekStartsOn,
 } from '../storage';
-import { SUBJECT_COLOR_OPTIONS } from '../constants/subjectColors';
+import { subjectAutoColor } from '../lib/timetableSlotColors';
 import {
   scheduleRevisionNotification,
   cancelAllRevisionNotifications,
@@ -2075,9 +2075,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const DEFAULT_PALETTE = SUBJECT_COLOR_OPTIONS.slice(0, 10);
+  // The automatic colour comes from subjectAutoColor, the same one the
+  // timetable, the lock screen and the picture export use. This used to hash
+  // into its own copy of the palette, which is why a subject could be indigo
+  // here and red on the timetable.
   const getSubjectColor = useCallback((courseId: string): string => {
-    return subjectColors[courseId] ?? DEFAULT_PALETTE[Math.abs(courseId.split('').reduce((a, c) => ((a << 5) - a) + c.charCodeAt(0), 0)) % DEFAULT_PALETTE.length];
+    return subjectColors[courseId] ?? subjectAutoColor(courseId);
   }, [subjectColors]);
 
   const setSubjectColor = useCallback((courseId: string, color: string) => {

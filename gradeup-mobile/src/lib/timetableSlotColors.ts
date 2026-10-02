@@ -1,17 +1,34 @@
+import { SUBJECT_COLOR_OPTIONS } from '../constants/subjectColors';
 import { subjectKey } from './subjectOptions';
 
-const SLOT_COLORS = [
-  '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981',
-  '#ef4444', '#06b6d4', '#6366f1', '#84cc16', '#f97316',
-];
+/**
+ * The automatic colour a subject gets before anyone picks one.
+ *
+ * There used to be two of these: the Study tab hashed the code into
+ * SUBJECT_COLOR_OPTIONS while the timetable hashed it into a different list of
+ * ten. Same code, same hash, different arrays — so CSP650 was indigo in Study
+ * and red on the timetable, ENT600 red in Study and violet on the timetable,
+ * and so on for every subject. One palette, in one place, so they cannot drift
+ * apart again.
+ *
+ * The code is normalised first, or "csp650" and "CSP650" hash to different
+ * colours for what the student considers one subject.
+ */
+const AUTO_COLORS = SUBJECT_COLOR_OPTIONS.slice(0, 10);
 
-export function getSlotColorForSubjectCode(code: string): string {
+export function subjectAutoColor(code: string): string {
+  const key = subjectKey(code);
   let hash = 0;
-  for (let i = 0; i < code.length; i++) hash = ((hash << 5) - hash) + code.charCodeAt(i);
-  return SLOT_COLORS[Math.abs(hash) % SLOT_COLORS.length];
+  for (let i = 0; i < key.length; i++) hash = ((hash << 5) - hash) + key.charCodeAt(i);
+  return AUTO_COLORS[Math.abs(hash) % AUTO_COLORS.length];
 }
 
-export const TIMETABLE_SLOT_COLOR_OPTIONS = [...SLOT_COLORS];
+export function getSlotColorForSubjectCode(code: string): string {
+  return subjectAutoColor(code);
+}
+
+/** What the per-class colour picker offers. Every colour a subject can be. */
+export const TIMETABLE_SLOT_COLOR_OPTIONS = [...SUBJECT_COLOR_OPTIONS];
 
 export function getTimetableEntryColor(
   e: { subjectCode: string; slotColor?: string },
