@@ -29,6 +29,7 @@ import { CalendarOfferOption } from "@/components/calendar/CalendarOfferOption";
 import { groupOffersForPicker } from "@/src/lib/calendarTimeline";
 import { supabase } from "@/src/lib/supabase";
 import { useTranslations } from "@/src/i18n";
+import { formatDisplayDate } from "@/src/utils/date";
 import {
   getAcademicProgressFromCalendar,
   getAcademicProgress,
@@ -1256,8 +1257,11 @@ export default function AcademicCalendarScreen() {
                 justifyContent: "space-between",
               }}
             >
+              {/* dd-mm-yyyy, the format src/utils/date.ts calls the one the
+                  user sees. This printed the raw yyyy-mm-dd, the storage form,
+                  which is the only place in the app that leaked out. */}
               <Text style={[s.detailDate, { color: theme.text }]}>
-                {selectedDayISO}
+                {formatDisplayDate(selectedDayISO)}
               </Text>
               <Pressable onPress={() => setSelectedDayISO("")} hitSlop={8}>
                 <Feather name="x" size={18} color={theme.textSecondary} />
