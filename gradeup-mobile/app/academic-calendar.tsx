@@ -98,7 +98,9 @@ function levelForOffer(offer: UniversityCalendarOffer): AcademicLevel {
 }
 
 function offerSummary(offer: UniversityCalendarOffer, todayISO: string): string {
-  const details: string[] = [`${offer.startDate} to ${offer.endDate}`];
+  const details: string[] = [
+    `${formatDisplayDate(offer.startDate)} to ${formatDisplayDate(offer.endDate)}`,
+  ];
   if (offer.startDate <= todayISO && todayISO <= offer.endDate) details.push("Current");
   if (/short|special|inter.?session/i.test(offer.semesterLabel) || offer.totalWeeks <= 8) {
     details.push("Short semester");
@@ -1349,8 +1351,8 @@ export default function AcademicCalendarScreen() {
                                   { color: theme.textSecondary },
                                 ]}
                               >
-                                {String(p.startDate).slice(0, 10)} →{" "}
-                                {String(p.endDate).slice(0, 10)}
+                                {formatDisplayDate(String(p.startDate))} →{" "}
+                                {formatDisplayDate(String(p.endDate))}
                               </Text>
                             ) : null}
                           </View>
@@ -1566,7 +1568,7 @@ export default function AcademicCalendarScreen() {
                           <Feather name={cfgUitmCalendarSource === "community" && cfgSelectedUitmCommunityId === offer.id ? "check-circle" : "circle"} size={18} color={cfgUitmCalendarSource === "community" && cfgSelectedUitmCommunityId === offer.id ? theme.primary : theme.textSecondary} />
                           <View style={{ flex: 1 }}>
                             <Text style={[s.optText, { color: theme.text }]} numberOfLines={2}>{offer.semesterLabel}</Text>
-                            <Text style={[s.modalSub, { color: theme.textSecondary, marginTop: 2 }]}>{offer.startDate} to {offer.endDate} · {offer.calendarVariant === "kkt" ? "Kedah/Kelantan/Terengganu" : "Standard"}</Text>
+                            <Text style={[s.modalSub, { color: theme.textSecondary, marginTop: 2 }]}>{formatDisplayDate(offer.startDate)} to {formatDisplayDate(offer.endDate)} · {offer.calendarVariant === "kkt" ? "Kedah/Kelantan/Terengganu" : "Standard"}</Text>
                           </View>
                         </TouchableOpacity>
                       ))}
