@@ -77,7 +77,6 @@ const HOUR_HEIGHT = 56;
  * around 3000x6500 that some phones run out of memory capturing, and a
  * wallpaper does not need it.
  */
-const SCREEN_PX_SCALE = 2;
 
 /** The day-name row above the grid; gridColHead's minHeight. */
 const GRID_HEADER_H = 48;
@@ -238,6 +237,8 @@ export default function TimetableScreen() {
   // clock and the lock screen furniture sit over the top of it and cover
   // whatever happens to be there.
   const [wallpaperOpen, setWallpaperOpen] = useState(false);
+  /** What to open once the options sheet has finished closing. */
+  const [afterMenu, setAfterMenu] = useState<'wallpaper' | null>(null);
   const [wallLandscape, setWallLandscape] = useState(false);
   /** Where the grid sits in the picture, as a fraction of the spare room: 0 top, 1 bottom. */
   const [wallPosition, setWallPosition] = useState(0.5);
@@ -904,7 +905,14 @@ export default function TimetableScreen() {
         onLockScreen={go(() => router.push('/lock-wallpaper' as any))}
         pdfOrientation={pdfOrientation}
         onExportPdf={(orientation) => void exportPdf(orientation)}
-        onSaveImage={() => { setMenuOpen(false); setWallpaperOpen(true); }}
+        // Queued, not opened here: the sheet above is still playing its
+        // slide-out, and iOS drops a modal presented over a dismissing one.
+        onSaveImage={() => { setMenuOpen(false); setAfterMenu('wallpaper'); }}
+        onClosed={() => {
+          if (afterMenu !== 'wallpaper') return;
+          setAfterMenu(null);
+          openWallpaper();
+        }}
         exportingPdf={exportingPdf}
         onReset={go(confirmResetTimetable)}
       />
@@ -1161,13 +1169,24 @@ export default function TimetableScreen() {
     // The picture is the phone's own screen, so it fits as a wallpaper without
     // cropping. Landscape is the same pixels turned, for anyone who wants it on
     // a tablet or to print.
-    const shotW = Math.round(winW * SCREEN_PX_SCALE);
-    const shotH = Math.round(winH * SCREEN_PX_SCALE);
-    const outW = wallLandscape ? shotH : shotW;
-    const outH = wallLandscape ? shotW : shotH;
-    // Preview: the same shape, sized to sit above the controls.
-    const previewH = Math.min(winH * 0.46, 380);
-    const previewW = previewH * (outW / outH);
+    // The canvas is the screen's own size in points, not pixels: captureRef
+    // already renders at the device's pixel ratio, so a 402x874 canvas saves as
+    // 1206x2622 on a 3x phone. Measuring in points also means the grid lays out
+    // exactly as it does on screen, instead of at some invented width where the
+    // columns are a different size and the words break in different places.
+    const outW = wallLandscape ? winH : winW;
+    const outH = wallLandscape ? winW : winH;
+    // Preview: the same canvas, shrunk. Not a second layout at preview size —
+    // that is what made the first version lie about what would be saved.
+    //
+    // Fitted on both axes, not just height: landscape is wider than it is tall,
+    // so sizing by height alone gave the frame a width of winH (874pt) on a
+    // 402pt screen and the preview spilled across the whole phone.
+    const previewBoxH = Math.min(winH * 0.46, 380);
+    const previewBoxW = winW - 72;
+    const previewScale = Math.min(previewBoxW / outW, previewBoxH / outH);
+    const previewW = outW * previewScale;
+    const previewH = outH * previewScale;
 
     return (
       <Modal visible transparent animationType="fade" onRequestClose={() => setWallpaperOpen(false)}>
@@ -1178,7 +1197,16 @@ export default function TimetableScreen() {
             <Text style={[s.wallHint, { color: theme.textSecondary }]}>{T('timetableSaveImageHint')}</Text>
 
             <View style={[s.wallPreviewFrame, { width: previewW, height: previewH, borderColor: theme.border }]}>
-              {renderWallpaper(previewW, previewH)}
+              <View
+                style={{
+                  width: outW,
+                  height: outH,
+                  transform: [{ scale: previewScale }],
+                  transformOrigin: 'top left',
+                }}
+              >
+                {renderWallpaper(outW, outH)}
+              </View>
             </View>
 
             <View style={s.wallRow}>
@@ -1243,6 +1271,25 @@ export default function TimetableScreen() {
         </View>
       </Modal>
     );
+  }
+
+  /**
+   * Open the picture sheet showing the whole week.
+   *
+   * The grid is every hour at once — 48 + 16 x 56 + 8 = 952pt — which is taller
+   * than a phone screen, so at 100% it got centred and the day names fell off
+   * the top. A timetable picture with no day names is not worth saving, so it
+   * opens zoomed to fit instead, anchored at the top. The student can still
+   * push it bigger if they would rather crop than shrink.
+   */
+  function openWallpaper() {
+    const naturalH = GRID_HEADER_H + gridBodyHeight + 8;
+    // Rounded down to the steppers' own 0.01 grid, so the first press of minus
+    // or plus lands on a round number rather than drifting off it.
+    const fit = Math.floor((winH / naturalH) * 100) / 100;
+    setWallZoom(Math.max(0.5, Math.min(1, fit)));
+    setWallPosition(0);
+    setWallpaperOpen(true);
   }
 
   async function saveWallpaper() {
