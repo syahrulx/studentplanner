@@ -2791,12 +2791,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } = await supabase.auth.getSession();
     const uid = session?.user?.id;
     if (!uid) throw new Error('Sign in required to save timetable.');
+    // Insert just this class. It used to push the whole local list through
+    // saveTimetable, which deletes every row first — so adding one class on a
+    // phone wiped anything the server held that the phone had not loaded, and
+    // the two devices ended up showing different weeks.
+    await timetableDb.insertTimetableEntry(uid, entry);
     let merged: TimetableEntry[] = [];
     setTimetable((prev) => {
       merged = [...prev, entry];
       return merged;
     });
-    await timetableDb.saveTimetable(uid, merged);
     scheduleAttendanceNotifications(uid, merged).catch(() => {});
   }, []);
 

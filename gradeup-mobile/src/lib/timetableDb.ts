@@ -121,6 +121,40 @@ export async function saveTimetable(
   if (insErr) throw new Error(insErr.message || 'Failed to save timetable');
 }
 
+/**
+ * Add one class, leaving every other row alone.
+ *
+ * saveTimetable above deletes the whole timetable and writes the list it is
+ * handed, which is right for a portal import that replaces the week. It is
+ * wrong for adding a single class: the list comes from one device's memory, so
+ * anything the server held that this device had not loaded — a class added on
+ * a phone while the laptop was open — was deleted by the act of adding an
+ * unrelated class somewhere else. That is why two devices on one account could
+ * show different weeks.
+ */
+export async function insertTimetableEntry(
+  userId: string,
+  e: TimetableEntry,
+  semesterLabel?: string,
+): Promise<void> {
+  const { error } = await supabase.from('timetable_entries').insert({
+    id: e.id,
+    user_id: userId,
+    day: e.day,
+    subject_code: e.subjectCode,
+    subject_name: e.subjectName,
+    lecturer: e.lecturer,
+    start_time: e.startTime,
+    end_time: e.endTime,
+    location: e.location,
+    group_name: e.group ?? null,
+    semester_label: semesterLabel ?? null,
+    display_name: e.displayName != null && e.displayName.trim() !== '' ? e.displayName.trim() : null,
+    slot_color: e.slotColor != null && e.slotColor.trim() !== '' ? e.slotColor.trim() : null,
+  });
+  if (error) throw new Error(error.message || 'Failed to add the class');
+}
+
 export async function getTimetable(userId: string): Promise<TimetableEntry[]> {
   const { data, error } = await supabase
     .from('timetable_entries')
