@@ -21,6 +21,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useUpgradePrompt } from '@/hooks/useUpgradePrompt';
 import { maxSnapsPerDay, isAtLeastPlus } from '@/src/lib/flashcardGenerationLimits';
 import { uploadSnapImage, postSnap, getMySnapsToday, getMyStreak } from '@/src/lib/snapApi';
+import { captureError } from '@/src/lib/monitoring';
 import type { SnapStreak, SnapAudience } from '@/src/types';
 
 export default function SnapCamera() {
@@ -255,11 +256,23 @@ export default function SnapCamera() {
       return;
     }
 
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      quality: 0.75,
-      allowsEditing: false,
-    });
+    // launchCameraAsync throws outright when there is no usable camera — no
+    // camera at all, or one another app is already holding. Unhandled, the
+    // promise rejects and the student is left on a spinner that never ends,
+    // with nothing on screen telling them why.
+    let result: ImagePicker.ImagePickerResult;
+    try {
+      result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        quality: 0.75,
+        allowsEditing: false,
+      });
+    } catch (e) {
+      captureError(e, { where: 'snapCamera.launchCamera' });
+      Alert.alert('Camera unavailable', 'Your camera could not be opened. Close any other app using it and try again.');
+      router.back();
+      return;
+    }
 
     if (!result.canceled && result.assets?.[0]?.uri) {
       setPhotoUri(result.assets[0].uri);
