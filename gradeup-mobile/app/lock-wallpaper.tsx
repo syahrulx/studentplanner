@@ -342,7 +342,8 @@ export default function LockScreenStudio() {
   const [canvas] = useState(getLockCanvasSize);
   const { W, H, s } = canvas;
   const isIOS = Platform.OS === 'ios';
-  const unsupported = lockScreenUnsupportedReason() != null;
+  const unsupportedReason = lockScreenUnsupportedReason();
+  const unsupported = unsupportedReason != null;
   // The dark-glass accent: the Studio is always dark, and Mono/Spider get white instead of near-black.
   const ink = useMemo(() => resolveLockInk('dark', theme, darkMinimal), [theme, darkMinimal]);
   // For text, links and tracks on the near-black chrome; filled buttons keep ink.accent.
@@ -867,6 +868,20 @@ export default function LockScreenStudio() {
         style={styles.pill}
       />
 
+      {/* An iPad gets no pill and no "Make it automatic", because iPadOS has no
+          Shortcuts action for the wallpaper. Saying so: a student who has seen
+          it work on a friend's iPhone otherwise finds the button simply absent
+          and reports the feature as broken, which is how this was reported. */}
+      {unsupportedReason === 'ipad' && (
+        <View style={[styles.ipadNote, { borderColor: ink.panelBorder, backgroundColor: ink.panelFill }]}>
+          <Feather name="info" size={15} color={ink.text2} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.ipadNoteTitle, { color: ink.text1 }]}>{T('lsIpadTitle')}</Text>
+            <Text style={[styles.ipadNoteBody, { color: ink.text2 }]}>{T('lsIpadBody')}</Text>
+          </View>
+        </View>
+      )}
+
       {/* 3 · Preview, with banners floating over its top edge so the frame never jumps */}
       <Animated.View style={[styles.previewWrap, { minHeight: previewMin }, entryStyle]}>
         {configLoaded ? (
@@ -1378,6 +1393,18 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
   },
+  ipadNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginHorizontal: 20,
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  ipadNoteTitle: { fontSize: 13, fontWeight: '800' },
+  ipadNoteBody: { fontSize: 12, lineHeight: 17, marginTop: 3 },
   pill: {
     marginTop: 6,
     marginBottom: 4,
