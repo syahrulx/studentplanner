@@ -14,7 +14,7 @@ import { useCommunity } from '@/src/context/CommunityContext';
 import { contrastText } from '@/src/lib/contrast';
 import { getTodayISO } from '@/src/utils/date';
 import {
-  CROSSWORD_PUZZLES, buildCells, clueCells, isComplete, checkBonusGuess,
+  CROSSWORD_PUZZLES, MOVIE_CROSSWORD_PUZZLES, buildCells, clueCells, isComplete, checkBonusGuess,
   type CrosswordPuzzle, type CrosswordClue,
 } from '@/src/lib/crosswordEngine';
 import {
@@ -62,6 +62,38 @@ const TITLE_EMOJI: Record<string, string> = {
   'Drinks': '🥤',
   'Countries': '🌍',
   'Time & Calendar': '📅',
+  // Pack 2 — Movie Night. Without these every card in the pack falls back to
+  // the same puzzle piece, and thirty identical tiles are hard to tell apart.
+  'Movie Genres': '🎬',
+  'At the Cinema': '🍿',
+  'Film Crew': '👷',
+  'Camera Shots': '📷',
+  'Animation': '✏️',
+  'Making a Film': '🎥',
+  'Movie Awards': '🏆',
+  'Special Effects': '💥',
+  'Movie Sound': '🔊',
+  'Lights on Set': '💡',
+  'Costume and Makeup': '👗',
+  'The Script': '📜',
+  'Horror Films': '👻',
+  'Science Fiction': '🛸',
+  'Action Films': '💣',
+  'Comedy Films': '😂',
+  'Film Festivals': '🎟️',
+  'Film Editing': '✂️',
+  'Movie Theatres': '🎦',
+  'Behind the Scenes': '🎭',
+  'Film Story': '📖',
+  'Western Films': '🤠',
+  'Movie Snacks': '🥤',
+  'Film Studios': '🏢',
+  'Movie Villains': '😈',
+  'On Location': '🗺️',
+  'Film Tech': '🎛️',
+  'Fantasy Films': '🐉',
+  'Watching at Home': '📺',
+  'Film Words': '🎞️',
 };
 const titleEmoji = (title: string) => TITLE_EMOJI[title] ?? '🧩';
 
@@ -121,17 +153,21 @@ export default function CrosswordScreen() {
   // blocked/empty while this is in flight.
   const [remotePuzzles, setRemotePuzzles] = useState<CrosswordPuzzle[]>([]);
   useEffect(() => { fetchAdminCrosswordPuzzles().then(setRemotePuzzles); }, []);
-  const allPuzzles = useMemo(() => [...CROSSWORD_PUZZLES, ...remotePuzzles], [remotePuzzles]);
+  const allPuzzles = useMemo(
+    () => [...CROSSWORD_PUZZLES, ...MOVIE_CROSSWORD_PUZZLES, ...remotePuzzles],
+    [remotePuzzles],
+  );
   /**
-   * The two packs, kept apart on screen.
+   * The packs, kept apart on screen.
    *
-   * The Starter Pack is the built-in set that ships with the app; everything
-   * admin-created arrives separately and begins at id 31. Both used to be
-   * poured into one list, so the first admin puzzle appeared inside the
-   * Starter Pack while the Pack 2 card below still said "coming soon".
+   * Two ship with the app — the Starter Pack at ids 1-30 and Movie Night at
+   * 101-130 — and anything an admin adds arrives separately in the 31-100 gap.
+   * All three used to be poured into one list, so an admin puzzle appeared
+   * inside the Starter Pack while the card below still promised a Pack 2.
    */
   const pack1 = CROSSWORD_PUZZLES;
-  const pack2 = remotePuzzles;
+  const pack2 = MOVIE_CROSSWORD_PUZZLES;
+  const extraPuzzles = remotePuzzles;
 
   const activePuzzle = activeId != null ? allPuzzles.find((p) => p.id === activeId) : null;
 
@@ -289,7 +325,7 @@ export default function CrosswordScreen() {
           <View style={[styles.grid, { marginTop: 14 }]}>{pack1.map(renderLevel)}</View>
           )}
 
-          {/* Set 2 — a real pack once it has puzzles, the promise until then. */}
+          {/* Set 2 — Movie Night. */}
           {pack2.length > 0 ? (
             <>
               <Pressable
@@ -300,7 +336,7 @@ export default function CrosswordScreen() {
                   <Text style={[styles.setBadgeNum, { color: onPrimary }]}>2</Text>
                 </LinearGradient>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.setTitle, { color: theme.text }]}>Pack 2</Text>
+                  <Text style={[styles.setTitle, { color: theme.text }]}>Movie Night</Text>
                   <Text style={[styles.setSub, { color: theme.textSecondary }]}>
                     {pack2.length} puzzle{pack2.length === 1 ? '' : 's'} · unlock 2 a day, in order
                   </Text>
@@ -313,6 +349,27 @@ export default function CrosswordScreen() {
 
               {set2Open && (
                 <View style={[styles.grid, { marginTop: 14 }]}>{pack2.map(renderLevel)}</View>
+              )}
+
+              {/* Anything an admin adds, in the id gap between the two packs. */}
+              {extraPuzzles.length > 0 && (
+                <>
+                  <View style={[styles.setHeader, { backgroundColor: theme.card, marginTop: 18 }]}>
+                    <LinearGradient colors={[theme.primary, theme.primary + 'CC']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.setBadge}>
+                      <Feather name="plus" size={18} color={onPrimary} />
+                    </LinearGradient>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.setTitle, { color: theme.text }]}>Extra Puzzles</Text>
+                      <Text style={[styles.setSub, { color: theme.textSecondary }]}>
+                        {extraPuzzles.length} puzzle{extraPuzzles.length === 1 ? '' : 's'} · added since the app shipped
+                      </Text>
+                    </View>
+                    <View style={[styles.setPill, { backgroundColor: theme.primary + '1A' }]}>
+                      <Text style={[styles.setCount, { color: theme.primary }]}>{solvedIn(extraPuzzles)}/{extraPuzzles.length}</Text>
+                    </View>
+                  </View>
+                  <View style={[styles.grid, { marginTop: 14 }]}>{extraPuzzles.map(renderLevel)}</View>
+                </>
               )}
             </>
           ) : (

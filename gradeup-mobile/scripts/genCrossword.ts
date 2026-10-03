@@ -17,6 +17,7 @@ import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { THEMES, type Theme } from './crosswordBanks';
+import { MOVIE_THEMES } from './crosswordBanksMovies';
 
 const SIZE = 7;
 type Dir = 'across' | 'down';
@@ -249,27 +250,39 @@ function asciiPreview(p: OutPuzzle): string {
 
 // ───────────────────────────── run ─────────────────────────────
 const write = process.argv.includes('--write');
-const puzzles: OutPuzzle[] = [];
 let minWords = 99;
 const report: string[] = [];
 
-THEMES.forEach((theme, idx) => {
-  const id = idx + 1;
-  const placed = buildPuzzle(theme, id);
-  const pz = finalize(theme, id, placed);
-  puzzles.push(pz);
-  minWords = Math.min(minWords, pz.clues.length);
-  report.push(
-    `#${id} ${theme.title}: ${pz.clues.length} words, bonus="${pz.bonusWord}"` +
-      (pz.clues.length < 6 ? '  <-- LOW' : ''),
-  );
-  if (write) {
-    // also print previews when writing for spot-checking
-  }
-});
+/**
+ * Ids are allotted per pack, with a gap between them.
+ *
+ * The Starter Pack keeps 1-30 because players' saved results are keyed by id
+ * and renumbering would hand them somebody else's progress. Movie Night starts
+ * at 101, leaving 31-100 for admin-created levels, which are what the app
+ * already expects above 30.
+ */
+function buildPack(themes: Theme[], firstId: number, label: string): OutPuzzle[] {
+  const out: OutPuzzle[] = [];
+  themes.forEach((theme, idx) => {
+    const id = firstId + idx;
+    const pz = finalize(theme, id, buildPuzzle(theme, id));
+    out.push(pz);
+    minWords = Math.min(minWords, pz.clues.length);
+    report.push(
+      `${label} #${id} ${theme.title}: ${pz.clues.length} words, bonus="${pz.bonusWord}"` +
+        (pz.clues.length < 6 ? '  <-- LOW' : ''),
+    );
+  });
+  return out;
+}
+
+const puzzles = buildPack(THEMES, 1, 'starter');
+const moviePuzzles = buildPack(MOVIE_THEMES, 101, 'movies ');
 
 console.log(report.join('\n'));
-console.log(`\nTotal puzzles: ${puzzles.length}, fewest words in a puzzle: ${minWords}`);
+console.log(
+  `\nStarter: ${puzzles.length}, Movies: ${moviePuzzles.length}, fewest words in a puzzle: ${minWords}`,
+);
 
 // Print a couple of previews for eyeballing.
 for (const id of [1, 2, 3]) {
@@ -310,7 +323,10 @@ export interface CrosswordPuzzle {
   bonusHint: string;
 }
 `;
-  const body = `export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = ${JSON.stringify(puzzles, null, 2)};\n`;
+  const body =
+    `export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = ${JSON.stringify(puzzles, null, 2)};\n\n` +
+    `/** Pack 2 — Movie Night. Ids start at 101; see buildPack for why. */\n` +
+    `export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = ${JSON.stringify(moviePuzzles, null, 2)};\n`;
   const full = header + types + '\n' + body;
   writeFileSync(tsOut, full);
   const adminDir = dirname(adminOut);

@@ -1,9 +1,18 @@
-import { CROSSWORD_PUZZLES, type CrosswordPuzzle, type CrosswordClue, type CrosswordDir } from './crosswordPuzzles';
+import {
+  CROSSWORD_PUZZLES,
+  MOVIE_CROSSWORD_PUZZLES,
+  type CrosswordPuzzle,
+  type CrosswordClue,
+  type CrosswordDir,
+} from './crosswordPuzzles';
 
-export { CROSSWORD_PUZZLES };
+export { CROSSWORD_PUZZLES, MOVIE_CROSSWORD_PUZZLES };
 export type { CrosswordPuzzle, CrosswordClue, CrosswordDir };
 
-export const TOTAL_PUZZLES = CROSSWORD_PUZZLES.length;
+/** Every puzzle that ships in the app, across both packs. */
+export const BUILTIN_PUZZLES = [...CROSSWORD_PUZZLES, ...MOVIE_CROSSWORD_PUZZLES];
+
+export const TOTAL_PUZZLES = BUILTIN_PUZZLES.length;
 
 export interface CellInfo {
   row: number;
@@ -86,5 +95,6 @@ export function checkBonusGuess(puzzle: CrosswordPuzzle, guess: string): boolean
 }
 
 export function getPuzzle(id: number): CrosswordPuzzle | undefined {
-  return CROSSWORD_PUZZLES.find((p) => p.id === id);
+  // Both packs, or a Movie Night id would come back empty.
+  return BUILTIN_PUZZLES.find((p) => p.id === id);
 }
