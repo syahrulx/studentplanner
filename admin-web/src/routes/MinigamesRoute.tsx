@@ -3,12 +3,28 @@ import { MotionPanel, MotionSection } from '../ui/motion';
 import { useAdminSearch } from '../state/AdminSearchContext';
 import { matchesAdminSearch } from '../lib/adminSearch';
 import { supabase } from '../lib/supabase';
-import { CROSSWORD_PUZZLES, type CrosswordPuzzle, type CrosswordClue } from '../data/crosswordPuzzles';
+import {
+  CROSSWORD_PUZZLES,
+  MOVIE_CROSSWORD_PUZZLES,
+  type CrosswordPuzzle,
+  type CrosswordClue,
+} from '../data/crosswordPuzzles';
 import { CONNECTIONS_PUZZLES, type ConnectionsPuzzle } from '../data/connectionsPuzzles';
 import { listAdminCrosswordPuzzles, type AdminCrosswordPuzzle } from '../lib/api';
 import { CrosswordPuzzleEditor } from '../components/CrosswordPuzzleEditor';
 
-const PUZZLES = CROSSWORD_PUZZLES;
+/**
+ * The packs, named the same way the app names them.
+ *
+ * This page used to show one flat list of the Starter Pack plus whatever
+ * admins had created, which is what the app did too before the two were split
+ * — so neither matched what a student sees.
+ */
+const PACKS: { label: string; puzzles: CrosswordPuzzle[] }[] = [
+  { label: 'Starter Pack', puzzles: CROSSWORD_PUZZLES },
+  { label: 'Movie Night', puzzles: MOVIE_CROSSWORD_PUZZLES },
+];
+const PUZZLES = PACKS.flatMap((p) => p.puzzles);
 
 /** Admin-created levels (ids >= 31) reshaped to the same display type as the hardcoded ones. */
 function adminPuzzleToDisplay(p: AdminCrosswordPuzzle): CrosswordPuzzle {
@@ -212,7 +228,17 @@ function GameLeaderboard({ title, unit, load }: { title: string; unit: string; l
 // ───────────────────────── Crossword ─────────────────────────
 
 /** Admin-created level ids always start at 31 — see 20260806000003_crossword_puzzles_table.sql. */
-const FIRST_ADMIN_PUZZLE_ID = 31;
+/**
+ * Which puzzles an admin may edit.
+ *
+ * This was `id >= 31`, which worked only while everything above 30 lived in
+ * the database. Movie Night ships in the app at 1001+, so an id test now marks
+ * it editable and offers an Edit button for a row that does not exist. The
+ * only honest answer is whether the id came back from the admin table.
+ */
+function makeIsAdminPuzzle(adminIds: Set<number>) {
+  return (id: number) => adminIds.has(id);
+}
 
 function CrosswordSection() {
   const { searchQuery } = useAdminSearch();
@@ -240,17 +266,36 @@ function CrosswordSection() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const combined = useMemo(
-    () => [...PUZZLES, ...adminPuzzles.map(adminPuzzleToDisplay)],
-    [adminPuzzles],
-  );
+  const adminIds = useMemo(() => new Set(adminPuzzles.map((p) => p.id)), [adminPuzzles]);
+  const isAdminPuzzle = useMemo(() => makeIsAdminPuzzle(adminIds), [adminIds]);
 
-  const filtered = useMemo(() => {
-    if (!searchQuery.trim()) return combined;
-    return combined.filter((p) =>
-      matchesAdminSearch(searchQuery, p.title, `#${p.id}`, p.bonusWord, ...p.clues.map((c) => `${c.answer} ${c.clue}`)),
-    );
-  }, [combined, searchQuery]);
+  /** The packs as the app groups them, plus whatever admins have added. */
+  const groups = useMemo(() => {
+    const out = PACKS.map((pack) => ({ label: pack.label, puzzles: pack.puzzles }));
+    const extra = adminPuzzles.map(adminPuzzleToDisplay);
+    if (extra.length > 0) out.push({ label: 'Extra Puzzles', puzzles: extra });
+    return out;
+  }, [adminPuzzles]);
+
+  const combined = useMemo(() => groups.flatMap((g) => g.puzzles), [groups]);
+
+  /** Search narrows inside each pack, so the headings stay meaningful. */
+  const filteredGroups = useMemo(() => {
+    const q = searchQuery.trim();
+    if (!q) return groups;
+    return groups
+      .map((g) => ({
+        label: g.label,
+        puzzles: g.puzzles.filter((p) =>
+          matchesAdminSearch(q, p.title, `#${p.id}`, p.bonusWord, ...p.clues.map((c) => `${c.answer} ${c.clue}`)),
+        ),
+      }))
+      .filter((g) => g.puzzles.length > 0);
+  }, [groups, searchQuery]);
+  const filteredCount = useMemo(
+    () => filteredGroups.reduce((n, g) => n + g.puzzles.length, 0),
+    [filteredGroups],
+  );
 
   const selected = combined.find((p) => p.id === selectedId) ?? combined[0];
   const editingPuzzle = editingId != null ? adminPuzzles.find((p) => p.id === editingId) ?? null : null;
@@ -310,32 +355,39 @@ function CrosswordSection() {
           <MotionPanel>
             <div className="rounded-3xl border border-slate-200 bg-white p-3 shadow-soft dark:border-slate-800 dark:bg-slate-900">
               <div className="max-h-[70vh] overflow-y-auto">
-                {filtered.map((p) => {
-                  const active = selected?.id === p.id;
-                  const isAdmin = p.id >= FIRST_ADMIN_PUZZLE_ID;
-                  return (
-                    <button
-                      key={p.id}
-                      onClick={() => setSelectedId(p.id)}
-                      className={
-                        'flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm transition ' +
-                        (active
-                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950'
-                          : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800')
-                      }
-                    >
-                      <span className="font-bold">
-                        #{p.id} · {p.title}
-                        {isAdmin && <span className="ml-1.5 opacity-60">★</span>}
-                      </span>
-                      <span className={active ? 'text-white/70 dark:text-slate-600' : 'text-slate-400'}>{p.clues.length}w</span>
-                    </button>
-                  );
-                })}
+                {filteredGroups.map((group) => (
+                  <div key={group.label}>
+                    <div className="sticky top-0 z-10 bg-white px-4 pb-1.5 pt-3 text-[11px] font-black uppercase tracking-wide text-slate-400 dark:bg-slate-900 dark:text-slate-500">
+                      {group.label} · {group.puzzles.length}
+                    </div>
+                    {group.puzzles.map((p) => {
+                      const active = selected?.id === p.id;
+                      const isAdmin = isAdminPuzzle(p.id);
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => setSelectedId(p.id)}
+                          className={
+                            'flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm transition ' +
+                            (active
+                              ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950'
+                              : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800')
+                          }
+                        >
+                          <span className="font-bold">
+                            #{p.id} · {p.title}
+                            {isAdmin && <span className="ml-1.5 opacity-60">★</span>}
+                          </span>
+                          <span className={active ? 'text-white/70 dark:text-slate-600' : 'text-slate-400'}>{p.clues.length}w</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
                 {loadingAdmin && (
                   <div className="px-4 py-3 text-center text-xs font-semibold text-slate-400">Loading admin levels…</div>
                 )}
-                {filtered.length === 0 && !loadingAdmin && (
+                {filteredCount === 0 && !loadingAdmin && (
                   <div className="px-4 py-6 text-center text-sm font-semibold text-slate-400">No puzzles match your search.</div>
                 )}
               </div>
@@ -347,7 +399,7 @@ function CrosswordSection() {
             {selected && (
               <PuzzleDetail
                 puzzle={selected}
-                isAdminPuzzle={selected.id >= FIRST_ADMIN_PUZZLE_ID}
+                isAdminPuzzle={isAdminPuzzle(selected.id)}
                 onEdit={() => openEditEditor(selected.id)}
               />
             )}
