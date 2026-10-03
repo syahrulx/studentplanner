@@ -257,9 +257,13 @@ const report: string[] = [];
  * Ids are allotted per pack, with a gap between them.
  *
  * The Starter Pack keeps 1-30 because players' saved results are keyed by id
- * and renumbering would hand them somebody else's progress. Movie Night starts
- * at 101, leaving 31-100 for admin-created levels, which are what the app
- * already expects above 30.
+ * and renumbering would hand them somebody else's progress.
+ *
+ * Movie Night starts at 1001, not 101. The admin table is `generated always as
+ * identity (start with 31)` and simply counts up, so any ceiling close to 31
+ * is one the admins will walk into eventually — and a collision there would
+ * quietly merge two different puzzles' results. A thousand is far enough away
+ * that it will not happen.
  */
 function buildPack(themes: Theme[], firstId: number, label: string): OutPuzzle[] {
   const out: OutPuzzle[] = [];
@@ -277,7 +281,7 @@ function buildPack(themes: Theme[], firstId: number, label: string): OutPuzzle[]
 }
 
 const puzzles = buildPack(THEMES, 1, 'starter');
-const moviePuzzles = buildPack(MOVIE_THEMES, 101, 'movies ');
+const moviePuzzles = buildPack(MOVIE_THEMES, 1001, 'movies ');
 
 console.log(report.join('\n'));
 console.log(
@@ -325,7 +329,7 @@ export interface CrosswordPuzzle {
 `;
   const body =
     `export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = ${JSON.stringify(puzzles, null, 2)};\n\n` +
-    `/** Pack 2 — Movie Night. Ids start at 101; see buildPack for why. */\n` +
+    `/** Pack 2 — Movie Night. Ids start at 1001; see buildPack for why. */\n` +
     `export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = ${JSON.stringify(moviePuzzles, null, 2)};\n`;
   const full = header + types + '\n' + body;
   writeFileSync(tsOut, full);

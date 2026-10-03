@@ -3692,17 +3692,17 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
   }
 ];
 
-/** Pack 2 — Movie Night. Ids start at 101; see buildPack for why. */
+/** Pack 2 — Movie Night. Ids start at 1001; see buildPack for why. */
 export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
   {
-    "id": 101,
+    "id": 1001,
     "title": "Movie Genres",
     "size": 7,
     "solution": [
       [
         null,
         null,
-        "D",
+        "C",
         null,
         null,
         null,
@@ -3720,7 +3720,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       [
         null,
         null,
-        "A",
+        "I",
         null,
         null,
         null,
@@ -3738,7 +3738,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       [
         null,
         null,
-        "A",
+        "E",
         null,
         "O",
         null,
@@ -3767,8 +3767,8 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       {
         "number": 1,
         "direction": "down",
-        "clue": "Serious, feelings-first genre",
-        "answer": "DRAMA",
+        "clue": "Genre full of robbers and police",
+        "answer": "CRIME",
         "row": 0,
         "col": 2
       },
@@ -3817,7 +3817,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "The kind of film something is"
   },
   {
-    "id": 102,
+    "id": 1002,
     "title": "At the Cinema",
     "size": 7,
     "solution": [
@@ -3947,7 +3947,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "Where you go to watch a film"
   },
   {
-    "id": 103,
+    "id": 1003,
     "title": "Film Crew",
     "size": 7,
     "solution": [
@@ -4069,7 +4069,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "Everyone working behind the camera"
   },
   {
-    "id": 104,
+    "id": 1004,
     "title": "Camera Shots",
     "size": 7,
     "solution": [
@@ -4191,7 +4191,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "It records the picture"
   },
   {
-    "id": 105,
+    "id": 1005,
     "title": "Animation",
     "size": 7,
     "solution": [
@@ -4313,7 +4313,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "Drawn film"
   },
   {
-    "id": 106,
+    "id": 1006,
     "title": "Making a Film",
     "size": 7,
     "solution": [
@@ -4443,7 +4443,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "Tell the cast and crew what to do"
   },
   {
-    "id": 107,
+    "id": 1007,
     "title": "Movie Awards",
     "size": 7,
     "solution": [
@@ -4557,17 +4557,17 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "What a winner lifts"
   },
   {
-    "id": 108,
+    "id": 1008,
     "title": "Special Effects",
     "size": 7,
     "solution": [
       [
-        "S",
+        null,
         "M",
         "O",
-        "K",
+        "D",
         "E",
-        null,
+        "L",
         null
       ],
       [
@@ -4629,13 +4629,13 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       {
         "number": 1,
         "direction": "across",
-        "clue": "Machine-made haze on set",
-        "answer": "SMOKE",
+        "clue": "Small version of a big thing",
+        "answer": "MODEL",
         "row": 0,
-        "col": 0
+        "col": 1
       },
       {
-        "number": 2,
+        "number": 1,
         "direction": "down",
         "clue": "Capture of an actor as dots",
         "answer": "MOTION",
@@ -4643,7 +4643,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "col": 1
       },
       {
-        "number": 3,
+        "number": 2,
         "direction": "down",
         "clue": "Hidden frame holding something up",
         "answer": "RIG",
@@ -4651,7 +4651,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "col": 3
       },
       {
-        "number": 4,
+        "number": 3,
         "direction": "down",
         "clue": "Explosion, safely done",
         "answer": "BLAST",
@@ -4659,7 +4659,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "col": 6
       },
       {
-        "number": 5,
+        "number": 4,
         "direction": "across",
         "clue": "Made in a computer",
         "answer": "DIGITAL",
@@ -4667,7 +4667,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "col": 0
       },
       {
-        "number": 6,
+        "number": 5,
         "direction": "across",
         "clue": "Matte artists do it on glass",
         "answer": "PAINT",
@@ -4679,12 +4679,12 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "Tricks that make the impossible look real"
   },
   {
-    "id": 109,
+    "id": 1009,
     "title": "Movie Sound",
     "size": 7,
     "solution": [
       [
-        null,
+        "N",
         null,
         "T",
         "H",
@@ -4693,7 +4693,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "E"
       ],
       [
-        "M",
+        "O",
         null,
         "O",
         null,
@@ -4702,7 +4702,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         null
       ],
       [
-        "U",
+        "I",
         null,
         "N",
         null,
@@ -4720,7 +4720,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         null
       ],
       [
-        "I",
+        "E",
         null,
         null,
         null,
@@ -4729,7 +4729,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "C"
       ],
       [
-        "C",
+        null,
         null,
         null,
         null,
@@ -4750,6 +4750,14 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "clues": [
       {
         "number": 1,
+        "direction": "down",
+        "clue": "Unwanted sound",
+        "answer": "NOISE",
+        "row": 0,
+        "col": 0
+      },
+      {
+        "number": 2,
         "direction": "across",
         "clue": "Tune you hum on the way out",
         "answer": "THEME",
@@ -4757,7 +4765,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "col": 2
       },
       {
-        "number": 1,
+        "number": 2,
         "direction": "down",
         "clue": "Quality of a sound",
         "answer": "TONE",
@@ -4765,20 +4773,12 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "col": 2
       },
       {
-        "number": 2,
+        "number": 3,
         "direction": "down",
         "clue": "One channel only",
         "answer": "MONO",
         "row": 0,
         "col": 5
-      },
-      {
-        "number": 3,
-        "direction": "down",
-        "clue": "What the orchestra plays",
-        "answer": "MUSIC",
-        "row": 1,
-        "col": 0
       },
       {
         "number": 4,
@@ -4817,67 +4817,67 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "Everyday sounds made by hand in a studio"
   },
   {
-    "id": 110,
+    "id": 1010,
     "title": "Lights on Set",
     "size": 7,
     "solution": [
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        "G",
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        "B",
+        "U",
+        "L",
+        "B"
+      ],
+      [
+        null,
+        "S",
+        null,
+        null,
+        null,
+        "O",
+        null
+      ],
       [
         "S",
         "H",
         "A",
         "D",
-        "E",
-        null,
+        "O",
+        "W",
         null
       ],
       [
-        "H",
         null,
-        null,
-        null,
-        null,
-        null,
-        null
-      ],
-      [
         "A",
         null,
         null,
         null,
-        "B",
         null,
         null
       ],
       [
+        null,
         "D",
         "I",
         "M",
         "M",
         "E",
-        "R",
-        null
-      ],
-      [
-        "O",
-        null,
-        null,
-        null,
-        "A",
-        null,
-        null
-      ],
-      [
-        "W",
-        null,
-        "L",
-        "A",
-        "M",
-        "P",
-        null
+        "R"
       ],
       [
         null,
-        null,
+        "E",
         null,
         null,
         null,
@@ -4888,50 +4888,50 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "clues": [
       {
         "number": 1,
-        "direction": "across",
-        "clue": "Area the light misses",
-        "answer": "SHADE",
-        "row": 0,
-        "col": 0
-      },
-      {
-        "number": 1,
         "direction": "down",
-        "clue": "Dark shape cast by a body",
-        "answer": "SHADOW",
+        "clue": "Soft light",
+        "answer": "GLOW",
         "row": 0,
-        "col": 0
+        "col": 5
       },
       {
         "number": 2,
-        "direction": "down",
-        "clue": "Shaft of light",
-        "answer": "BEAM",
-        "row": 2,
-        "col": 4
+        "direction": "across",
+        "clue": "The bit that glows",
+        "answer": "BULB",
+        "row": 1,
+        "col": 3
       },
       {
         "number": 3,
-        "direction": "across",
-        "clue": "Control that lowers the level",
-        "answer": "DIMMER",
-        "row": 3,
-        "col": 0
+        "direction": "down",
+        "clue": "Area the light misses",
+        "answer": "SHADE",
+        "row": 2,
+        "col": 1
       },
       {
         "number": 4,
         "direction": "across",
-        "clue": "Single light unit",
-        "answer": "LAMP",
+        "clue": "Dark shape cast by a body",
+        "answer": "SHADOW",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Control that lowers the level",
+        "answer": "DIMMER",
         "row": 5,
-        "col": 2
+        "col": 1
       }
     ],
     "bonusWord": "LIGHTING",
     "bonusHint": "Whole craft of lighting a scene"
   },
   {
-    "id": 111,
+    "id": 1011,
     "title": "Costume and Makeup",
     "size": 7,
     "solution": [
@@ -5053,7 +5053,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "What a character wears"
   },
   {
-    "id": 112,
+    "id": 1012,
     "title": "The Script",
     "size": 7,
     "solution": [
@@ -5175,7 +5175,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "The film written down"
   },
   {
-    "id": 113,
+    "id": 1013,
     "title": "Horror Films",
     "size": 7,
     "solution": [
@@ -5185,7 +5185,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "O",
         "N",
         null,
-        "F",
+        null,
         null
       ],
       [
@@ -5194,7 +5194,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         null,
         null,
         null,
-        "E",
+        "D",
         null
       ],
       [
@@ -5221,7 +5221,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "A",
         null,
         null,
-        null,
+        "K",
         null
       ],
       [
@@ -5263,9 +5263,9 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       {
         "number": 2,
         "direction": "down",
-        "clue": "What the genre runs on",
-        "answer": "FEAR",
-        "row": 0,
+        "clue": "Where the scary things are",
+        "answer": "DARK",
+        "row": 1,
         "col": 5
       },
       {
@@ -5297,7 +5297,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "Loud sound of fright"
   },
   {
-    "id": 114,
+    "id": 1014,
     "title": "Science Fiction",
     "size": 7,
     "solution": [
@@ -5411,7 +5411,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "When these films are usually set"
   },
   {
-    "id": 115,
+    "id": 1015,
     "title": "Action Films",
     "size": 7,
     "solution": [
@@ -5533,7 +5533,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "Sequence where one car follows another"
   },
   {
-    "id": 116,
+    "id": 1016,
     "title": "Comedy Films",
     "size": 7,
     "solution": [
@@ -5647,7 +5647,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "What the audience should do"
   },
   {
-    "id": 117,
+    "id": 1017,
     "title": "Film Festivals",
     "size": 7,
     "solution": [
@@ -5708,11 +5708,11 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       [
         "T",
         null,
-        "G",
-        "U",
+        "P",
+        "R",
         "E",
         "S",
-        "T"
+        "S"
       ]
     ],
     "clues": [
@@ -5759,8 +5759,8 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       {
         "number": 6,
         "direction": "across",
-        "clue": "Invited attendee",
-        "answer": "GUEST",
+        "clue": "Reporters at the event",
+        "answer": "PRESS",
         "row": 6,
         "col": 2
       }
@@ -5769,7 +5769,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "First public showing"
   },
   {
-    "id": 118,
+    "id": 1018,
     "title": "Film Editing",
     "size": 7,
     "solution": [
@@ -5777,9 +5777,9 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         null,
         null,
         null,
-        "C",
-        "L",
-        "I",
+        "J",
+        "U",
+        "M",
         "P"
       ],
       [
@@ -5841,8 +5841,8 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       {
         "number": 1,
         "direction": "across",
-        "clue": "Short piece of footage",
-        "answer": "CLIP",
+        "clue": "Cut that skips forward jarringly",
+        "answer": "JUMP",
         "row": 0,
         "col": 3
       },
@@ -5891,7 +5891,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "Quick run of shots showing time passing"
   },
   {
-    "id": 119,
+    "id": 1019,
     "title": "Movie Theatres",
     "size": 7,
     "solution": [
@@ -6013,36 +6013,36 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "Machine that throws the picture"
   },
   {
-    "id": 120,
+    "id": 1020,
     "title": "Behind the Scenes",
     "size": 7,
     "solution": [
       [
+        null,
         "L",
         "U",
         "N",
         "C",
         "H",
-        null,
         null
       ],
       [
+        "N",
         null,
         null,
-        null,
-        "H",
-        null,
-        null,
-        null
-      ],
-      [
-        null,
-        "B",
         null,
         "A",
         null,
-        "S",
         null
+      ],
+      [
+        "O",
+        null,
+        null,
+        null,
+        "L",
+        null,
+        "B"
       ],
       [
         "T",
@@ -6054,31 +6054,31 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "R"
       ],
       [
-        null,
         "E",
         null,
-        "R",
-        null,
-        "T",
-        null
-      ],
-      [
-        null,
-        "A",
         null,
         null,
         null,
-        "U",
-        null
-      ],
-      [
         null,
-        "K",
-        null,
-        "T",
-        "A",
-        "P",
         "E"
+      ],
+      [
+        "S",
+        "E",
+        "T",
+        "U",
+        "P",
+        null,
+        "A"
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        "K"
       ]
     ],
     "clues": [
@@ -6088,31 +6088,31 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "clue": "Midday stop",
         "answer": "LUNCH",
         "row": 0,
-        "col": 0
+        "col": 1
       },
       {
         "number": 2,
         "direction": "down",
-        "clue": "It has a name printed on the back",
-        "answer": "CHAIR",
+        "clue": "Time you must be on set",
+        "answer": "CALL",
         "row": 0,
-        "col": 3
+        "col": 4
       },
       {
         "number": 3,
         "direction": "down",
-        "clue": "Rest between takes",
-        "answer": "BREAK",
-        "row": 2,
-        "col": 1
+        "clue": "Comments after a take",
+        "answer": "NOTES",
+        "row": 1,
+        "col": 0
       },
       {
         "number": 4,
         "direction": "down",
-        "clue": "Arranging camera and lights",
-        "answer": "SETUP",
+        "clue": "Rest between takes",
+        "answer": "BREAK",
         "row": 2,
-        "col": 5
+        "col": 6
       },
       {
         "number": 5,
@@ -6125,27 +6125,27 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       {
         "number": 6,
         "direction": "across",
-        "clue": "It marks where to stand",
-        "answer": "TAPE",
-        "row": 6,
-        "col": 3
+        "clue": "Arranging camera and lights",
+        "answer": "SETUP",
+        "row": 5,
+        "col": 0
       }
     ],
     "bonusWord": "BLOOPER",
     "bonusHint": "Mistake kept for the credits"
   },
   {
-    "id": 121,
+    "id": 1021,
     "title": "Film Story",
     "size": 7,
     "solution": [
       [
         null,
-        "C",
         "R",
         "E",
-        "D",
-        "I",
+        "B",
+        "O",
+        "O",
         "T"
       ],
       [
@@ -6207,8 +6207,8 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       {
         "number": 1,
         "direction": "across",
-        "clue": "Name in the list at the end",
-        "answer": "CREDIT",
+        "clue": "Start the whole thing over",
+        "answer": "REBOOT",
         "row": 0,
         "col": 1
       },
@@ -6257,34 +6257,34 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "The one that comes after"
   },
   {
-    "id": 122,
+    "id": 1022,
     "title": "Western Films",
     "size": 7,
     "solution": [
       [
+        "H",
         null,
-        null,
-        null,
-        null,
-        "T",
-        null,
+        "D",
+        "U",
+        "E",
+        "L",
         null
       ],
       [
-        "D",
-        null,
-        "H",
         "O",
-        "R",
-        "S",
-        "E"
-      ],
-      [
+        null,
         "E",
         null,
         null,
         null,
-        "A",
+        null
+      ],
+      [
+        "R",
+        null,
+        "S",
+        null,
+        null,
         null,
         null
       ],
@@ -6300,26 +6300,26 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       [
         "E",
         null,
-        null,
-        null,
-        "L",
-        null,
-        null
-      ],
-      [
         "R",
         null,
         null,
         null,
-        null,
-        null,
         null
       ],
       [
+        null,
+        null,
         "T",
-        "O",
-        "W",
-        "N",
+        "R",
+        "A",
+        "I",
+        "L"
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
         null,
         null,
         null
@@ -6329,29 +6329,29 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       {
         "number": 1,
         "direction": "down",
-        "clue": "Path across the plains",
-        "answer": "TRAIL",
+        "clue": "He rides one",
+        "answer": "HORSE",
         "row": 0,
-        "col": 4
+        "col": 0
+      },
+      {
+        "number": 2,
+        "direction": "across",
+        "clue": "Face-off in the street",
+        "answer": "DUEL",
+        "row": 0,
+        "col": 2
       },
       {
         "number": 2,
         "direction": "down",
         "clue": "Dry, sandy setting",
         "answer": "DESERT",
-        "row": 1,
-        "col": 0
-      },
-      {
-        "number": 3,
-        "direction": "across",
-        "clue": "He rides one",
-        "answer": "HORSE",
-        "row": 1,
+        "row": 0,
         "col": 2
       },
       {
-        "number": 4,
+        "number": 3,
         "direction": "across",
         "clue": "Lawman with a star",
         "answer": "SHERIFF",
@@ -6359,19 +6359,19 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "col": 0
       },
       {
-        "number": 5,
+        "number": 4,
         "direction": "across",
-        "clue": "One dusty street of it",
-        "answer": "TOWN",
-        "row": 6,
-        "col": 0
+        "clue": "Path across the plains",
+        "answer": "TRAIL",
+        "row": 5,
+        "col": 2
       }
     ],
     "bonusWord": "COWBOY",
     "bonusHint": "Hero on horseback"
   },
   {
-    "id": 123,
+    "id": 1023,
     "title": "Movie Snacks",
     "size": 7,
     "solution": [
@@ -6493,7 +6493,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "It bursts when heated"
   },
   {
-    "id": 124,
+    "id": 1024,
     "title": "Film Studios",
     "size": 7,
     "solution": [
@@ -6615,7 +6615,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "Outdoor area with standing sets"
   },
   {
-    "id": 125,
+    "id": 1025,
     "title": "Movie Villains",
     "size": 7,
     "solution": [
@@ -6737,7 +6737,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "Something threatening"
   },
   {
-    "id": 126,
+    "id": 1026,
     "title": "On Location",
     "size": 7,
     "solution": [
@@ -6859,18 +6859,18 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "Hunting for places to film"
   },
   {
-    "id": 127,
+    "id": 1027,
     "title": "Film Tech",
     "size": 7,
     "solution": [
       [
         null,
-        null,
-        "C",
-        "A",
+        "G",
+        "I",
+        "M",
         "B",
-        "L",
-        "E"
+        "A",
+        "L"
       ],
       [
         "M",
@@ -6931,10 +6931,10 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       {
         "number": 1,
         "direction": "across",
-        "clue": "It carries the signal",
-        "answer": "CABLE",
+        "clue": "It keeps the camera steady",
+        "answer": "GIMBAL",
         "row": 0,
-        "col": 2
+        "col": 1
       },
       {
         "number": 2,
@@ -6981,12 +6981,12 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "How much detail a picture holds"
   },
   {
-    "id": 128,
+    "id": 1028,
     "title": "Fantasy Films",
     "size": 7,
     "solution": [
       [
-        "B",
+        "C",
         null,
         null,
         null,
@@ -6995,7 +6995,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "E"
       ],
       [
-        "E",
+        "U",
         null,
         "S",
         "P",
@@ -7004,7 +7004,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         "L"
       ],
       [
-        "A",
+        "R",
         null,
         null,
         null,
@@ -7022,7 +7022,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
         null
       ],
       [
-        "T",
+        "E",
         null,
         "I",
         null,
@@ -7053,8 +7053,8 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       {
         "number": 1,
         "direction": "down",
-        "clue": "Large wild creature",
-        "answer": "BEAST",
+        "clue": "Magic gone bad",
+        "answer": "CURSE",
         "row": 0,
         "col": 0
       },
@@ -7111,7 +7111,7 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "Long journey with a purpose"
   },
   {
-    "id": 129,
+    "id": 1029,
     "title": "Watching at Home",
     "size": 7,
     "solution": [
@@ -7233,35 +7233,35 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "Watching without downloading"
   },
   {
-    "id": 130,
+    "id": 1030,
     "title": "Film Words",
     "size": 7,
     "solution": [
       [
         null,
         null,
-        "S",
+        "C",
+        "L",
         "O",
-        "U",
-        "N",
-        "D"
+        "S",
+        "E"
       ],
       [
         "F",
         null,
-        "H",
         null,
         null,
         null,
+        "C",
         null
       ],
       [
         "R",
         null,
-        "O",
         null,
         null,
-        "A",
+        null,
+        "E",
         null
       ],
       [
@@ -7276,63 +7276,55 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       [
         "M",
         null,
+        "A",
         null,
         null,
-        null,
-        "G",
+        "E",
         null
       ],
       [
         "E",
         null,
+        "K",
         null,
         null,
         null,
-        "L",
         null
       ],
       [
         null,
-        null,
-        "Q",
-        "U",
-        "I",
+        "R",
         "E",
-        "T"
+        "S",
+        "E",
+        "T",
+        null
       ]
     ],
     "clues": [
       {
         "number": 1,
         "direction": "across",
-        "clue": "It rolls before the picture",
-        "answer": "SOUND",
-        "row": 0,
-        "col": 2
-      },
-      {
-        "number": 1,
-        "direction": "down",
-        "clue": "A single run of camera",
-        "answer": "SHOT",
+        "clue": "Shot right up at a face",
+        "answer": "CLOSE",
         "row": 0,
         "col": 2
       },
       {
         "number": 2,
         "direction": "down",
-        "clue": "What is inside the picture",
-        "answer": "FRAME",
-        "row": 1,
-        "col": 0
+        "clue": "Numbered part of the script",
+        "answer": "SCENE",
+        "row": 0,
+        "col": 5
       },
       {
         "number": 3,
         "direction": "down",
-        "clue": "Point of view of a shot",
-        "answer": "ANGLE",
-        "row": 2,
-        "col": 5
+        "clue": "What is inside the picture",
+        "answer": "FRAME",
+        "row": 1,
+        "col": 0
       },
       {
         "number": 4,
@@ -7344,11 +7336,19 @@ export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
       },
       {
         "number": 5,
-        "direction": "across",
-        "clue": "What is called for on set",
-        "answer": "QUIET",
-        "row": 6,
+        "direction": "down",
+        "clue": "Another go at the same shot",
+        "answer": "TAKE",
+        "row": 3,
         "col": 2
+      },
+      {
+        "number": 6,
+        "direction": "across",
+        "clue": "Put everything back for another take",
+        "answer": "RESET",
+        "row": 6,
+        "col": 1
       }
     ],
     "bonusWord": "CLAPPER",

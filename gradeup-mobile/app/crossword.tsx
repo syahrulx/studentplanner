@@ -161,7 +161,7 @@ export default function CrosswordScreen() {
    * The packs, kept apart on screen.
    *
    * Two ship with the app — the Starter Pack at ids 1-30 and Movie Night at
-   * 101-130 — and anything an admin adds arrives separately in the 31-100 gap.
+   * 1001-1030 — and anything an admin adds arrives separately from id 31 up.
    * All three used to be poured into one list, so an admin puzzle appeared
    * inside the Starter Pack while the card below still promised a Pack 2.
    */
