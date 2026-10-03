@@ -1,5 +1,6 @@
 import type { TranslationKey } from '@/src/i18n';
 import { toISO } from '@/src/utils/date';
+import { getTimetableSlotDetailsSnapshot } from '../../storage';
 
 /**
  * Dates and times drawn on the lock screen pictures and shown in the Studio.
@@ -143,6 +144,22 @@ export function detectUses24h(): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * What the lock screen should use, which is not quite the same question.
+ *
+ * detectUses24h above reads the phone. The Timetable options also carry a
+ * "12-hour time" switch, and the lock screen ignored it — so a student could
+ * set 1:00 PM on their timetable and still get 13:00 on their wallpaper.
+ *
+ * The switch is an opt-in: its label offers to "show 1:00 PM instead of
+ * 13:00", and it is off by default, so off cannot be told apart from never
+ * touched. Turning it on therefore wins; leaving it alone keeps following the
+ * phone, which is what everyone who has never opened that sheet already has.
+ */
+export function lockScreenUses24h(): boolean {
+  return getTimetableSlotDetailsSnapshot().use12HourTime ? false : detectUses24h();
 }
 
 /**

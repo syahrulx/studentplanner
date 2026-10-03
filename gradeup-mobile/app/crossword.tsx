@@ -93,6 +93,7 @@ export default function CrosswordScreen() {
   const [progress, setProgress] = useState<CrosswordProgress | null>(null);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [set1Open, setSet1Open] = useState(true);
+  const [set2Open, setSet2Open] = useState(true);
   /** Tracks the local calendar day so daily unlocks refresh after midnight. */
   const [todayISO, setTodayISO] = useState(() => getTodayISO());
 
@@ -121,6 +122,16 @@ export default function CrosswordScreen() {
   const [remotePuzzles, setRemotePuzzles] = useState<CrosswordPuzzle[]>([]);
   useEffect(() => { fetchAdminCrosswordPuzzles().then(setRemotePuzzles); }, []);
   const allPuzzles = useMemo(() => [...CROSSWORD_PUZZLES, ...remotePuzzles], [remotePuzzles]);
+  /**
+   * The two packs, kept apart on screen.
+   *
+   * The Starter Pack is the built-in set that ships with the app; everything
+   * admin-created arrives separately and begins at id 31. Both used to be
+   * poured into one list, so the first admin puzzle appeared inside the
+   * Starter Pack while the Pack 2 card below still said "coming soon".
+   */
+  const pack1 = CROSSWORD_PUZZLES;
+  const pack2 = remotePuzzles;
 
   const activePuzzle = activeId != null ? allPuzzles.find((p) => p.id === activeId) : null;
 
@@ -174,7 +185,50 @@ export default function CrosswordScreen() {
   }
 
   // ─── Hub (levels + rankings) ───
+  /** One level tile. Shared so both packs look and behave the same. */
+  const renderLevel = (p: CrosswordPuzzle) => {
+              const done = progress ? isCompleted(progress, p.id) : false;
+              const result = progress ? getResult(progress, p.id) : undefined;
+              const isNext = p.id === firstUnsolvedId;
+              const dailyLock = isNext && left <= 0;
+              const seqLock = !done && !isNext;
+              const locked = dailyLock || seqLock;
+              return (
+                <Pressable
+                  key={p.id}
+                  onPress={() => openPuzzle(p)}
+                  style={({ pressed }) => [
+                    styles.levelCard,
+                    {
+                      backgroundColor: theme.card,
+                      borderColor: done ? theme.primary : isNext && !dailyLock ? theme.primary : 'transparent',
+                      opacity: seqLock ? 0.5 : dailyLock ? 0.7 : 1,
+                    },
+                    pressed && !locked && { opacity: 0.85, transform: [{ scale: 0.97 }] },
+                  ]}
+                >
+                  <View style={styles.levelTop}>
+                    <Text style={styles.levelEmoji}>{titleEmoji(p.title)}</Text>
+                    {done ? (
+                      <Feather name="check-circle" size={18} color={theme.primary} />
+                    ) : isNext && !dailyLock ? (
+                      <Feather name="play" size={16} color={theme.primary} />
+                    ) : (
+                      <Feather name="lock" size={15} color={theme.textSecondary} />
+                    )}
+                  </View>
+                  <Text style={[styles.levelNum, { color: theme.textSecondary }]}>#{p.id}</Text>
+                  <Text style={[styles.levelTitle, { color: theme.text }]} numberOfLines={1}>{p.title}</Text>
+                  <Text style={[styles.levelSub, { color: done || (isNext && !dailyLock) ? theme.primary : theme.textSecondary }]}>
+                    {done ? `${result?.score ?? 0} pts` : dailyLock ? 'Tomorrow' : seqLock ? 'Locked' : `${p.clues.length} words`}
+                  </Text>
+                </Pressable>
+              );
+  };
+
   const solved = progress ? completedCount(progress) : 0;
+  const solvedIn = (pack: CrosswordPuzzle[]) =>
+    progress ? pack.filter((q) => isCompleted(progress, q.id)).length : 0;
   const onPrimary = contrastText(theme.primary);
 
   return (
@@ -223,68 +277,55 @@ export default function CrosswordScreen() {
             </LinearGradient>
             <View style={{ flex: 1 }}>
               <Text style={[styles.setTitle, { color: theme.text }]}>Starter Pack</Text>
-              <Text style={[styles.setSub, { color: theme.textSecondary }]}>{allPuzzles.length} puzzles · unlock 2 a day, in order</Text>
+              <Text style={[styles.setSub, { color: theme.textSecondary }]}>{pack1.length} puzzles · unlock 2 a day, in order</Text>
             </View>
             <View style={[styles.setPill, { backgroundColor: theme.primary + '1A' }]}>
-              <Text style={[styles.setCount, { color: theme.primary }]}>{solved}/{allPuzzles.length}</Text>
+              <Text style={[styles.setCount, { color: theme.primary }]}>{solvedIn(pack1)}/{pack1.length}</Text>
             </View>
             <Feather name={set1Open ? 'chevron-up' : 'chevron-down'} size={20} color={theme.textSecondary} />
           </Pressable>
 
           {set1Open && (
-          <View style={[styles.grid, { marginTop: 14 }]}>
-            {allPuzzles.map((p) => {
-              const done = progress ? isCompleted(progress, p.id) : false;
-              const result = progress ? getResult(progress, p.id) : undefined;
-              const isNext = p.id === firstUnsolvedId;
-              const dailyLock = isNext && left <= 0;
-              const seqLock = !done && !isNext;
-              const locked = dailyLock || seqLock;
-              return (
-                <Pressable
-                  key={p.id}
-                  onPress={() => openPuzzle(p)}
-                  style={({ pressed }) => [
-                    styles.levelCard,
-                    {
-                      backgroundColor: theme.card,
-                      borderColor: done ? theme.primary : isNext && !dailyLock ? theme.primary : 'transparent',
-                      opacity: seqLock ? 0.5 : dailyLock ? 0.7 : 1,
-                    },
-                    pressed && !locked && { opacity: 0.85, transform: [{ scale: 0.97 }] },
-                  ]}
-                >
-                  <View style={styles.levelTop}>
-                    <Text style={styles.levelEmoji}>{titleEmoji(p.title)}</Text>
-                    {done ? (
-                      <Feather name="check-circle" size={18} color={theme.primary} />
-                    ) : isNext && !dailyLock ? (
-                      <Feather name="play" size={16} color={theme.primary} />
-                    ) : (
-                      <Feather name="lock" size={15} color={theme.textSecondary} />
-                    )}
-                  </View>
-                  <Text style={[styles.levelNum, { color: theme.textSecondary }]}>#{p.id}</Text>
-                  <Text style={[styles.levelTitle, { color: theme.text }]} numberOfLines={1}>{p.title}</Text>
-                  <Text style={[styles.levelSub, { color: done || (isNext && !dailyLock) ? theme.primary : theme.textSecondary }]}>
-                    {done ? `${result?.score ?? 0} pts` : dailyLock ? 'Tomorrow' : seqLock ? 'Locked' : `${p.clues.length} words`}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+          <View style={[styles.grid, { marginTop: 14 }]}>{pack1.map(renderLevel)}</View>
           )}
 
-          {/* Set 2 — coming soon */}
-          <View style={[styles.comingSoon, { borderColor: theme.border }]}>
-            <View style={[styles.setBadge, styles.setBadgeLocked, { backgroundColor: theme.textSecondary + '22' }]}>
-              <Feather name="lock" size={18} color={theme.textSecondary} />
+          {/* Set 2 — a real pack once it has puzzles, the promise until then. */}
+          {pack2.length > 0 ? (
+            <>
+              <Pressable
+                onPress={() => setSet2Open((o) => !o)}
+                style={({ pressed }) => [styles.setHeader, { backgroundColor: theme.card, marginTop: 18 }, pressed && { opacity: 0.85 }]}
+              >
+                <LinearGradient colors={[theme.primary, theme.primary + 'CC']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.setBadge}>
+                  <Text style={[styles.setBadgeNum, { color: onPrimary }]}>2</Text>
+                </LinearGradient>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.setTitle, { color: theme.text }]}>Pack 2</Text>
+                  <Text style={[styles.setSub, { color: theme.textSecondary }]}>
+                    {pack2.length} puzzle{pack2.length === 1 ? '' : 's'} · unlock 2 a day, in order
+                  </Text>
+                </View>
+                <View style={[styles.setPill, { backgroundColor: theme.primary + '1A' }]}>
+                  <Text style={[styles.setCount, { color: theme.primary }]}>{solvedIn(pack2)}/{pack2.length}</Text>
+                </View>
+                <Feather name={set2Open ? 'chevron-up' : 'chevron-down'} size={20} color={theme.textSecondary} />
+              </Pressable>
+
+              {set2Open && (
+                <View style={[styles.grid, { marginTop: 14 }]}>{pack2.map(renderLevel)}</View>
+              )}
+            </>
+          ) : (
+            <View style={[styles.comingSoon, { borderColor: theme.border }]}>
+              <View style={[styles.setBadge, styles.setBadgeLocked, { backgroundColor: theme.textSecondary + '22' }]}>
+                <Feather name="lock" size={18} color={theme.textSecondary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.setTitle, { color: theme.textSecondary }]}>Pack 2 · Coming Soon</Text>
+                <Text style={[styles.setSub, { color: theme.textSecondary }]}>Finish the Starter Pack — a fresh batch of puzzles is on the way.</Text>
+              </View>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.setTitle, { color: theme.textSecondary }]}>Pack 2 · Coming Soon</Text>
-              <Text style={[styles.setSub, { color: theme.textSecondary }]}>Finish the Starter Pack — a fresh batch of puzzles is on the way.</Text>
-            </View>
-          </View>
+          )}
         </ScrollView>
       ) : (
         <RankingsTab theme={theme} userId={userId} friendIds={friends.map((f) => f.id)} progress={progress} totalPuzzles={allPuzzles.length} />

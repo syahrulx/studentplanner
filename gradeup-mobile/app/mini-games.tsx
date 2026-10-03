@@ -20,7 +20,9 @@ const GAMES: GameCard[] = [
     key: 'word',
     title: 'Word Game',
     subtitle: 'Connections puzzles · daily streaks · rankings',
-    icon: 'grid',
+    // Not 'grid': Crossword below is the one that is literally a grid, and the
+    // two cards sat next to each other wearing the same icon.
+    icon: 'type',
     route: '/word-game',
     // Card 1: primary solid → accent (lighter highlight)
     tint: (t) => [t.primary, t.accent],

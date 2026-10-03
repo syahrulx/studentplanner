@@ -17,7 +17,7 @@ import {
   loadLockScreenSetup,
   updateLockScreenSetup,
 } from '@/src/lib/lockScreen/lockScreenConfig';
-import { detectUses24h } from '@/src/lib/lockScreen/lockScreenFormat';
+import { lockScreenUses24h } from '@/src/lib/lockScreen/lockScreenFormat';
 import { getLockCanvasSize } from '@/src/lib/lockScreen/lockScreenGeometry';
 import { runLockScreenAutomationDetector } from '@/src/lib/lockScreen/lockScreenHealth';
 import {
@@ -175,7 +175,7 @@ function planPictures(inputs: HostInputs): Plan {
   const { W, H, scale, s, pixelW, pixelH } = getLockCanvasSize();
   const todayISO = getTodayISO();
   // A fresh object every pass: the model caches per input object, and nowMs differs.
-  const modelInput: LockScreenModelInput = { ...inputs, nowMs: Date.now(), uses24h: detectUses24h() };
+  const modelInput: LockScreenModelInput = { ...inputs, nowMs: Date.now(), uses24h: lockScreenUses24h() };
   const { dates, days, fallback } = buildLockScreenModels(modelInput, todayISO);
   const env = { W, H, scale, accent: signatureAccent(inputs), photoStamp: photoStamp(inputs.config) };
 

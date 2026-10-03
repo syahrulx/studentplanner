@@ -66,7 +66,7 @@ import {
 import {
   dateFromISO,
   dayShortName,
-  detectUses24h,
+  lockScreenUses24h,
   fmtGhostDate,
   fmtTimeOfDay,
 } from '@/src/lib/lockScreen/lockScreenFormat';
@@ -338,7 +338,7 @@ export default function LockScreenStudio() {
   const timers = useTimers();
 
   const todayISO = useTodayISO();
-  const [uses24h] = useState(detectUses24h);
+  const [uses24h] = useState(lockScreenUses24h);
   const [canvas] = useState(getLockCanvasSize);
   const { W, H, s } = canvas;
   const isIOS = Platform.OS === 'ios';

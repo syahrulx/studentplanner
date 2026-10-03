@@ -16,7 +16,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import type { TranslationKey } from '@/src/i18n';
-import { detectUses24h, fmtWhen } from '@/src/lib/lockScreen/lockScreenFormat';
+import { lockScreenUses24h, fmtWhen } from '@/src/lib/lockScreen/lockScreenFormat';
 import type { LockRenderState, LockScreenHealth, LockScreenSetupState } from '@/src/lib/lockScreen/types';
 
 /**
@@ -152,7 +152,7 @@ export function LockStatusPill({
   onPress,
   style,
 }: LockStatusPillProps) {
-  const uses24h = useMemo(() => detectUses24h(), []);
+  const uses24h = useMemo(() => lockScreenUses24h(), []);
   const now = useTicker(health.kind === 'healthy' || health.kind === 'stale');
   const rendering = renderState.phase === 'rendering';
   const changesEligible = health.kind === 'healthy' || health.kind === 'pending';
