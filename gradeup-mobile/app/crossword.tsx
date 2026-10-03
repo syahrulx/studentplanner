@@ -23,6 +23,7 @@ import {
   getCrosswordLeaderboard, fetchAdminCrosswordPuzzles,
   type CrosswordProgress, type CrosswordLeaderboardEntry,
 } from '@/src/lib/crosswordStorage';
+import { isGradeUpAdminCached } from '@/src/lib/gradeUpAdmin';
 
 type Tab = 'levels' | 'rankings';
 type RankView = 'stats' | 'friends' | 'global';
@@ -153,6 +154,22 @@ export default function CrosswordScreen() {
   // blocked/empty while this is in flight.
   const [remotePuzzles, setRemotePuzzles] = useState<CrosswordPuzzle[]>([]);
   useEffect(() => { fetchAdminCrosswordPuzzles().then(setRemotePuzzles); }, []);
+
+  /**
+   * Admins open any puzzle, as many as they like.
+   *
+   * Checking a new level means playing it, and the two-a-day drip plus the
+   * in-order unlock make that take a fortnight. Their results are not posted to
+   * a leaderboard either (shouldPostGameScore), so this is not a way to win —
+   * it is the same reason both rules exist for everyone else.
+   */
+  const [unlimited, setUnlimited] = useState(false);
+  useEffect(() => {
+    if (!userId) return;
+    let alive = true;
+    isGradeUpAdminCached(userId).then((v) => { if (alive) setUnlimited(v); });
+    return () => { alive = false; };
+  }, [userId]);
   const allPuzzles = useMemo(
     () => [...CROSSWORD_PUZZLES, ...MOVIE_CROSSWORD_PUZZLES, ...remotePuzzles],
     [remotePuzzles],
@@ -186,16 +203,16 @@ export default function CrosswordScreen() {
     if (!progress) return;
     const done = isCompleted(progress, p.id);
     if (done) { setActiveId(p.id); return; }
-    if (p.id !== firstUnsolvedId) {
+    if (!unlimited && p.id !== firstUnsolvedId) {
       Alert.alert('Locked', 'Finish the puzzles before this one first.');
       return;
     }
-    if (playsLeftToday(progress) <= 0) {
+    if (!unlimited && playsLeftToday(progress) <= 0) {
       Alert.alert("That's enough for today!", 'You can unlock 2 crosswords per day. Come back tomorrow for the next one.');
       return;
     }
     setActiveId(p.id);
-  }, [progress, firstUnsolvedId]);
+  }, [progress, firstUnsolvedId, unlimited]);
 
   const closePuzzle = useCallback(async () => {
     setActiveId(null);
@@ -226,8 +243,8 @@ export default function CrosswordScreen() {
               const done = progress ? isCompleted(progress, p.id) : false;
               const result = progress ? getResult(progress, p.id) : undefined;
               const isNext = p.id === firstUnsolvedId;
-              const dailyLock = isNext && left <= 0;
-              const seqLock = !done && !isNext;
+              const dailyLock = !unlimited && isNext && left <= 0;
+              const seqLock = !unlimited && !done && !isNext;
               const locked = dailyLock || seqLock;
               return (
                 <Pressable
@@ -295,8 +312,16 @@ export default function CrosswordScreen() {
           {/* Daily banner */}
           <LinearGradient colors={[theme.primary, theme.primary + 'CC']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.banner, { shadowColor: theme.primary }]}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.bannerTitle, { color: onPrimary }]}>{progress && allCompleted(progress, allPuzzles.length) ? 'All puzzles solved! 🎉' : `${left} puzzle${left === 1 ? '' : 's'} left today`}</Text>
-              <Text style={[styles.bannerSub, { color: onPrimary, opacity: 0.85 }]}>Solve up to 2 crosswords a day · keep your streak alive</Text>
+              <Text style={[styles.bannerTitle, { color: onPrimary }]}>{progress && allCompleted(progress, allPuzzles.length)
+                  ? 'All puzzles solved! 🎉'
+                  : unlimited
+                    ? 'No daily limit on this account'
+                    : `${left} puzzle${left === 1 ? '' : 's'} left today`}</Text>
+              <Text style={[styles.bannerSub, { color: onPrimary, opacity: 0.85 }]}>
+                {unlimited
+                  ? 'Admin account · play any puzzle, scores are not ranked'
+                  : 'Solve up to 2 crosswords a day · keep your streak alive'}
+              </Text>
             </View>
             <View style={[styles.bannerBadge, { backgroundColor: onPrimary }]}>
               <Text style={[styles.bannerBadgeText, { color: theme.primary }]}>{solved}/{allPuzzles.length}</Text>

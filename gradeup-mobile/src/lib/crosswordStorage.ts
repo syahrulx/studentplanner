@@ -1,3 +1,4 @@
+import { shouldPostGameScore } from './gradeUpAdmin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import { TOTAL_PUZZLES, type CrosswordPuzzle, type CrosswordClue } from './crosswordEngine';
@@ -240,6 +241,8 @@ export async function syncScoreToSupabase(progress: CrosswordProgress): Promise<
   const { data: { session } } = await supabase.auth.getSession();
   const userId = session?.user?.id;
   if (!userId) return;
+  // Admin results never reach a leaderboard — see shouldPostGameScore.
+  if (!(await shouldPostGameScore(userId))) return;
 
   const totalPoints = getTotalPoints(progress);
   const completed = completedCount(progress);
