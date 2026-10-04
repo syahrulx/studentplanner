@@ -47,6 +47,8 @@ export default function StressMap() {
   );
 
   const maxTotal = Math.max(0, ...weeklyTotals);
+  /** Whether any week draws a bar at all — the chart collapses when none does. */
+  const hasAnyBar = maxTotal > 0;
   /** Max bar height inside the chart row (labels sit below). */
   const VELOCITY_BAR_MAX_PX = 96;
 
@@ -147,7 +149,11 @@ export default function StressMap() {
             </View>
           </View>
         </View>
-        <View style={styles.barChart}>
+        {/* Bars, baseline and week labels are three stacked rows rather than a
+            label tucked under each bar, so the axis can be drawn as one
+            unbroken rule. Without it the labels floated in mid-card and, with
+            no scheme of work loaded, the chart read as a blank blue panel. */}
+        <View style={[styles.barChart, !hasAnyBar && styles.barChartEmpty]}>
           {weeks.map((w) => {
             const total = weeklyTotals[w - 1] ?? 0;
             const isCurrent = w === user.currentWeek;
@@ -166,20 +172,28 @@ export default function StressMap() {
                     isCurrent && barH > 0 && styles.barCurrentRing,
                   ]}
                 />
-                <Text
-                  style={[
-                    styles.barWeekLabel,
-                    isCurrent && styles.barWeekLabelCurrent,
-                    isMonoTheme && { color: '#d4d4d4' },
-                  ]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                >
-                  W{w}
-                </Text>
               </View>
             );
           })}
+        </View>
+        <View style={[styles.chartBaseline, isMonoTheme && { backgroundColor: 'rgba(255,255,255,0.18)' }]} />
+        <View style={styles.axisRow}>
+          {weeks.map((w) => (
+            <View key={w} style={styles.barCol}>
+              <Text
+                style={[
+                  styles.barWeekLabel,
+                  w === user.currentWeek && styles.barWeekLabelCurrent,
+                  isMonoTheme && { color: '#d4d4d4' },
+                ]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.7}
+              >
+                W{w}
+              </Text>
+            </View>
+          ))}
         </View>
         {maxLoadInAnyWeek === 0 ? (
           /* Was a plain Text reading "Add sow". It looked tappable, did
@@ -201,11 +215,22 @@ export default function StressMap() {
           </Pressable>
         ) : null}
         {tasksOutsideTeachingWindow > 0 ? (
-          <Text style={[styles.emptyHint, { marginTop: 8 }, isMonoTheme && { color: '#a3a3a3' }]}>
-            {T('stressMapTasksOutsideRange')
-              .replace('{count}', String(tasksOutsideTeachingWindow))
-              .replace('{total}', String(totalWeeks))}
-          </Text>
+          /* On its own panel with an icon, left-aligned. Centred white-on-blue
+             paragraph read as part of the card's own copy, so a warning about
+             the student's dates looked like a description of the chart. */
+          <View style={[styles.noteRow, isMonoTheme && { backgroundColor: 'rgba(255,255,255,0.06)' }]}>
+            <Feather
+              name="alert-circle"
+              size={14}
+              color={isMonoTheme ? '#a3a3a3' : 'rgba(255,255,255,0.9)'}
+              style={styles.noteIcon}
+            />
+            <Text style={[styles.noteText, isMonoTheme && { color: '#a3a3a3' }]}>
+              {T('stressMapTasksOutsideRange')
+                .replace('{count}', String(tasksOutsideTeachingWindow))
+                .replace('{total}', String(totalWeeks))}
+            </Text>
+          </View>
         ) : null}
       </View>
 
@@ -340,7 +365,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    height: 120,
+    height: 104,
+  },
+  /**
+   * With no bars to draw there is nothing for 104pt of height to hold, and the
+   * card became a blank blue block with the week labels stranded at the foot of
+   * it. A short baseline instead reads as "an axis, waiting for data".
+   */
+  barChartEmpty: { height: 18 },
+  chartBaseline: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255,255,255,0.35)',
+    borderRadius: 1,
+  },
+  axisRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
   },
   barCol: {
     flex: 1,
@@ -370,9 +411,9 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '700',
     color: 'rgba(255,255,255,0.7)',
-    marginTop: 6,
-    minWidth: 22,
     textAlign: 'center',
+    // No minWidth: fourteen 22pt labels are wider than the card, which is what
+    // pushed W10-W14 into each other. The column already sets the width.
   },
   barWeekLabelCurrent: {
     color: '#ffffff',
@@ -383,7 +424,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 10,
+    marginTop: 16,
     paddingHorizontal: 16,
     paddingVertical: 9,
     borderRadius: 999,
@@ -400,6 +441,24 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: 'rgba(255,255,255,0.85)',
     textAlign: 'center',
+  },
+  noteRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.16)',
+  },
+  noteIcon: { marginTop: 1 },
+  noteText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 17,
+    color: 'rgba(255,255,255,0.95)',
   },
 
   summaryRow: { flexDirection: 'row', gap: 12, marginBottom: 24 },
