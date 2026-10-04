@@ -12,25 +12,27 @@ export async function fetchIsGradeUpAdmin(userId: string): Promise<boolean> {
 }
 
 /**
- * Whether this account's mini-game results belong on the leaderboards.
+ * The one account the mini-games treat as a test account.
  *
- * Admins play the games to check levels, not to compete, and an admin who can
- * open any puzzle as often as they like would sit at the top of every board on
- * test scores. So their results stay on their own device and are never posted.
+ * Deliberately a single id rather than "any admin". Admins are real students
+ * too, and several of them compete on these boards; taking the whole table out
+ * of the rankings to solve one person's test scores would have been a bigger
+ * change than the problem. Izwan asked for his account only.
  *
- * Cached per signed-in user: the three games each call this on every result,
- * and the answer cannot change without signing in again.
+ * It buys two things, both for checking levels rather than winning: the
+ * crossword's two-a-day drip and in-order unlock are lifted, and no result
+ * from this account is ever posted to a leaderboard. The second is also what
+ * makes clearing the stored scores stick — syncScoreToSupabase writes
+ * `Math.max(new, existing)` and never lowers a total, so a reset in the
+ * database used to be undone by the next sync from the device.
  */
-let adminCache: { userId: string; value: Promise<boolean> } | null = null;
+const GAME_TEST_ACCOUNT_ID = 'a44b03d4-3ab8-47f5-91cf-f88720fcb204';
 
-export function isGradeUpAdminCached(userId: string): Promise<boolean> {
-  if (adminCache?.userId !== userId) {
-    adminCache = { userId, value: fetchIsGradeUpAdmin(userId).catch(() => false) };
-  }
-  return adminCache.value;
+export function isGameTestAccount(userId: string | null | undefined): boolean {
+  return !!userId && userId === GAME_TEST_ACCOUNT_ID;
 }
 
-/** False for admins, so their scores never reach a leaderboard. */
+/** False for the test account, so its scores never reach a leaderboard. */
 export async function shouldPostGameScore(userId: string): Promise<boolean> {
-  return !(await isGradeUpAdminCached(userId));
+  return !isGameTestAccount(userId);
 }

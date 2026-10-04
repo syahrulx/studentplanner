@@ -23,7 +23,7 @@ import {
   getCrosswordLeaderboard, fetchAdminCrosswordPuzzles,
   type CrosswordProgress, type CrosswordLeaderboardEntry,
 } from '@/src/lib/crosswordStorage';
-import { isGradeUpAdminCached } from '@/src/lib/gradeUpAdmin';
+import { isGameTestAccount } from '@/src/lib/gradeUpAdmin';
 
 type Tab = 'levels' | 'rankings';
 type RankView = 'stats' | 'friends' | 'global';
@@ -156,20 +156,14 @@ export default function CrosswordScreen() {
   useEffect(() => { fetchAdminCrosswordPuzzles().then(setRemotePuzzles); }, []);
 
   /**
-   * Admins open any puzzle, as many as they like.
+   * The test account opens any puzzle, as many as it likes.
    *
    * Checking a new level means playing it, and the two-a-day drip plus the
-   * in-order unlock make that take a fortnight. Their results are not posted to
-   * a leaderboard either (shouldPostGameScore), so this is not a way to win —
-   * it is the same reason both rules exist for everyone else.
+   * in-order unlock make that take a fortnight. Its results are not posted to a
+   * leaderboard either (shouldPostGameScore), so this is not a way to win — it
+   * is the same reason both rules exist for everyone else.
    */
-  const [unlimited, setUnlimited] = useState(false);
-  useEffect(() => {
-    if (!userId) return;
-    let alive = true;
-    isGradeUpAdminCached(userId).then((v) => { if (alive) setUnlimited(v); });
-    return () => { alive = false; };
-  }, [userId]);
+  const unlimited = isGameTestAccount(userId);
   const allPuzzles = useMemo(
     () => [...CROSSWORD_PUZZLES, ...MOVIE_CROSSWORD_PUZZLES, ...remotePuzzles],
     [remotePuzzles],
