@@ -80,6 +80,14 @@ const HOUR_HEIGHT = 56;
 
 /** The day-name row above the grid; gridColHead's minHeight. */
 const GRID_HEADER_H = 48;
+/**
+ * How far the picture may be zoomed out.
+ *
+ * Was 0.5, which is not enough to fit a full teaching day sideways: eleven
+ * hours need about 0.6 and a fifteen-hour day about 0.45, so the fit was
+ * clamped above what actually fits and the grid stayed cropped.
+ */
+const WALL_MIN_ZOOM = 0.3;
 
 const START_HOUR = 7;
 // END_HOUR is exclusive. Use 23 so the 22:00 row is visible.
@@ -1281,7 +1289,7 @@ export default function TimetableScreen() {
 
             <View style={s.wallRow}>
               <Text style={[s.wallLabel, { color: theme.textSecondary }]}>{T('timetableSaveImageSize')}</Text>
-              <Pressable onPress={() => setWallZoom((v) => Math.max(0.5, Math.round((v - 0.1) * 100) / 100))} style={[s.wallStep, { borderColor: theme.border }]}>
+              <Pressable onPress={() => setWallZoom((v) => Math.max(WALL_MIN_ZOOM, Math.round((v - 0.1) * 100) / 100))} style={[s.wallStep, { borderColor: theme.border }]}>
                 <Feather name="minus" size={18} color={theme.text} />
               </Pressable>
               <Text style={[s.wallZoomText, { color: theme.text }]}>{Math.round(wallZoom * 100)}%</Text>
@@ -1325,16 +1333,43 @@ export default function TimetableScreen() {
    * opens zoomed to fit instead, anchored at the top. The student can still
    * push it bigger if they would rather crop than shrink.
    */
-  function openWallpaper() {
+  /**
+   * The zoom at which the whole grid fits a canvas of this height.
+   *
+   * Capped at 1: filling a short canvas by blowing the grid up past its natural
+   * size would push it wider than the picture and crop the days instead.
+   * Rounded down to the steppers' 0.01 grid so the first press of minus or plus
+   * lands on a round number rather than drifting off it.
+   */
+  function fitZoomFor(canvasH: number) {
     const hourCount = Math.max(1, exportRange.endHour - exportRange.startHour);
-    const naturalH = GRID_HEADER_H + hourCount * exportHourHeight(winH) + 8;
-    // Rounded down to the steppers' own 0.01 grid, so the first press of minus
-    // or plus lands on a round number rather than drifting off it.
-    const fit = Math.floor((winH / naturalH) * 100) / 100;
-    setWallZoom(Math.max(0.5, Math.min(1, fit)));
+    const naturalH = GRID_HEADER_H + hourCount * exportHourHeight(canvasH) + 8;
+    const fit = Math.floor((canvasH / naturalH) * 100) / 100;
+    return Math.max(WALL_MIN_ZOOM, Math.min(1, fit));
+  }
+
+  function openWallpaper() {
+    setWallZoom(fitZoomFor(winH));
     setWallPosition(0);
     setWallpaperOpen(true);
   }
+
+  /**
+   * Turning the picture sideways re-fits it.
+   *
+   * The canvas swaps its sides, so a zoom that filled the tall one overflows
+   * the short one — landscape kept portrait's 100% and cut 270pt off the bottom
+   * of an eleven-hour day, which is how it was reported. Recomputing also
+   * returns the position to the top, because the slice the old offset pointed
+   * at no longer exists.
+   */
+  useEffect(() => {
+    if (!wallpaperOpen) return;
+    setWallZoom(fitZoomFor(wallLandscape ? winW : winH));
+    setWallPosition(0);
+    // fitZoomFor reads exportRange, which is itself memoised on the timetable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wallLandscape, wallpaperOpen, winW, winH, exportRange]);
 
   async function saveWallpaper() {
     if (wallSaving) return;
