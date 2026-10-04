@@ -119,14 +119,28 @@ function useCommunityLayout() {
   const { width, height } = useWindowDimensions();
   return useMemo(() => {
     const snapPreviewWidth = Math.min(112, Math.max(96, width * 0.29));
+    /**
+     * The Friends sheet, as a fraction of the screen.
+     *
+     * Was 0.4, which was right before the snap row went in above the list.
+     * That row takes about 88pt, and on a 40% sheet it left roughly one friend
+     * visible — the list the panel is named after had been squeezed down to
+     * almost nothing. 0.48 puts three back without the map losing anything it
+     * was using: by the time a student is reading this list they have already
+     * found their friends on the map.
+     *
+     * The three offsets below hang off the same number, so they are derived
+     * rather than written out again and cannot drift from it.
+     */
+    const sheet = height * 0.48;
     return {
       statusCardWidth: (width - 50) / 2,
       snapPreviewWidth,
       snapPreviewHeight: snapPreviewWidth * 1.38,
-      bottomSheetHeight: height * 0.4,
-      floatingCatBottom: height * 0.4 - 10,
-      locationBannerBottom: height * 0.45 + 16,
-      friendInfoBottom: height * 0.42 + 16,
+      bottomSheetHeight: sheet,
+      floatingCatBottom: sheet - 10,
+      locationBannerBottom: sheet + height * 0.05 + 16,
+      friendInfoBottom: sheet + height * 0.02 + 16,
     };
   }, [width, height]);
 }

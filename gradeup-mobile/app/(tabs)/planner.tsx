@@ -185,6 +185,19 @@ function isStudyItem(item: PlannerItem): item is PlannerStudyItem {
 }
 
 type ViewMode = 'day' | 'week' | 'month' | 'all';
+
+/**
+ * Height of one hour in the week grid.
+ *
+ * Was 100, which left about five hours on screen at once: reaching a 10am
+ * deadline meant scrolling through a morning of nothing, on a view whose whole
+ * point is seeing the week at a glance. 64 shows roughly eight and sits near
+ * the Timetable tab's own 56, so the two grids read as the same app.
+ *
+ * The scroll-to-first-item effect measures in these units too, so it lives
+ * here rather than being written out at both sites.
+ */
+const WEEK_HOUR_HEIGHT = 64;
 type FilterType = 'all' | 'assignment' | 'quiz' | 'project' | 'lab' | 'test';
 const CALENDAR_STRIP_SLOT = 64;
 
@@ -830,8 +843,7 @@ export default function Planner() {
       if (h < minHour) minHour = h;
     }
     if (minHour >= 24) return;
-    const hourHeight = 100;
-    const y = Math.max(0, minHour * hourHeight - 48);
+    const y = Math.max(0, minHour * WEEK_HOUR_HEIGHT - 48);
     const id = setTimeout(() => {
       weekGridScrollRef.current?.scrollTo({ y, animated: true });
     }, 150);
@@ -1809,7 +1821,7 @@ export default function Planner() {
 
   // Render vertical week grid (7 columns)
   const renderWeekGrid = () => {
-    const hourHeight = 100; // Slightly taller for better readability
+    const hourHeight = WEEK_HOUR_HEIGHT;
     const colWidth = 110;  // Slightly wider columns
     const timeColWidth = 65;
     const now = new Date();
