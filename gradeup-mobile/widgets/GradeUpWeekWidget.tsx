@@ -1,5 +1,5 @@
 import { ZStack, Text, VStack, HStack, Spacer, Divider } from '@expo/ui/swift-ui';
-import { font, foregroundStyle, lineLimit, padding, frame, opacity, background, containerRelativeFrame, cornerRadius } from '@expo/ui/swift-ui/modifiers';
+import { font, foregroundStyle, lineLimit, padding, opacity, background, containerRelativeFrame, cornerRadius } from '@expo/ui/swift-ui/modifiers';
 import { createWidget, type WidgetEnvironment } from 'expo-widgets';
 import type { HomeWidgetProps, HomeWidgetWeekDay } from '../src/lib/homeWidgetProps';
 
@@ -92,7 +92,11 @@ function GradeUpWeekWidgetView(props: HomeWidgetProps | null | undefined, _env: 
         </Text>
         <HStack spacing={0}>
           {week.map((d) => (
-            <VStack key={d.dateISO} spacing={0} modifiers={[frame({ width: 22 })]}>
+            <VStack
+              key={d.dateISO}
+              spacing={0}
+              modifiers={[containerRelativeFrame({ axes: 'horizontal', count: 7, span: 1, spacing: 0, alignment: 'center' })]}
+            >
               <Text modifiers={[font({ size: 9, weight: d.dateISO === todayISO ? 'heavy' : 'regular' }), opacity(d.dateISO === todayISO ? 1 : 0.6)]}>
                 {d.initial}
               </Text>
@@ -111,11 +115,25 @@ function GradeUpWeekWidgetView(props: HomeWidgetProps | null | undefined, _env: 
   // is the "every class this week" frame and lists the lot.
   const codesPerDay = small ? 0 : large ? 6 : 3;
 
+  const sidePad = small ? 15 : 17;
+  // containerRelativeFrame splits the *whole* widget, which knows nothing about
+  // the padding this layout sits inside. Seven full-width sevenths plus our own
+  // two margins came to 42pt more than a small widget is wide, and SwiftUI
+  // centres an overflowing row — so Monday fell off the left edge, Sunday off
+  // the right, and the heading above was dragged out with it.
+  //
+  // `spacing` is the width to hold back, and SwiftUI takes it once per gap
+  // (count - 1 = 6), so the margins are spread across those six gaps. The gap
+  // between days is then padding *inside* each column, where it cannot feed
+  // back into the split. Same shape as the two-column layout in
+  // GradeUpTodayWidget.
+  const stripInset = Math.ceil((sidePad * 2) / 6);
+
   return (
     <ZStack alignment="topLeading" modifiers={bgMods}>
       <VStack
         alignment="leading"
-        modifiers={[padding({ top: large ? 20 : 16, leading: small ? 15 : 17, trailing: small ? 15 : 17, bottom: large ? 16 : small ? 14 : 13 })]}
+        modifiers={[padding({ top: large ? 20 : 16, leading: sidePad, trailing: sidePad, bottom: large ? 16 : small ? 14 : 13 })]}
         spacing={small ? 8 : large ? 12 : 10}
       >
         <HStack spacing={6} alignment="top">
@@ -138,7 +156,7 @@ function GradeUpWeekWidgetView(props: HomeWidgetProps | null | undefined, _env: 
             <Spacer />
           </HStack>
         ) : (
-          <HStack spacing={small ? 2 : 4} alignment="top">
+          <HStack spacing={0} alignment="top">
             {week.map((d) => {
               const isToday = d.dateISO === todayISO;
               return (
@@ -146,8 +164,8 @@ function GradeUpWeekWidgetView(props: HomeWidgetProps | null | undefined, _env: 
                   key={d.dateISO}
                   spacing={2}
                   modifiers={[
-                    containerRelativeFrame({ axes: 'horizontal', count: 7, span: 1, spacing: 0, alignment: 'center' }),
-                    padding({ vertical: 4 }),
+                    padding({ vertical: 4, horizontal: small ? 0 : 2 }),
+                    containerRelativeFrame({ axes: 'horizontal', count: 7, span: 1, spacing: stripInset, alignment: 'center' }),
                     ...(isToday && isFullColor ? [background(`${accent}22`), cornerRadius(8)] : []),
                   ]}
                 >

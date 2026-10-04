@@ -185,6 +185,19 @@ function isStudyItem(item: PlannerItem): item is PlannerStudyItem {
 }
 
 type ViewMode = 'day' | 'week' | 'month' | 'all';
+
+/**
+ * Height of one hour in the week grid.
+ *
+ * Was 100, which left about five hours on screen at once: reaching a 10am
+ * deadline meant scrolling through a morning of nothing, on a view whose whole
+ * point is seeing the week at a glance. 64 shows roughly eight and sits near
+ * the Timetable tab's own 56, so the two grids read as the same app.
+ *
+ * The scroll-to-first-item effect measures in these units too, so it lives
+ * here rather than being written out at both sites.
+ */
+const WEEK_HOUR_HEIGHT = 64;
 type FilterType = 'all' | 'assignment' | 'quiz' | 'project' | 'lab' | 'test';
 const CALENDAR_STRIP_SLOT = 64;
 
@@ -365,11 +378,17 @@ export default function Planner() {
     return false;
   }, [academicCalendar?.periods, user.semesterPhase]);
 
-  /** "Week 7 of 14", or "Week -" when the date falls outside the calendar. */
-  const weekLabelForDate = useCallback((dateISO: string) => (
+  /**
+   * "Week 7 of 14", or null when the date falls outside the calendar.
+   *
+   * It used to answer "Week -" there, so every task from a past semester — which
+   * is most of the All list — carried a heading ending in a dash that stood for
+   * nothing. A date with no teaching week is better off just being a date.
+   */
+  const weekLabelForDate = useCallback((dateISO: string): string | null => (
     dateIsInAcademicCalendar(dateISO)
       ? `Week ${getWeekNumberForDate(dateISO)} of ${totalWeeks}`
-      : 'Week -'
+      : null
   ), [dateIsInAcademicCalendar, getWeekNumberForDate, totalWeeks]);
 
   const activeDateIsInAcademicCalendar = useMemo(() => {
@@ -824,8 +843,7 @@ export default function Planner() {
       if (h < minHour) minHour = h;
     }
     if (minHour >= 24) return;
-    const hourHeight = 100;
-    const y = Math.max(0, minHour * hourHeight - 48);
+    const y = Math.max(0, minHour * WEEK_HOUR_HEIGHT - 48);
     const id = setTimeout(() => {
       weekGridScrollRef.current?.scrollTo({ y, animated: true });
     }, 150);
@@ -1206,11 +1224,20 @@ export default function Planner() {
             : daysUntil === 1
               ? T('tomorrow')
               : `${daysUntil} ${T('daysLeft')}`;
+    // Joined from the parts that exist rather than glued with bullets: a task
+    // with no subject used to read "Assignment •", trailing a separator with
+    // nothing after it.
+    const joinMeta = (...parts: (string | false | null | undefined)[]) =>
+      parts.filter(Boolean).join(' • ');
     const secondaryLabel = item.itemType === 'study'
-      ? (item.topic ? `${item.durationMinutes} min • ${item.topic}` : `${item.durationMinutes} min`)
+      ? joinMeta(`${item.durationMinutes} min`, item.topic)
       : isBreakdownStep
-        ? `Step ${(taskRow?.stepOrder ?? 0) + 1} • ${getCardSubject(item)}`
-        : `${item.type} • ${getCardSubject(item)}${breakdownSteps.length ? ` • ${completedBreakdownSteps}/${breakdownSteps.length} steps` : ''}`;
+        ? joinMeta(`Step ${(taskRow?.stepOrder ?? 0) + 1}`, getCardSubject(item))
+        : joinMeta(
+            item.type,
+            getCardSubject(item),
+            breakdownSteps.length ? `${completedBreakdownSteps}/${breakdownSteps.length} steps` : '',
+          );
     const statusTextStyle = item.isDone
       ? s.taskInlineStatusDone
       : item.itemType === 'study'
@@ -1758,11 +1785,13 @@ export default function Planner() {
         <View style={s.mDetailHeader}>
           <View style={{ flex: 1 }}>
             <Text style={s.mDetailTitle}>{dayName}, {monthNameStr} {dayNumSelected}</Text>
-            <Text style={s.mDetailCount}>
-              {selectedDayItems.length === 0
-                ? T('noTasksForDay')
-                : `${selectedDayItems.length} ${selectedDayItems.length === 1 ? 'item' : 'items'}`}
-            </Text>
+            {/* Only the count. The empty state below already says there is
+                nothing, and saying it twice on one screen reads like a fault. */}
+            {selectedDayItems.length > 0 ? (
+              <Text style={s.mDetailCount}>
+                {`${selectedDayItems.length} ${selectedDayItems.length === 1 ? 'item' : 'items'}`}
+              </Text>
+            ) : null}
           </View>
           <Pressable
             style={s.mDetailAddBtn}
@@ -1792,7 +1821,7 @@ export default function Planner() {
 
   // Render vertical week grid (7 columns)
   const renderWeekGrid = () => {
-    const hourHeight = 100; // Slightly taller for better readability
+    const hourHeight = WEEK_HOUR_HEIGHT;
     const colWidth = 110;  // Slightly wider columns
     const timeColWidth = 65;
     const now = new Date();
@@ -2345,7 +2374,9 @@ export default function Planner() {
                         <Text style={s.allDateHeader}>
                           {bySubject
                             ? group || T('subject')
-                            : `${formatDisplayDate(itemDate)}  •  ${weekLabelForDate(itemDate)}`}
+                            : [formatDisplayDate(itemDate), weekLabelForDate(itemDate)]
+                                .filter(Boolean)
+                                .join('  •  ')}
                         </Text>
                         <View style={s.allDateLine} />
                       </View>

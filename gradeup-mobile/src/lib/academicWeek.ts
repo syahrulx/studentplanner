@@ -216,11 +216,57 @@ export function teachingWeekNumberForDate(
  * planner week strip. `suggestedWeek` is intentionally ignored so the graph always matches what
  * the user sees in the planner.
  */
+/**
+ * The first day the semester counts, or null when there is nothing to measure
+ * against. Lecture periods when the calendar has them, the calendar's own
+ * start otherwise — the same two sources dueDateToTeachingWeekRaw uses.
+ */
+function semesterFirstDay(
+  calendar: AcademicCalendar | null | undefined,
+  profileStartFallback?: string | null,
+): Date | null {
+  let start: string | undefined;
+  const periods = calendar?.periods;
+  if (periods && Array.isArray(periods) && periods.length > 0) {
+    start = periods
+      .filter((p: AcademicPeriod) => p.type === 'lecture')
+      .map((p) => p.startDate)
+      .sort()[0];
+  }
+  if (!start) start = (calendar?.startDate ?? profileStartFallback ?? '').trim().slice(0, 10);
+  if (!start || !/^\d{4}-\d{2}-\d{2}$/.test(start)) return null;
+  const d = snapToWeekSunday(new Date(`${start}T00:00:00`));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * The teaching week a task belongs to *for the workload chart*, or null when it
+ * belongs to no week at all.
+ *
+ * This is deliberately stricter than dueDateToTeachingWeek. That one clamps
+ * anything earlier than the semester into week 1, which is right for a label on
+ * a single task but wrong for a chart: every finished task from every previous
+ * semester piled into week 1, so a student who had done nothing yet this term
+ * opened Workload Velocity to one tall bar at W1 — sixteen of them, in the case
+ * this was found on — and a flat line everywhere else. It reads as broken, and
+ * it is: those tasks were due months before the week it put them in.
+ *
+ * Returning null instead means the stress map counts them as outside the
+ * teaching window, which it already tells the student about.
+ */
 export function taskTeachingWeekForWorkload(
   task: { dueDate: string; suggestedWeek?: number },
   calendar: AcademicCalendar | null | undefined,
   profileStartFallback?: string | null,
 ): number | null {
+  const first = semesterFirstDay(calendar, profileStartFallback);
+  if (first) {
+    const due = (task.dueDate || '').trim().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return null;
+    const dueDate = new Date(`${due}T00:00:00`);
+    if (Number.isNaN(dueDate.getTime())) return null;
+    if (dueDate.getTime() < first.getTime()) return null;
+  }
   return dueDateToTeachingWeek(task.dueDate, calendar, profileStartFallback);
 }
 

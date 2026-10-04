@@ -370,8 +370,20 @@ export default function AddAcademicCalendarScreen() {
         );
         resolvedCampusId = match?.id ?? null;
         if (!resolvedCampusId && (campusRows ?? []).length > 0) {
+          // Name both sides. This used to say only that the campus did not
+          // match and to contact support, which is what students then did —
+          // without knowing what their profile said or what the valid answers
+          // were, there was nothing else they could do. A student who can read
+          // both lists usually fixes it in the next ten seconds.
+          const valid = (campusRows ?? [])
+            .map((row) => String(row.name || "").trim())
+            .filter(Boolean)
+            .sort();
+          const shown = valid.slice(0, 6).join(", ");
+          const rest = valid.length > 6 ? `, and ${valid.length - 6} more` : "";
           throw new Error(
-            "Your campus does not match the university campus list. Please update your profile or contact support.",
+            `Your profile says your campus is "${campusName}", which is not one of this university's campuses: ${shown}${rest}. ` +
+              "Open Profile to pick the right campus — or change your university if that is what is wrong.",
           );
         }
       }

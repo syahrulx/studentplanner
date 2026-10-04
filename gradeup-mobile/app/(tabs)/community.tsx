@@ -104,25 +104,43 @@ import * as communityApi from '@/src/lib/communityApi';
 import { ACTIVITY_TYPES } from '@/src/lib/communityApi';
 import { featherForLegacyCircleEmoji } from '@/src/lib/featherGlyphUi';
 import type { FriendWithStatus, Circle, SharedGoal, ActivityType, UserActivity } from '@/src/lib/communityApi';
-import type { TimetableEntry } from '@/src/types';
+import type { TimetableEntry, StudySnap } from '@/src/types';
 import { getCurrentTimetableSubjectLabel, studyingStatusDetailText } from '@/src/lib/timetableCurrentSlot';
 
 
 const COMMUNITY_REFRESH_MIN_MS = 1200;
 const COMMUNITY_FAVORITES_KEY = 'communityFavoriteFriendIds_v1';
 
+/** Snap row bubble size, and the same orange the map pin's snap ring uses. */
+const SNAP_BUBBLE = 52;
+const SNAP_RING = '#ff6b00';
+
 function useCommunityLayout() {
   const { width, height } = useWindowDimensions();
   return useMemo(() => {
     const snapPreviewWidth = Math.min(112, Math.max(96, width * 0.29));
+    /**
+     * The Friends sheet, as a fraction of the screen.
+     *
+     * Was 0.4, which was right before the snap row went in above the list.
+     * That row takes about 88pt, and on a 40% sheet it left roughly one friend
+     * visible — the list the panel is named after had been squeezed down to
+     * almost nothing. 0.48 puts three back without the map losing anything it
+     * was using: by the time a student is reading this list they have already
+     * found their friends on the map.
+     *
+     * The three offsets below hang off the same number, so they are derived
+     * rather than written out again and cannot drift from it.
+     */
+    const sheet = height * 0.48;
     return {
       statusCardWidth: (width - 50) / 2,
       snapPreviewWidth,
       snapPreviewHeight: snapPreviewWidth * 1.38,
-      bottomSheetHeight: height * 0.4,
-      floatingCatBottom: height * 0.4 - 10,
-      locationBannerBottom: height * 0.45 + 16,
-      friendInfoBottom: height * 0.42 + 16,
+      bottomSheetHeight: sheet,
+      floatingCatBottom: sheet - 10,
+      locationBannerBottom: sheet + height * 0.05 + 16,
+      friendInfoBottom: sheet + height * 0.02 + 16,
     };
   }, [width, height]);
 }
@@ -539,6 +557,7 @@ export default function CommunityMap() {
     locationVisibility,
     setLocationVisibility,
     friendSnaps,
+    sharedSnaps,
     friendStreaks,
     myStreak,
     userId,
@@ -596,6 +615,35 @@ export default function CommunityMap() {
     () => visibleFriends.filter((f) => favoriteSet.has(f.id)).map((f) => f.name),
     [visibleFriends, favoriteSet],
   );
+
+  /**
+   * Snaps, off the map.
+   *
+   * A snap only ever drew on a map pin: your own needed valid coordinates and
+   * a visibility that was not 'off', and a friend's needed `f.location`. So a
+   * student who keeps their location off could build a streak nobody could
+   * see, and never saw a friend's either — the feature was alive but invisible
+   * to them. This row carries the same snaps into the Friends sheet, which
+   * every student has whether they share a location or not.
+   *
+   * The pins stay exactly as they are. This is an addition, not a move.
+   */
+  const snapRowFriends = useMemo(() => {
+    const withSnaps: { friend: (typeof visibleFriends)[number]; snap: StudySnap }[] = [];
+    for (const friend of visibleFriends) {
+      const snap = friendSnaps.get(friend.id);
+      if (snap) withSnaps.push({ friend, snap });
+    }
+    // Newest first, so a snap posted minutes ago is the one in reach of a thumb.
+    withSnaps.sort((a, b) => Date.parse(b.snap.createdAt) - Date.parse(a.snap.createdAt));
+    return withSnaps;
+  }, [visibleFriends, friendSnaps]);
+
+  const mySnap = user?.id ? friendSnaps.get(user.id) : undefined;
+
+  const openSnap = useCallback((snapId: string) => {
+    router.push({ pathname: '/snap-viewer', params: { snapId } } as any);
+  }, []);
 
   useEffect(() => {
     AsyncStorage.getItem(COMMUNITY_FAVORITES_KEY)
@@ -1449,6 +1497,101 @@ export default function CommunityMap() {
               </Text>
             </View>
           )}
+
+          {/* Snap row — the map-free way to see today's snaps. See snapRowFriends. */}
+          <View style={[styles.snapRow, { borderBottomColor: theme.border }]}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.snapRowContent}
+            >
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={mySnap ? 'Open your snap' : 'Add your snap'}
+                style={({ pressed }) => [styles.snapBubbleWrap, pressed && { opacity: 0.75 }]}
+                onPress={() => (mySnap ? openSnap(mySnap.id) : router.push('/snap-camera' as any))}
+              >
+                <View
+                  style={[
+                    styles.snapBubbleRing,
+                    mySnap
+                      ? { borderColor: SNAP_RING }
+                      : { borderColor: theme.border, borderStyle: 'dashed' },
+                  ]}
+                >
+                  {mySnap ? (
+                    <Image source={{ uri: mySnap.imageUrl }} style={styles.snapBubbleImage} contentFit="cover" transition={160} />
+                  ) : (
+                    <Avatar name={user.name} avatarUrl={user.avatar} size={SNAP_BUBBLE} />
+                  )}
+                  {!mySnap && (
+                    <View style={[styles.snapBubbleAdd, { backgroundColor: theme.primary, borderColor: theme.card }]}>
+                      <Feather name="plus" size={11} color={theme.textInverse} />
+                    </View>
+                  )}
+                </View>
+                <Text style={[styles.snapBubbleName, { color: theme.text }]} numberOfLines={1}>
+                  {mySnap ? 'Your snap' : 'Add snap'}
+                </Text>
+              </Pressable>
+
+              {snapRowFriends.map(({ friend, snap }) => {
+                const streak = friendStreaks.get(friend.id)?.currentStreak ?? 0;
+                return (
+                  <Pressable
+                    key={friend.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open ${friend.name}'s snap`}
+                    style={({ pressed }) => [styles.snapBubbleWrap, pressed && { opacity: 0.75 }]}
+                    onPress={() => openSnap(snap.id)}
+                  >
+                    <View style={[styles.snapBubbleRing, { borderColor: SNAP_RING }]}>
+                      <Image source={{ uri: snap.imageUrl }} style={styles.snapBubbleImage} contentFit="cover" transition={160} />
+                      {streak > 0 && (
+                        <View style={[styles.snapBubbleStreak, { borderColor: theme.card }]}>
+                          <Text style={styles.snapBubbleStreakText}>{streak > 99 ? '99+' : streak}</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={[styles.snapBubbleName, { color: theme.text }]} numberOfLines={1}>
+                      {friend.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+
+              {sharedSnaps.length > 0 && (
+                <View style={[styles.snapRowDivider, { backgroundColor: theme.border }]} />
+              )}
+
+              {sharedSnaps.map((snap) => (
+                <Pressable
+                  key={snap.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open a snap from ${snap.authorName || 'a student'}`}
+                  style={({ pressed }) => [styles.snapBubbleWrap, pressed && { opacity: 0.75 }]}
+                  onPress={() => openSnap(snap.id)}
+                >
+                  {/* A different ring on purpose: this is not a friend, and a
+                      student should be able to see that before they tap. */}
+                  <View style={[styles.snapBubbleRing, { borderColor: theme.primary }]}>
+                    <Image source={{ uri: snap.imageUrl }} style={styles.snapBubbleImage} contentFit="cover" transition={160} />
+                  </View>
+                  <Text style={[styles.snapBubbleName, { color: theme.textSecondary }]} numberOfLines={1}>
+                    {snap.authorName || 'Student'}
+                  </Text>
+                </Pressable>
+              ))}
+
+              {snapRowFriends.length === 0 && sharedSnaps.length === 0 && (
+                <View style={styles.snapRowEmpty}>
+                  <Text style={[styles.snapRowEmptyText, { color: theme.textSecondary }]} numberOfLines={2}>
+                    No snaps from friends yet today.
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
 
           {/* Friends list */}
           <ScrollView
@@ -3091,6 +3234,50 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   favoriteRowText: { fontSize: 12, fontWeight: '700', flex: 1 },
+  snapRow: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    marginBottom: 4,
+  },
+  snapRowContent: { paddingHorizontal: 20, paddingBottom: 10, gap: 14 },
+  snapBubbleWrap: { alignItems: 'center', width: SNAP_BUBBLE + 14 },
+  snapBubbleRing: {
+    width: SNAP_BUBBLE + 8,
+    height: SNAP_BUBBLE + 8,
+    borderRadius: (SNAP_BUBBLE + 8) / 2,
+    borderWidth: 2.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  snapBubbleImage: { width: SNAP_BUBBLE, height: SNAP_BUBBLE, borderRadius: SNAP_BUBBLE / 2 },
+  snapBubbleAdd: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  snapBubbleStreak: {
+    position: 'absolute',
+    right: -4,
+    bottom: -3,
+    minWidth: 20,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    borderWidth: 2,
+    backgroundColor: SNAP_RING,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  snapBubbleStreakText: { fontSize: 10, fontWeight: '800', color: '#ffffff' },
+  snapBubbleName: { fontSize: 11, fontWeight: '600', marginTop: 5, maxWidth: SNAP_BUBBLE + 14 },
+  snapRowDivider: { width: StyleSheet.hairlineWidth, alignSelf: 'stretch', marginVertical: 8 },
+  snapRowEmpty: { justifyContent: 'center', paddingLeft: 4, maxWidth: 190 },
+  snapRowEmptyText: { fontSize: 12, fontWeight: '600' },
   bottomSheetTitle: { fontSize: 22, fontWeight: '800' },
   bottomSheetActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   tabPill: {

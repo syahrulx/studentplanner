@@ -22,7 +22,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 
 import Feather from '@expo/vector-icons/Feather';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { useDarkMinimalThemePack, useTheme, useThemePack } from '@/hooks/useTheme';
@@ -46,6 +45,7 @@ import {
 } from '@/src/lib/browseCampusModalLock';
 import { waitForBrowseCampusPrefSettled } from '@/src/lib/waitForBrowseCampusPref';
 import { CommunityPostImageCarousel } from '@/components/CommunityPostImageCarousel';
+import ThemedDateTimePicker from '@/components/ThemedDateTimePicker';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -1400,11 +1400,10 @@ export default function EventsBoard() {
                     { backgroundColor: theme.backgroundSecondary, borderColor: theme.border },
                   ]}
                 >
-                  <DateTimePicker
+                  <ThemedDateTimePicker
                     value={tempDate ? new Date(tempDate) : new Date()}
                     mode="date"
                     display="inline"
-                    themeVariant={dark ? 'dark' : 'light'}
                     accentColor={theme.primary}
                     onChange={(_, selectedDate) => {
                       if (selectedDate) setTempDate(selectedDate.toISOString().split('T')[0]);
@@ -1414,7 +1413,7 @@ export default function EventsBoard() {
               )}
 
               {Platform.OS === 'android' && showDatePicker && (
-                <DateTimePicker
+                <ThemedDateTimePicker
                   value={tempDate ? new Date(tempDate) : new Date()}
                   mode="date"
                   display="default"
@@ -1544,6 +1543,15 @@ export default function EventsBoard() {
           setBrowseCampusReady(true);
           holdsCampusModalLockRef.current = false;
           releaseBrowseCampusModal(userId, userUni);
+        }}
+        onDismiss={() => {
+          // Closed without answering. No preference is written, so the prompt
+          // returns next time; the board still has to be let go, or it waits
+          // on a campus that is never coming and spins for ever.
+          setShowCampusDefaultModal(false);
+          setBrowseCampusReady(true);
+          holdsCampusModalLockRef.current = false;
+          if (userId && userUni) releaseBrowseCampusModal(userId, userUni);
         }}
       />
 

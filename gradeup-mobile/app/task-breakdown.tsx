@@ -12,7 +12,6 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import Feather from '@expo/vector-icons/Feather';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
@@ -23,6 +22,7 @@ import { getTodayISO } from '@/src/utils/date';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { SharedTask } from '@/src/types';
 import { getSharedTaskParticipants, removeTaskCollaborator } from '@/src/lib/communityApi';
+import ThemedDateTimePicker from '@/components/ThemedDateTimePicker';
 
 type DraftStep = { id: string; title: string; existing: boolean; dueDate: string; assigneeId?: string };
 
@@ -503,7 +503,7 @@ function StepDatePicker({
 
   if (Platform.OS === 'android') {
     return (
-      <DateTimePicker
+      <ThemedDateTimePicker
         value={toDate(value)}
         mode="date"
         display="default"
@@ -525,14 +525,12 @@ function StepDatePicker({
           onStartShouldSetResponder={() => true}
         >
           <Text style={[styles.pickerTitle, { color: theme.text }]}>When will you do this step?</Text>
-          <DateTimePicker
+          <ThemedDateTimePicker
             value={toDate(value)}
             mode="date"
             display="spinner"
             minimumDate={toDate(minDate)}
             maximumDate={toDate(maxDate)}
-            themeVariant={theme.background === '#FFFFFF' ? 'light' : 'dark'}
-            textColor={theme.text}
             style={styles.picker}
             onChange={(_, date) => {
               if (date) onChange(toISO(date));

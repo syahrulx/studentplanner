@@ -716,12 +716,26 @@ const DEFAULT_TIMETABLE_SLOT_DETAILS: TimetableSlotDetailsVisibility = {
   use12HourTime: false,
 };
 
+/**
+ * The last value read or written, for callers that cannot await.
+ *
+ * The lock screen's render host builds its pictures in the background and has
+ * no place to put an await, but it still needs to know whether the student
+ * asked for 12-hour time. Before anything has read storage this is the
+ * defaults, which is the same answer the lock screen used to assume anyway.
+ */
+let slotDetailsSnapshot: TimetableSlotDetailsVisibility = { ...DEFAULT_TIMETABLE_SLOT_DETAILS };
+
+export function getTimetableSlotDetailsSnapshot(): TimetableSlotDetailsVisibility {
+  return slotDetailsSnapshot;
+}
+
 export async function getTimetableSlotDetailsVisibility(): Promise<TimetableSlotDetailsVisibility> {
   try {
     const raw = await AsyncStorage.getItem(KEY_TIMETABLE_SLOT_DETAILS);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<TimetableSlotDetailsVisibility>;
-      return {
+      const resolved: TimetableSlotDetailsVisibility = {
         courseName:
           typeof parsed.courseName === 'boolean'
             ? parsed.courseName
@@ -738,6 +752,8 @@ export async function getTimetableSlotDetailsVisibility(): Promise<TimetableSlot
             ? parsed.use12HourTime
             : DEFAULT_TIMETABLE_SLOT_DETAILS.use12HourTime,
       };
+      slotDetailsSnapshot = resolved;
+      return resolved;
     }
   } catch {}
   return { ...DEFAULT_TIMETABLE_SLOT_DETAILS };
@@ -746,6 +762,7 @@ export async function getTimetableSlotDetailsVisibility(): Promise<TimetableSlot
 export async function setTimetableSlotDetailsVisibility(
   v: TimetableSlotDetailsVisibility,
 ): Promise<void> {
+  slotDetailsSnapshot = { ...v };
   try {
     await AsyncStorage.setItem(KEY_TIMETABLE_SLOT_DETAILS, JSON.stringify(v));
   } catch (error) {

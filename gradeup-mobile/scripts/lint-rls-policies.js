@@ -78,11 +78,17 @@ function parsePolicy(statement) {
   };
 }
 
-/** Calls not already wrapped as `(select fn())`. */
+/**
+ * Calls not already wrapped as `(select fn())`.
+ *
+ * The schema prefix is optional on both sides: `(select public.is_admin())` is
+ * wrapped and must not be reported, while a bare `public.is_admin()` must be.
+ */
 function bareCalls(body) {
   const found = new Set();
   for (const fn of ['auth.uid', 'auth.jwt', 'auth.role', 'is_admin']) {
-    const call = new RegExp(`(\\(\\s*select\\s+)?\\b${fn.replace('.', '\\.')}\\s*\\(\\s*\\)`, 'gi');
+    const name = `(?:public\\.)?${fn.replace('.', '\\.')}`;
+    const call = new RegExp(`(\\(\\s*select\\s+)?\\b${name}\\s*\\(\\s*\\)`, 'gi');
     let m;
     while ((m = call.exec(body)) !== null) {
       if (!m[1]) found.add(`${fn}()`);

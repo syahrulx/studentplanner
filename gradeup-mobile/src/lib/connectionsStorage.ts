@@ -1,3 +1,4 @@
+import { shouldPostGameScore } from './gradeUpAdmin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import { currentUserId, scopedKey, readScoped } from './scopedStorage';
@@ -107,6 +108,9 @@ export async function syncScoreToSupabase(result: PuzzleResult): Promise<void> {
 
   const userId = session.user.id;
   console.log('[sync] User ID:', userId);
+
+  // Admin results never reach a leaderboard — see shouldPostGameScore.
+  if (!(await shouldPostGameScore(userId))) return;
 
   // Upsert: only overwrite if the new score is higher
   const { data: existing, error: existingErr } = await supabase

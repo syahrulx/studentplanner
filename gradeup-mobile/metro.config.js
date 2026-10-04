@@ -7,6 +7,15 @@ if (!config.resolver.assetExts.includes('lottie')) {
   config.resolver.assetExts.push('lottie');
 }
 
+// PDF.js ships ES modules only, and Android's WebView cannot display a PDF on
+// its own, so the viewer loads these two files from disk. They are copied in
+// under a bespoke extension rather than kept as .mjs: adding 'mjs' to assetExts
+// would make Metro treat every .mjs in node_modules as an asset and break the
+// packages that ship ESM.
+if (!config.resolver.assetExts.includes('pdfjs')) {
+  config.resolver.assetExts.push('pdfjs');
+}
+
 // ---------------------------------------------------------------------------
 // Web: alias native-only packages (no web build) to a harmless empty stub so
 // the web bundle never tries to resolve their native code. Runtime usage is

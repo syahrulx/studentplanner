@@ -14,7 +14,7 @@ import { useCommunity } from '@/src/context/CommunityContext';
 import { contrastText } from '@/src/lib/contrast';
 import { getTodayISO } from '@/src/utils/date';
 import {
-  CROSSWORD_PUZZLES, buildCells, clueCells, isComplete, checkBonusGuess,
+  CROSSWORD_PUZZLES, MOVIE_CROSSWORD_PUZZLES, buildCells, clueCells, isComplete, checkBonusGuess,
   type CrosswordPuzzle, type CrosswordClue,
 } from '@/src/lib/crosswordEngine';
 import {
@@ -23,6 +23,7 @@ import {
   getCrosswordLeaderboard, fetchAdminCrosswordPuzzles,
   type CrosswordProgress, type CrosswordLeaderboardEntry,
 } from '@/src/lib/crosswordStorage';
+import { isGameTestAccount } from '@/src/lib/gradeUpAdmin';
 
 type Tab = 'levels' | 'rankings';
 type RankView = 'stats' | 'friends' | 'global';
@@ -62,6 +63,38 @@ const TITLE_EMOJI: Record<string, string> = {
   'Drinks': '🥤',
   'Countries': '🌍',
   'Time & Calendar': '📅',
+  // Pack 2 — Movie Night. Without these every card in the pack falls back to
+  // the same puzzle piece, and thirty identical tiles are hard to tell apart.
+  'Movie Genres': '🎬',
+  'At the Cinema': '🍿',
+  'Film Crew': '👷',
+  'Camera Shots': '📷',
+  'Animation': '✏️',
+  'Making a Film': '🎥',
+  'Movie Awards': '🏆',
+  'Special Effects': '💥',
+  'Movie Sound': '🔊',
+  'Lights on Set': '💡',
+  'Costume and Makeup': '👗',
+  'The Script': '📜',
+  'Horror Films': '👻',
+  'Science Fiction': '🛸',
+  'Action Films': '💣',
+  'Comedy Films': '😂',
+  'Film Festivals': '🎟️',
+  'Film Editing': '✂️',
+  'Movie Theatres': '🎦',
+  'Behind the Scenes': '🎭',
+  'Film Story': '📖',
+  'Western Films': '🤠',
+  'Movie Snacks': '🥤',
+  'Film Studios': '🏢',
+  'Movie Villains': '😈',
+  'On Location': '🗺️',
+  'Film Tech': '🎛️',
+  'Fantasy Films': '🐉',
+  'Watching at Home': '📺',
+  'Film Words': '🎞️',
 };
 const titleEmoji = (title: string) => TITLE_EMOJI[title] ?? '🧩';
 
@@ -93,6 +126,7 @@ export default function CrosswordScreen() {
   const [progress, setProgress] = useState<CrosswordProgress | null>(null);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [set1Open, setSet1Open] = useState(true);
+  const [set2Open, setSet2Open] = useState(true);
   /** Tracks the local calendar day so daily unlocks refresh after midnight. */
   const [todayISO, setTodayISO] = useState(() => getTodayISO());
 
@@ -120,7 +154,31 @@ export default function CrosswordScreen() {
   // blocked/empty while this is in flight.
   const [remotePuzzles, setRemotePuzzles] = useState<CrosswordPuzzle[]>([]);
   useEffect(() => { fetchAdminCrosswordPuzzles().then(setRemotePuzzles); }, []);
-  const allPuzzles = useMemo(() => [...CROSSWORD_PUZZLES, ...remotePuzzles], [remotePuzzles]);
+
+  /**
+   * The test account opens any puzzle, as many as it likes.
+   *
+   * Checking a new level means playing it, and the two-a-day drip plus the
+   * in-order unlock make that take a fortnight. Its results are not posted to a
+   * leaderboard either (shouldPostGameScore), so this is not a way to win — it
+   * is the same reason both rules exist for everyone else.
+   */
+  const unlimited = isGameTestAccount(userId);
+  const allPuzzles = useMemo(
+    () => [...CROSSWORD_PUZZLES, ...MOVIE_CROSSWORD_PUZZLES, ...remotePuzzles],
+    [remotePuzzles],
+  );
+  /**
+   * The packs, kept apart on screen.
+   *
+   * Two ship with the app — the Starter Pack at ids 1-30 and Movie Night at
+   * 1001-1030 — and anything an admin adds arrives separately from id 31 up.
+   * All three used to be poured into one list, so an admin puzzle appeared
+   * inside the Starter Pack while the card below still promised a Pack 2.
+   */
+  const pack1 = CROSSWORD_PUZZLES;
+  const pack2 = MOVIE_CROSSWORD_PUZZLES;
+  const extraPuzzles = remotePuzzles;
 
   const activePuzzle = activeId != null ? allPuzzles.find((p) => p.id === activeId) : null;
 
@@ -139,16 +197,16 @@ export default function CrosswordScreen() {
     if (!progress) return;
     const done = isCompleted(progress, p.id);
     if (done) { setActiveId(p.id); return; }
-    if (p.id !== firstUnsolvedId) {
+    if (!unlimited && p.id !== firstUnsolvedId) {
       Alert.alert('Locked', 'Finish the puzzles before this one first.');
       return;
     }
-    if (playsLeftToday(progress) <= 0) {
+    if (!unlimited && playsLeftToday(progress) <= 0) {
       Alert.alert("That's enough for today!", 'You can unlock 2 crosswords per day. Come back tomorrow for the next one.');
       return;
     }
     setActiveId(p.id);
-  }, [progress, firstUnsolvedId]);
+  }, [progress, firstUnsolvedId, unlimited]);
 
   const closePuzzle = useCallback(async () => {
     setActiveId(null);
@@ -174,71 +232,13 @@ export default function CrosswordScreen() {
   }
 
   // ─── Hub (levels + rankings) ───
-  const solved = progress ? completedCount(progress) : 0;
-  const onPrimary = contrastText(theme.primary);
-
-  return (
-    <View style={[styles.root, { backgroundColor: theme.background }]}>
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <Pressable onPress={() => router.back()} style={[styles.iconBtn, { backgroundColor: theme.card }]}>
-          <Feather name="arrow-left" size={22} color={theme.text} />
-        </Pressable>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Crossword</Text>
-        <View style={{ width: 40 }} />
-      </View>
-
-      <View style={[styles.tabs, { backgroundColor: theme.border }]}>
-        {(['levels', 'rankings'] as Tab[]).map((t) => {
-          const active = tab === t;
-          return (
-            <Pressable key={t} style={[styles.tab, active && [styles.tabActive, { backgroundColor: theme.card }]]} onPress={() => setTab(t)}>
-              <Text style={[styles.tabText, { color: active ? theme.text : theme.textSecondary }]}>
-                {t === 'levels' ? 'Puzzles' : 'Rankings'}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      {tab === 'levels' ? (
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24 }} showsVerticalScrollIndicator={false}>
-          {/* Daily banner */}
-          <LinearGradient colors={[theme.primary, theme.primary + 'CC']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.banner, { shadowColor: theme.primary }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.bannerTitle, { color: onPrimary }]}>{progress && allCompleted(progress, allPuzzles.length) ? 'All puzzles solved! 🎉' : `${left} puzzle${left === 1 ? '' : 's'} left today`}</Text>
-              <Text style={[styles.bannerSub, { color: onPrimary, opacity: 0.85 }]}>Solve up to 2 crosswords a day · keep your streak alive</Text>
-            </View>
-            <View style={[styles.bannerBadge, { backgroundColor: onPrimary }]}>
-              <Text style={[styles.bannerBadgeText, { color: theme.primary }]}>{solved}/{allPuzzles.length}</Text>
-            </View>
-          </LinearGradient>
-
-          {/* Set 1 — the starter pack (collapsible) */}
-          <Pressable
-            onPress={() => setSet1Open((o) => !o)}
-            style={({ pressed }) => [styles.setHeader, { backgroundColor: theme.card }, pressed && { opacity: 0.85 }]}
-          >
-            <LinearGradient colors={[theme.primary, theme.primary + 'CC']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.setBadge}>
-              <Text style={[styles.setBadgeNum, { color: onPrimary }]}>1</Text>
-            </LinearGradient>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.setTitle, { color: theme.text }]}>Starter Pack</Text>
-              <Text style={[styles.setSub, { color: theme.textSecondary }]}>{allPuzzles.length} puzzles · unlock 2 a day, in order</Text>
-            </View>
-            <View style={[styles.setPill, { backgroundColor: theme.primary + '1A' }]}>
-              <Text style={[styles.setCount, { color: theme.primary }]}>{solved}/{allPuzzles.length}</Text>
-            </View>
-            <Feather name={set1Open ? 'chevron-up' : 'chevron-down'} size={20} color={theme.textSecondary} />
-          </Pressable>
-
-          {set1Open && (
-          <View style={[styles.grid, { marginTop: 14 }]}>
-            {allPuzzles.map((p) => {
+  /** One level tile. Shared so both packs look and behave the same. */
+  const renderLevel = (p: CrosswordPuzzle) => {
               const done = progress ? isCompleted(progress, p.id) : false;
               const result = progress ? getResult(progress, p.id) : undefined;
               const isNext = p.id === firstUnsolvedId;
-              const dailyLock = isNext && left <= 0;
-              const seqLock = !done && !isNext;
+              const dailyLock = !unlimited && isNext && left <= 0;
+              const seqLock = !unlimited && !done && !isNext;
               const locked = dailyLock || seqLock;
               return (
                 <Pressable
@@ -271,20 +271,137 @@ export default function CrosswordScreen() {
                   </Text>
                 </Pressable>
               );
-            })}
-          </View>
+  };
+
+  const solved = progress ? completedCount(progress) : 0;
+  const solvedIn = (pack: CrosswordPuzzle[]) =>
+    progress ? pack.filter((q) => isCompleted(progress, q.id)).length : 0;
+  const onPrimary = contrastText(theme.primary);
+
+  return (
+    <View style={[styles.root, { backgroundColor: theme.background }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <Pressable onPress={() => router.back()} style={[styles.iconBtn, { backgroundColor: theme.card }]}>
+          <Feather name="arrow-left" size={22} color={theme.text} />
+        </Pressable>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Crossword</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
+      <View style={[styles.tabs, { backgroundColor: theme.border }]}>
+        {(['levels', 'rankings'] as Tab[]).map((t) => {
+          const active = tab === t;
+          return (
+            <Pressable key={t} style={[styles.tab, active && [styles.tabActive, { backgroundColor: theme.card }]]} onPress={() => setTab(t)}>
+              <Text style={[styles.tabText, { color: active ? theme.text : theme.textSecondary }]}>
+                {t === 'levels' ? 'Puzzles' : 'Rankings'}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {tab === 'levels' ? (
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24 }} showsVerticalScrollIndicator={false}>
+          {/* Daily banner */}
+          <LinearGradient colors={[theme.primary, theme.primary + 'CC']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.banner, { shadowColor: theme.primary }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.bannerTitle, { color: onPrimary }]}>{progress && allCompleted(progress, allPuzzles.length)
+                  ? 'All puzzles solved! 🎉'
+                  : unlimited
+                    ? 'No daily limit on this account'
+                    : `${left} puzzle${left === 1 ? '' : 's'} left today`}</Text>
+              <Text style={[styles.bannerSub, { color: onPrimary, opacity: 0.85 }]}>
+                {unlimited
+                  ? 'Admin account · play any puzzle, scores are not ranked'
+                  : 'Solve up to 2 crosswords a day · keep your streak alive'}
+              </Text>
+            </View>
+            <View style={[styles.bannerBadge, { backgroundColor: onPrimary }]}>
+              <Text style={[styles.bannerBadgeText, { color: theme.primary }]}>{solved}/{allPuzzles.length}</Text>
+            </View>
+          </LinearGradient>
+
+          {/* Set 1 — the starter pack (collapsible) */}
+          <Pressable
+            onPress={() => setSet1Open((o) => !o)}
+            style={({ pressed }) => [styles.setHeader, { backgroundColor: theme.card }, pressed && { opacity: 0.85 }]}
+          >
+            <LinearGradient colors={[theme.primary, theme.primary + 'CC']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.setBadge}>
+              <Text style={[styles.setBadgeNum, { color: onPrimary }]}>1</Text>
+            </LinearGradient>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.setTitle, { color: theme.text }]}>Starter Pack</Text>
+              <Text style={[styles.setSub, { color: theme.textSecondary }]}>{pack1.length} puzzles · unlock 2 a day, in order</Text>
+            </View>
+            <View style={[styles.setPill, { backgroundColor: theme.primary + '1A' }]}>
+              <Text style={[styles.setCount, { color: theme.primary }]}>{solvedIn(pack1)}/{pack1.length}</Text>
+            </View>
+            <Feather name={set1Open ? 'chevron-up' : 'chevron-down'} size={20} color={theme.textSecondary} />
+          </Pressable>
+
+          {set1Open && (
+          <View style={[styles.grid, { marginTop: 14 }]}>{pack1.map(renderLevel)}</View>
           )}
 
-          {/* Set 2 — coming soon */}
-          <View style={[styles.comingSoon, { borderColor: theme.border }]}>
-            <View style={[styles.setBadge, styles.setBadgeLocked, { backgroundColor: theme.textSecondary + '22' }]}>
-              <Feather name="lock" size={18} color={theme.textSecondary} />
+          {/* Set 2 — Movie Night. */}
+          {pack2.length > 0 ? (
+            <>
+              <Pressable
+                onPress={() => setSet2Open((o) => !o)}
+                style={({ pressed }) => [styles.setHeader, { backgroundColor: theme.card, marginTop: 18 }, pressed && { opacity: 0.85 }]}
+              >
+                <LinearGradient colors={[theme.primary, theme.primary + 'CC']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.setBadge}>
+                  <Text style={[styles.setBadgeNum, { color: onPrimary }]}>2</Text>
+                </LinearGradient>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.setTitle, { color: theme.text }]}>Movie Night</Text>
+                  <Text style={[styles.setSub, { color: theme.textSecondary }]}>
+                    {pack2.length} puzzle{pack2.length === 1 ? '' : 's'} · unlock 2 a day, in order
+                  </Text>
+                </View>
+                <View style={[styles.setPill, { backgroundColor: theme.primary + '1A' }]}>
+                  <Text style={[styles.setCount, { color: theme.primary }]}>{solvedIn(pack2)}/{pack2.length}</Text>
+                </View>
+                <Feather name={set2Open ? 'chevron-up' : 'chevron-down'} size={20} color={theme.textSecondary} />
+              </Pressable>
+
+              {set2Open && (
+                <View style={[styles.grid, { marginTop: 14 }]}>{pack2.map(renderLevel)}</View>
+              )}
+
+              {/* Anything an admin adds, in the id gap between the two packs. */}
+              {extraPuzzles.length > 0 && (
+                <>
+                  <View style={[styles.setHeader, { backgroundColor: theme.card, marginTop: 18 }]}>
+                    <LinearGradient colors={[theme.primary, theme.primary + 'CC']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.setBadge}>
+                      <Feather name="plus" size={18} color={onPrimary} />
+                    </LinearGradient>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.setTitle, { color: theme.text }]}>Extra Puzzles</Text>
+                      <Text style={[styles.setSub, { color: theme.textSecondary }]}>
+                        {extraPuzzles.length} puzzle{extraPuzzles.length === 1 ? '' : 's'} · added since the app shipped
+                      </Text>
+                    </View>
+                    <View style={[styles.setPill, { backgroundColor: theme.primary + '1A' }]}>
+                      <Text style={[styles.setCount, { color: theme.primary }]}>{solvedIn(extraPuzzles)}/{extraPuzzles.length}</Text>
+                    </View>
+                  </View>
+                  <View style={[styles.grid, { marginTop: 14 }]}>{extraPuzzles.map(renderLevel)}</View>
+                </>
+              )}
+            </>
+          ) : (
+            <View style={[styles.comingSoon, { borderColor: theme.border }]}>
+              <View style={[styles.setBadge, styles.setBadgeLocked, { backgroundColor: theme.textSecondary + '22' }]}>
+                <Feather name="lock" size={18} color={theme.textSecondary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.setTitle, { color: theme.textSecondary }]}>Pack 2 · Coming Soon</Text>
+                <Text style={[styles.setSub, { color: theme.textSecondary }]}>Finish the Starter Pack — a fresh batch of puzzles is on the way.</Text>
+              </View>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.setTitle, { color: theme.textSecondary }]}>Pack 2 · Coming Soon</Text>
-              <Text style={[styles.setSub, { color: theme.textSecondary }]}>Finish the Starter Pack — a fresh batch of puzzles is on the way.</Text>
-            </View>
-          </View>
+          )}
         </ScrollView>
       ) : (
         <RankingsTab theme={theme} userId={userId} friendIds={friends.map((f) => f.id)} progress={progress} totalPuzzles={allPuzzles.length} />

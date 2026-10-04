@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
@@ -14,6 +13,7 @@ import { getTodayISO } from '@/src/utils/date';
 import { supabase } from '@/src/lib/supabase';
 import * as coursesDb from '@/src/lib/coursesDb';
 import * as taskDb from '@/src/lib/taskDb';
+import ThemedDateTimePicker from '@/components/ThemedDateTimePicker';
 
 const DEFAULT_WORKLOAD = [2, 3, 4, 6, 5, 7, 8, 4, 6, 8, 10, 9, 10, 4];
 const TASK_TYPE_OPTIONS = Object.values(TaskType);
@@ -629,7 +629,7 @@ export default function SowReview() {
               <Text style={[styles.pickerTitle, { color: theme.text }]}>
                 {picker.mode === 'date' ? 'Pick due date' : 'Pick due time'}
               </Text>
-              <DateTimePicker
+              <ThemedDateTimePicker
                 value={picker.value}
                 mode={picker.mode}
                 display={Platform.OS === 'ios' ? 'spinner' : 'default'}

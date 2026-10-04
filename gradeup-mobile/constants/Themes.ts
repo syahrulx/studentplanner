@@ -71,10 +71,21 @@ function backgroundLuminance(hex: string): number | null {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-export function themePrefersLightOutline(theme: ThemePalette): boolean {
+/**
+ * Whether this palette is a dark one, measured rather than listed.
+ *
+ * isDarkTheme only knows the two built-in dark ids, so a dark theme pack would
+ * answer false. Anything that has to hand the OS a light/dark hint — a native
+ * date picker, say — needs the real answer.
+ */
+export function themeIsDark(theme: ThemePalette): boolean {
   const L = backgroundLuminance(theme.background);
   if (L == null) return isDarkTheme(theme.id);
   return L < 0.35;
+}
+
+export function themePrefersLightOutline(theme: ThemePalette): boolean {
+  return themeIsDark(theme);
 }
 
 export const THEMES: Record<ThemeId, ThemePalette> = {

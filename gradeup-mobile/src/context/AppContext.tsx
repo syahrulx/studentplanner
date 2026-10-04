@@ -71,7 +71,8 @@ import {
   type PlannerViewMode,
   type WeekStartsOn,
 } from '../storage';
-import { SUBJECT_COLOR_OPTIONS } from '../constants/subjectColors';
+import { subjectAutoColor } from '../lib/timetableSlotColors';
+import { captureError } from '../lib/monitoring';
 import {
   scheduleRevisionNotification,
   cancelAllRevisionNotifications,
@@ -474,6 +475,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [completedStudyKeys, setCompletedStudyKeys] = useState<string[]>([]);
   const [pinnedTaskIds, setPinnedTaskIds] = useState<string[]>([]);
   const [subjectColors, setSubjectColorsState] = useState<Record<string, string>>({});
+  /** The device's colours, readable from inside the remote load without going stale. */
+  const subjectColorsRef = useRef<Record<string, string>>({});
+  subjectColorsRef.current = subjectColors;
   const [lastPlannerView, setLastPlannerViewState] = useState<PlannerViewMode>('week');
   const [timetable, setTimetable] = useState<TimetableEntry[]>([]);
   const [weekStartsOn, setWeekStartsOnState] = useState<WeekStartsOn>('monday');
@@ -1019,9 +1023,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Subject colours are last-write-wins: the server map replaces the
-        // local one outright. A null column means this account has never set a
-        // colour, so whatever is on this device stays and will be pushed up on
-        // the next change.
+        // local one outright.
         if (profile?.subjectColors && typeof profile.subjectColors === 'object') {
           const remote: Record<string, string> = {};
           for (const [courseId, color] of Object.entries(profile.subjectColors)) {
@@ -1029,6 +1031,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
           setSubjectColorsState(remote);
           void persistSubjectColors(remote);
+        } else if (Object.keys(subjectColorsRef.current).length > 0) {
+          // The server has no colours but this device does, so send them up.
+          //
+          // This used to wait for "the next change", which never comes for
+          // someone who set their colours once and was happy with them. The
+          // push can also have failed silently back when subject_colors had
+          // not been migrated yet, and nothing ever retried. Either way the
+          // colours lived on one phone: that phone showed them, every other
+          // device fell back to the automatic palette, and the account looked
+          // like it had two different sets of colours.
+          void profileDb
+            .updateProfile(uid, { subjectColors: subjectColorsRef.current })
+            .catch((e) => captureError(e, { where: 'appContext.backfillSubjectColors' }));
         }
 
         let calendar: AcademicCalendar | null | undefined = undefined;
@@ -2075,9 +2090,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const DEFAULT_PALETTE = SUBJECT_COLOR_OPTIONS.slice(0, 10);
+  // The automatic colour comes from subjectAutoColor, the same one the
+  // timetable, the lock screen and the picture export use. This used to hash
+  // into its own copy of the palette, which is why a subject could be indigo
+  // here and red on the timetable.
   const getSubjectColor = useCallback((courseId: string): string => {
-    return subjectColors[courseId] ?? DEFAULT_PALETTE[Math.abs(courseId.split('').reduce((a, c) => ((a << 5) - a) + c.charCodeAt(0), 0)) % DEFAULT_PALETTE.length];
+    return subjectColors[courseId] ?? subjectAutoColor(courseId);
   }, [subjectColors]);
 
   const setSubjectColor = useCallback((courseId: string, color: string) => {
@@ -2088,8 +2106,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // device that changed a colour most recently defines the set.
       const uid = user.id?.trim();
       if (uid) {
-        void profileDb.updateProfile(uid, { subjectColors: next }).catch(() => {
-          /* subject_colors column may not be migrated yet */
+        void profileDb.updateProfile(uid, { subjectColors: next }).catch((e) => {
+          // Swallowed silently for a long time, which is how colours ended up
+          // stranded on one device with nobody any the wiser.
+          captureError(e, { where: 'appContext.setSubjectColor' });
         });
       }
       return next;
@@ -2788,12 +2808,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } = await supabase.auth.getSession();
     const uid = session?.user?.id;
     if (!uid) throw new Error('Sign in required to save timetable.');
+    // Insert just this class. It used to push the whole local list through
+    // saveTimetable, which deletes every row first — so adding one class on a
+    // phone wiped anything the server held that the phone had not loaded, and
+    // the two devices ended up showing different weeks.
+    await timetableDb.insertTimetableEntry(uid, entry);
     let merged: TimetableEntry[] = [];
     setTimetable((prev) => {
       merged = [...prev, entry];
       return merged;
     });
-    await timetableDb.saveTimetable(uid, merged);
     scheduleAttendanceNotifications(uid, merged).catch(() => {});
   }, []);
 

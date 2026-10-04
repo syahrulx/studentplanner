@@ -4,6 +4,13 @@
  * Provider facts are stored separately, then the database recomputes the
  * effective plan across RevenueCat, Curlec/Razorpay, and admin grants. An
  * expiry from one provider must never erase another provider's valid access.
+ *
+ * The webhook is only a trigger. Each event can describe a different
+ * subscription (a Plus trial next to a paid Pro, or a Play purchase that a
+ * re-subscribe replaced), and events arrive out of order, so applying the
+ * event's own state let a stale EXPIRATION downgrade a paying user to free.
+ * With REVENUECAT_API_KEY set we ask RevenueCat for the subscriber's current
+ * entitlements and store that instead. Without it we fall back to the event.
  */
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -28,7 +35,40 @@ const SUPPORTED_EVENTS = new Set([
   'EXPIRATION',
   'REFUND',
   'TEMPORARY_ENTITLEMENT_GRANT',
+  'SUBSCRIPTION_EXTENDED',
 ]);
+
+const REVENUECAT_API = 'https://api.revenuecat.com/v1';
+
+type EntitlementFacts = {
+  plan: Exclude<Plan, 'free'>;
+  status: string;
+  period_type: string | null;
+  product_id: string | null;
+  store: string;
+  environment: string;
+  expires_at: string | null;
+  price: number | null;
+  currency: string | null;
+};
+
+type RcEntitlement = {
+  expires_date?: string | null;
+  grace_period_expires_date?: string | null;
+  product_identifier?: string;
+  product_plan_identifier?: string | null;
+};
+
+type RcSubscription = {
+  expires_date?: string | null;
+  grace_period_expires_date?: string | null;
+  period_type?: string;
+  store?: string;
+  is_sandbox?: boolean;
+  unsubscribe_detected_at?: string | null;
+  billing_issues_detected_at?: string | null;
+  price?: { amount?: number; currency?: string } | null;
+};
 
 function json(status: number, value: unknown) {
   return new Response(JSON.stringify(value), {
@@ -83,6 +123,115 @@ function isoFromMillis(value: unknown): string | null {
   if (!Number.isFinite(milliseconds) || milliseconds <= 0) return null;
   const date = new Date(milliseconds);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function millis(value: unknown): number | null {
+  if (typeof value !== 'string' || !value) return null;
+  const time = Date.parse(value);
+  return Number.isNaN(time) ? null : time;
+}
+
+/** Latest moment the entitlement grants access; Infinity for lifetime. */
+function accessUntil(entitlement: RcEntitlement): number {
+  if (entitlement.expires_date == null) return Infinity;
+  return Math.max(
+    millis(entitlement.expires_date) ?? 0,
+    millis(entitlement.grace_period_expires_date) ?? 0,
+  );
+}
+
+/**
+ * Reduce a RevenueCat subscriber to one fact row: the best active entitlement
+ * (Pro over Plus, then latest expiry), or an expired row when none is active.
+ * Returns null when there is nothing worth storing.
+ */
+function factsFromSubscriber(
+  subscriber: Json,
+  eventType: string,
+  fallbackPlan: Exclude<Plan, 'free'> | null,
+): EntitlementFacts | null {
+  const now = Date.now();
+  const entitlements = (subscriber.entitlements ?? {}) as Record<string, RcEntitlement>;
+  const subscriptions = (subscriber.subscriptions ?? {}) as Record<string, RcSubscription>;
+
+  const candidates = Object.entries(entitlements)
+    .map(([id, entitlement]) => ({
+      entitlement,
+      plan: planFromLabel(id) ?? planFromLabel(text(entitlement.product_identifier)),
+      until: accessUntil(entitlement),
+    }))
+    .filter((candidate): candidate is typeof candidate & { plan: Exclude<Plan, 'free'> } => candidate.plan !== null);
+
+  const active = candidates
+    .filter((candidate) => candidate.until > now)
+    .sort((a, b) => (a.plan === b.plan ? b.until - a.until : a.plan === 'pro' ? -1 : 1))[0];
+
+  if (!active) {
+    const lapsed = candidates.sort((a, b) => b.until - a.until)[0];
+    const plan = lapsed?.plan ?? fallbackPlan;
+    if (!plan) return null;
+    return {
+      plan,
+      status: eventType === 'REFUND' ? 'refunded' : 'expired',
+      period_type: null,
+      product_id: text(lapsed?.entitlement.product_identifier) || null,
+      store: 'REVENUECAT',
+      environment: 'PRODUCTION',
+      expires_at: lapsed && Number.isFinite(lapsed.until) && lapsed.until > 0
+        ? new Date(lapsed.until).toISOString()
+        : null,
+      price: null,
+      currency: null,
+    };
+  }
+
+  const { entitlement, plan, until } = active;
+  const productId = text(entitlement.product_identifier);
+  const basePlan = text(entitlement.product_plan_identifier);
+  const fullProductId = basePlan && !productId.includes(':') ? `${productId}:${basePlan}` : productId;
+  // Play subscriptions are keyed either "product" or "product:basePlan".
+  const subscription = subscriptions[fullProductId] ?? subscriptions[productId] ??
+    Object.entries(subscriptions).find(([key]) => key.split(':')[0] === productId.split(':')[0])?.[1];
+
+  const store = text(subscription?.store).toUpperCase();
+  const periodType = text(subscription?.period_type).toUpperCase();
+  const inGrace = (millis(subscription?.grace_period_expires_date) ?? 0) > now;
+  let status: string;
+  if (!subscription) status = 'prepaid';
+  else if (subscription.billing_issues_detected_at && inGrace) status = 'billing_issue';
+  else if (subscription.unsubscribe_detected_at) status = 'cancelled';
+  else if (store === 'PROMOTIONAL' || periodType === 'PROMOTIONAL') status = 'promotional';
+  else if (periodType === 'TRIAL') status = 'trial';
+  else if (periodType === 'INTRO') status = 'introductory';
+  else status = 'active';
+
+  const amount = Number(subscription?.price?.amount);
+  return {
+    plan,
+    status,
+    period_type: periodType || null,
+    product_id: fullProductId || null,
+    store: store || 'REVENUECAT',
+    environment: subscription?.is_sandbox ? 'SANDBOX' : 'PRODUCTION',
+    expires_at: Number.isFinite(until) ? new Date(until).toISOString() : null,
+    price: Number.isFinite(amount) ? amount : null,
+    currency: text(subscription?.price?.currency).toUpperCase() || null,
+  };
+}
+
+async function fetchSubscriber(apiKey: string, appUserId: string): Promise<{ subscriber?: Json; error?: string }> {
+  try {
+    const response = await fetch(`${REVENUECAT_API}/subscribers/${encodeURIComponent(appUserId)}`, {
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) return { error: `revenuecat_api_${response.status}` };
+    const body = await response.json() as Json;
+    const subscriber = body.subscriber as Json | undefined;
+    return subscriber ? { subscriber } : { error: 'revenuecat_api_no_subscriber' };
+  } catch (error) {
+    return { error: `revenuecat_api_unreachable:${error instanceof Error ? error.name : 'unknown'}` };
+  }
 }
 
 Deno.serve(async (req) => {
@@ -220,27 +369,37 @@ Deno.serve(async (req) => {
     return json(500, { error: 'entitlement_lookup_failed' });
   }
 
-  const detectedPlan = derivePlan(entitlementIds, productId);
-  const revenueCatPlan = detectedPlan ?? (existingEntitlement?.plan as Exclude<Plan, 'free'> | undefined);
-  if (!revenueCatPlan) {
-    await recordAudit({
-      resolved_user_id: profile.id,
-      processing_status: 'rejected',
-      error: 'cannot_determine_plan',
-    });
-    return json(422, { error: 'cannot_determine_plan' });
-  }
+  const knownPlan = derivePlan(entitlementIds, productId) ??
+    (existingEntitlement?.plan as Exclude<Plan, 'free'> | undefined) ?? null;
+  const externalId = eventAppUserId || originalAppUserId || appAccountToken || profile.id;
+  const apiKey = text(Deno.env.get('REVENUECAT_API_KEY'));
 
-  const status = billingStatus(eventType, periodType);
-  const now = new Date().toISOString();
-  const { error: entitlementError } = await admin
-    .from('subscription_entitlements')
-    .upsert({
-      user_id: profile.id,
-      provider: 'revenuecat',
-      external_id: eventAppUserId || originalAppUserId || appAccountToken || profile.id,
-      plan: revenueCatPlan,
-      status,
+  let facts: EntitlementFacts | null;
+  let source: 'api' | 'event';
+  if (apiKey) {
+    source = 'api';
+    const { subscriber, error } = await fetchSubscriber(apiKey, externalId);
+    if (!subscriber) {
+      // Not 'processed', so RevenueCat's retry is handled instead of skipped.
+      console.error('[revenuecat-webhook] subscriber lookup failed:', error);
+      await recordAudit({ resolved_user_id: profile.id, processing_status: 'rejected', error });
+      return json(502, { error: 'revenuecat_lookup_failed' });
+    }
+    facts = factsFromSubscriber(subscriber, eventType, knownPlan);
+  } else {
+    source = 'event';
+    console.warn('[revenuecat-webhook] REVENUECAT_API_KEY not set; trusting event state, which out-of-order events can corrupt');
+    if (!knownPlan) {
+      await recordAudit({
+        resolved_user_id: profile.id,
+        processing_status: 'rejected',
+        error: 'cannot_determine_plan',
+      });
+      return json(422, { error: 'cannot_determine_plan' });
+    }
+    facts = {
+      plan: knownPlan,
+      status: billingStatus(eventType, periodType),
       period_type: periodType || null,
       product_id: productId || null,
       store: store || 'REVENUECAT',
@@ -248,14 +407,28 @@ Deno.serve(async (req) => {
       expires_at: isoFromMillis(event.expiration_at_ms),
       price: Number.isFinite(price) ? price : null,
       currency: currency || null,
-      last_event_id: eventId,
-      updated_at: now,
-    }, { onConflict: 'user_id,provider' });
+    };
+  }
 
-  if (entitlementError) {
-    console.error('[revenuecat-webhook] entitlement update failed:', entitlementError.message);
-    await recordAudit({ resolved_user_id: profile.id, derived_plan: revenueCatPlan, processing_status: 'rejected', error: entitlementError.message });
-    return json(500, { error: 'entitlement_update_failed' });
+  // No entitlement now and none before: nothing to store, but still recompute
+  // so the profile reflects the other providers.
+  if (facts) {
+    const { error: entitlementError } = await admin
+      .from('subscription_entitlements')
+      .upsert({
+        user_id: profile.id,
+        provider: 'revenuecat',
+        external_id: externalId,
+        ...facts,
+        last_event_id: eventId,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,provider' });
+
+    if (entitlementError) {
+      console.error('[revenuecat-webhook] entitlement update failed:', entitlementError.message);
+      await recordAudit({ resolved_user_id: profile.id, derived_plan: facts.plan, processing_status: 'rejected', error: entitlementError.message });
+      return json(500, { error: 'entitlement_update_failed' });
+    }
   }
 
   const { data: effectiveRows, error: recomputeError } = await admin.rpc(
@@ -265,7 +438,7 @@ Deno.serve(async (req) => {
   if (recomputeError || !Array.isArray(effectiveRows) || !effectiveRows[0]) {
     const message = recomputeError?.message || 'subscription_recompute_returned_no_row';
     console.error('[revenuecat-webhook] subscription recompute failed:', message);
-    await recordAudit({ resolved_user_id: profile.id, derived_plan: revenueCatPlan, processing_status: 'rejected', error: message });
+    await recordAudit({ resolved_user_id: profile.id, derived_plan: facts?.plan ?? null, processing_status: 'rejected', error: message });
     return json(500, { error: 'profile_update_failed' });
   }
 
@@ -289,6 +462,6 @@ Deno.serve(async (req) => {
     processed_at: new Date().toISOString(),
   });
 
-  console.log(`[revenuecat-webhook] ${eventType}: user=${profile.id} rc=${revenueCatPlan} effective=${effectivePlan} status=${status}`);
-  return json(200, { ok: true, event: eventType, plan: effectivePlan, billing_status: status });
+  console.log(`[revenuecat-webhook] ${eventType}: user=${profile.id} source=${source} rc=${facts?.plan ?? 'none'}/${facts?.status ?? 'none'} effective=${effectivePlan}`);
+  return json(200, { ok: true, event: eventType, plan: effectivePlan, billing_status: facts?.status ?? null });
 });

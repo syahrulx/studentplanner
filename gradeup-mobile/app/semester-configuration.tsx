@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { fetchUitmAcademicCalendar } from '@/src/lib/uitmAcademicCalendar';
+import { captureError } from '@/src/lib/monitoring';
 import { isAcademicCalendarRangeComplete } from '@/src/lib/calendarProviders/uitm';
 import type { AcademicLevel } from '@/src/types';
 
@@ -73,20 +74,39 @@ export default function SemesterConfigurationScreen() {
       const isCommunityVerified = /uitm\s+community\s+verified/i.test(String(academicCalendar?.semesterLabel ?? ''));
       const needsHea = !isCommunityVerified && (!calComplete || !hasPeriods || groupChanged);
 
+      // Fetching the official calendar reaches out to HEA over the network, and
+      // it used to sit inside the same try as the save above. A student on slow
+      // data or a flaky campus connection got "Network request failed" and lost
+      // the whole save — their own settings, which had nothing to do with the
+      // network, were thrown away because an optional extra could not be
+      // reached. Reported as semester configuration failing every time.
+      //
+      // The profile is saved by now. The calendar is a bonus on top, so its
+      // failure is caught here and the screen still closes.
       if (shouldSync && needsHea) {
-        const today = new Date().toISOString().slice(0, 10);
-        const official = await fetchUitmAcademicCalendar(recommendedGroup, { targetDateISO: today });
-        if (official?.startDate && official?.endDate) {
-          await updateAcademicCalendar({
-            semesterLabel: official.semesterLabel,
-            startDate: official.startDate,
-            endDate: official.endDate,
-            totalWeeks: official.totalWeeks ?? (academicCalendar?.totalWeeks ?? 14),
-            periods: official.periods ?? [],
-            selectionSource: 'user',
-            selectedAt: new Date().toISOString(),
-            isActive: true,
-          });
+        try {
+          const today = new Date().toISOString().slice(0, 10);
+          const official = await fetchUitmAcademicCalendar(recommendedGroup, { targetDateISO: today });
+          if (official?.startDate && official?.endDate) {
+            await updateAcademicCalendar({
+              semesterLabel: official.semesterLabel,
+              startDate: official.startDate,
+              endDate: official.endDate,
+              totalWeeks: official.totalWeeks ?? (academicCalendar?.totalWeeks ?? 14),
+              periods: official.periods ?? [],
+              selectionSource: 'user',
+              selectedAt: new Date().toISOString(),
+              isActive: true,
+            });
+          }
+        } catch (calendarError) {
+          // Nothing is broken for the student: autoSync picks the calendar up
+          // on a later launch. Recorded so a run of these is visible rather
+          // than only showing up as support reports.
+          captureError(
+            calendarError instanceof Error ? calendarError : new Error('Semester config: HEA calendar fetch failed'),
+            { operation: 'semester_config_calendar_sync' },
+          );
         }
       }
 

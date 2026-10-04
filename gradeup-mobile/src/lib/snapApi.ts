@@ -9,7 +9,7 @@ import { decode } from 'base64-arraybuffer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import { readUriAsBase64 } from './readUriAsBase64';
-import type { StudySnap, SnapStreak, SnapReaction, SubscriptionPlan } from '../types';
+import type { StudySnap, SnapStreak, SnapReaction, SnapAudience, SubscriptionPlan } from '../types';
 import { maxStreakRevivals } from './flashcardGenerationLimits';
 
 const SNAPS_BUCKET = 'study-snaps';
@@ -27,6 +27,9 @@ function rowToSnap(row: Record<string, unknown>): StudySnap {
     caption: row.caption ? String(row.caption) : undefined,
     createdAt: new Date(String(row.created_at)).toISOString(),
     expiresAt: new Date(String(row.expires_at)).toISOString(),
+    // Rows written before the audience column existed read back as undefined,
+    // and they were friends-only, which is what the column defaults to.
+    audience: (row.audience as SnapAudience) || 'friends',
   };
 }
 
@@ -120,14 +123,18 @@ export async function postSnap(
   userId: string,
   imageUrl: string,
   caption?: string,
+  audience: SnapAudience = 'friends',
 ): Promise<StudySnap> {
-  // Insert snap
+  // Insert snap. university_id and campus are deliberately not sent: a BEFORE
+  // INSERT trigger stamps them from the author's profile, so a client cannot
+  // post into a university it does not belong to.
   const { data, error } = await supabase
     .from('study_snaps')
     .insert({
       user_id: userId,
       image_url: imageUrl,
       caption: caption?.trim().slice(0, 200) || null,
+      audience,
     })
     .select()
     .single();
@@ -164,7 +171,14 @@ export async function getMySnapsToday(userId: string): Promise<number> {
   return count || 0;
 }
 
-/** Get all active (non-expired) snaps from friends. Ordered by newest first. */
+/**
+ * Every active snap this student is allowed to read, newest first.
+ *
+ * Nothing calls this — the live path is getLatestSnapForUsers, which asks for
+ * an explicit list of ids. Worth knowing before reusing it: it leans entirely
+ * on RLS, so since snaps gained an audience it also returns campus and
+ * university snaps from people the student is not friends with.
+ */
 export async function getFriendsSnaps(userId: string): Promise<StudySnap[]> {
   const now = new Date().toISOString();
 
@@ -279,6 +293,84 @@ export async function getLatestSnapForUsers(userIds: string[]): Promise<Map<stri
   }
 
   return result;
+}
+
+/**
+ * Snaps shared past their author's friends list — one per author, newest first.
+ *
+ * The scoping is not in this query. RLS decides what a shared snap is visible
+ * to: same university for a 'university' snap, same university *and* the same
+ * named campus for a 'campus' one. Asking here as well would be a second,
+ * weaker copy of that rule, and the two would drift.
+ *
+ * `excludeUserIds` drops the student's own snap and their friends', because
+ * those already have a place in the row and nobody wants to see a friend
+ * twice.
+ */
+export async function getSharedSnaps(
+  excludeUserIds: string[] = [],
+  limit = 30,
+): Promise<StudySnap[]> {
+  const now = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from('study_snaps')
+    .select('*')
+    .neq('audience', 'friends')
+    .eq('status', 'active')
+    .gt('expires_at', now)
+    .order('created_at', { ascending: false })
+    .limit(limit * 3);
+
+  if (error) {
+    console.warn('[snapApi] getSharedSnaps error:', error);
+    return [];
+  }
+
+  const skip = new Set(excludeUserIds);
+  const latestByUser = new Map<string, StudySnap>();
+  for (const row of data || []) {
+    const snap = rowToSnap(row);
+    if (skip.has(snap.userId) || latestByUser.has(snap.userId)) continue;
+    latestByUser.set(snap.userId, snap);
+    if (latestByUser.size >= limit) break;
+  }
+
+  const snaps = [...latestByUser.values()];
+  if (snaps.length === 0) return [];
+
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, name, avatar_url')
+    .in('id', snaps.map((s) => s.userId));
+
+  const profileMap = new Map((profiles || []).map((pr: any) => [pr.id, pr]));
+  for (const snap of snaps) {
+    const prof = profileMap.get(snap.userId);
+    snap.authorName = prof?.name || 'Unknown';
+    snap.authorAvatar = prof?.avatar_url || undefined;
+  }
+
+  return snaps;
+}
+
+/**
+ * Report a snap. Three reports hide it automatically, pending an admin.
+ *
+ * A repeat report from the same student is not an error worth showing them —
+ * the unique constraint means it simply does not count twice.
+ */
+export async function reportSnap(
+  snapId: string,
+  reporterId: string,
+  reason?: string,
+): Promise<void> {
+  const { error } = await supabase.from('snap_reports').insert({
+    snap_id: snapId,
+    reporter_id: reporterId,
+    reason: reason?.trim().slice(0, 300) || null,
+  });
+  if (error && error.code !== '23505') throw error;
 }
 
 /** Get snap history (past expired snaps). */

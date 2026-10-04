@@ -1,3 +1,4 @@
+import { shouldPostGameScore } from './gradeUpAdmin';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 import { currentUserId, scopedKey, readScoped } from './scopedStorage';
@@ -112,6 +113,8 @@ export async function syncScoreToSupabase(progress: Game2048Progress): Promise<v
   const { data: { session } } = await supabase.auth.getSession();
   const userId = session?.user?.id;
   if (!userId) return;
+  // Admin results never reach a leaderboard — see shouldPostGameScore.
+  if (!(await shouldPostGameScore(userId))) return;
 
   const { data: existing } = await supabase
     .from('game_2048_scores')

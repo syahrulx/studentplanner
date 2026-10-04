@@ -29,6 +29,7 @@ import { CalendarOfferOption } from "@/components/calendar/CalendarOfferOption";
 import { groupOffersForPicker } from "@/src/lib/calendarTimeline";
 import { supabase } from "@/src/lib/supabase";
 import { useTranslations } from "@/src/i18n";
+import { formatDisplayDate } from "@/src/utils/date";
 import {
   getAcademicProgressFromCalendar,
   getAcademicProgress,
@@ -97,7 +98,9 @@ function levelForOffer(offer: UniversityCalendarOffer): AcademicLevel {
 }
 
 function offerSummary(offer: UniversityCalendarOffer, todayISO: string): string {
-  const details: string[] = [`${offer.startDate} to ${offer.endDate}`];
+  const details: string[] = [
+    `${formatDisplayDate(offer.startDate)} to ${formatDisplayDate(offer.endDate)}`,
+  ];
   if (offer.startDate <= todayISO && todayISO <= offer.endDate) details.push("Current");
   if (/short|special|inter.?session/i.test(offer.semesterLabel) || offer.totalWeeks <= 8) {
     details.push("Short semester");
@@ -1256,8 +1259,11 @@ export default function AcademicCalendarScreen() {
                 justifyContent: "space-between",
               }}
             >
+              {/* dd-mm-yyyy, the format src/utils/date.ts calls the one the
+                  user sees. This printed the raw yyyy-mm-dd, the storage form,
+                  which is the only place in the app that leaked out. */}
               <Text style={[s.detailDate, { color: theme.text }]}>
-                {selectedDayISO}
+                {formatDisplayDate(selectedDayISO)}
               </Text>
               <Pressable onPress={() => setSelectedDayISO("")} hitSlop={8}>
                 <Feather name="x" size={18} color={theme.textSecondary} />
@@ -1345,8 +1351,8 @@ export default function AcademicCalendarScreen() {
                                   { color: theme.textSecondary },
                                 ]}
                               >
-                                {String(p.startDate).slice(0, 10)} →{" "}
-                                {String(p.endDate).slice(0, 10)}
+                                {formatDisplayDate(String(p.startDate))} →{" "}
+                                {formatDisplayDate(String(p.endDate))}
                               </Text>
                             ) : null}
                           </View>
@@ -1562,7 +1568,7 @@ export default function AcademicCalendarScreen() {
                           <Feather name={cfgUitmCalendarSource === "community" && cfgSelectedUitmCommunityId === offer.id ? "check-circle" : "circle"} size={18} color={cfgUitmCalendarSource === "community" && cfgSelectedUitmCommunityId === offer.id ? theme.primary : theme.textSecondary} />
                           <View style={{ flex: 1 }}>
                             <Text style={[s.optText, { color: theme.text }]} numberOfLines={2}>{offer.semesterLabel}</Text>
-                            <Text style={[s.modalSub, { color: theme.textSecondary, marginTop: 2 }]}>{offer.startDate} to {offer.endDate} · {offer.calendarVariant === "kkt" ? "Kedah/Kelantan/Terengganu" : "Standard"}</Text>
+                            <Text style={[s.modalSub, { color: theme.textSecondary, marginTop: 2 }]}>{formatDisplayDate(offer.startDate)} to {formatDisplayDate(offer.endDate)} · {offer.calendarVariant === "kkt" ? "Kedah/Kelantan/Terengganu" : "Standard"}</Text>
                           </View>
                         </TouchableOpacity>
                       ))}

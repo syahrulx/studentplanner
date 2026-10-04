@@ -3691,3 +3691,3667 @@ export const CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
     "bonusHint": "Sixty seconds"
   }
 ];
+
+/** Pack 2 — Movie Night. Ids start at 1001; see buildPack for why. */
+export const MOVIE_CROSSWORD_PUZZLES: CrosswordPuzzle[] = [
+  {
+    "id": 1001,
+    "title": "Movie Genres",
+    "size": 7,
+    "solution": [
+      [
+        null,
+        null,
+        "C",
+        null,
+        null,
+        null,
+        "C"
+      ],
+      [
+        "F",
+        "A",
+        "R",
+        "C",
+        "E",
+        null,
+        "O"
+      ],
+      [
+        null,
+        null,
+        "I",
+        null,
+        null,
+        null,
+        "M"
+      ],
+      [
+        "R",
+        "O",
+        "M",
+        "A",
+        "N",
+        "C",
+        "E"
+      ],
+      [
+        null,
+        null,
+        "E",
+        null,
+        "O",
+        null,
+        "D"
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        "I",
+        null,
+        "Y"
+      ],
+      [
+        "S",
+        "A",
+        "T",
+        "I",
+        "R",
+        "E",
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "down",
+        "clue": "Genre full of robbers and police",
+        "answer": "CRIME",
+        "row": 0,
+        "col": 2
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "Made to make you laugh",
+        "answer": "COMEDY",
+        "row": 0,
+        "col": 6
+      },
+      {
+        "number": 3,
+        "direction": "across",
+        "clue": "Silly comedy of mistakes",
+        "answer": "FARCE",
+        "row": 1,
+        "col": 0
+      },
+      {
+        "number": 4,
+        "direction": "across",
+        "clue": "Love-story genre",
+        "answer": "ROMANCE",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 5,
+        "direction": "down",
+        "clue": "Shadowy detective style, French for black",
+        "answer": "NOIR",
+        "row": 3,
+        "col": 4
+      },
+      {
+        "number": 6,
+        "direction": "across",
+        "clue": "Comedy that mocks the powerful",
+        "answer": "SATIRE",
+        "row": 6,
+        "col": 0
+      }
+    ],
+    "bonusWord": "GENRE",
+    "bonusHint": "The kind of film something is"
+  },
+  {
+    "id": 1002,
+    "title": "At the Cinema",
+    "size": 7,
+    "solution": [
+      [
+        "S",
+        "O",
+        "D",
+        "A",
+        null,
+        "F",
+        null
+      ],
+      [
+        "E",
+        null,
+        null,
+        null,
+        "R",
+        "O",
+        "W"
+      ],
+      [
+        "A",
+        null,
+        null,
+        "A",
+        null,
+        "Y",
+        null
+      ],
+      [
+        "T",
+        "R",
+        "A",
+        "I",
+        "L",
+        "E",
+        "R"
+      ],
+      [
+        null,
+        null,
+        null,
+        "S",
+        null,
+        "R",
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        "L",
+        null,
+        null,
+        null
+      ],
+      [
+        "S",
+        "C",
+        "R",
+        "E",
+        "E",
+        "N",
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "across",
+        "clue": "Fizzy drink in a huge cup",
+        "answer": "SODA",
+        "row": 0,
+        "col": 0
+      },
+      {
+        "number": 1,
+        "direction": "down",
+        "clue": "What your ticket number points to",
+        "answer": "SEAT",
+        "row": 0,
+        "col": 0
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "Entrance hall",
+        "answer": "FOYER",
+        "row": 0,
+        "col": 5
+      },
+      {
+        "number": 3,
+        "direction": "across",
+        "clue": "Letter on your ticket",
+        "answer": "ROW",
+        "row": 1,
+        "col": 4
+      },
+      {
+        "number": 4,
+        "direction": "down",
+        "clue": "Walkway between seat blocks",
+        "answer": "AISLE",
+        "row": 2,
+        "col": 3
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Preview of a film still to come",
+        "answer": "TRAILER",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 6,
+        "direction": "across",
+        "clue": "The big white rectangle",
+        "answer": "SCREEN",
+        "row": 6,
+        "col": 0
+      }
+    ],
+    "bonusWord": "CINEMA",
+    "bonusHint": "Where you go to watch a film"
+  },
+  {
+    "id": 1003,
+    "title": "Film Crew",
+    "size": 7,
+    "solution": [
+      [
+        "M",
+        null,
+        null,
+        "C",
+        "A",
+        "S",
+        "T"
+      ],
+      [
+        "A",
+        null,
+        "W",
+        null,
+        "C",
+        null,
+        null
+      ],
+      [
+        "K",
+        null,
+        "R",
+        null,
+        "T",
+        null,
+        null
+      ],
+      [
+        "E",
+        "D",
+        "I",
+        "T",
+        "O",
+        "R",
+        null
+      ],
+      [
+        "U",
+        null,
+        "T",
+        null,
+        "R",
+        null,
+        null
+      ],
+      [
+        "P",
+        null,
+        "E",
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        null,
+        "G",
+        "R",
+        "I",
+        "P",
+        null,
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "down",
+        "clue": "Department with brushes and powder",
+        "answer": "MAKEUP",
+        "row": 0,
+        "col": 0
+      },
+      {
+        "number": 2,
+        "direction": "across",
+        "clue": "All the actors together",
+        "answer": "CAST",
+        "row": 0,
+        "col": 3
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "Person in front of the camera",
+        "answer": "ACTOR",
+        "row": 0,
+        "col": 4
+      },
+      {
+        "number": 4,
+        "direction": "down",
+        "clue": "Person behind the script",
+        "answer": "WRITER",
+        "row": 1,
+        "col": 2
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Cuts the shots together",
+        "answer": "EDITOR",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 6,
+        "direction": "across",
+        "clue": "Crew member who moves the rigging",
+        "answer": "GRIP",
+        "row": 6,
+        "col": 1
+      }
+    ],
+    "bonusWord": "CREW",
+    "bonusHint": "Everyone working behind the camera"
+  },
+  {
+    "id": 1004,
+    "title": "Camera Shots",
+    "size": 7,
+    "solution": [
+      [
+        null,
+        null,
+        "C",
+        null,
+        null,
+        "T",
+        null
+      ],
+      [
+        null,
+        null,
+        "R",
+        null,
+        "P",
+        "A",
+        "N"
+      ],
+      [
+        null,
+        null,
+        "A",
+        null,
+        null,
+        "K",
+        null
+      ],
+      [
+        null,
+        "A",
+        "N",
+        "G",
+        "L",
+        "E",
+        null
+      ],
+      [
+        null,
+        null,
+        "E",
+        null,
+        "E",
+        null,
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        "N",
+        null,
+        null
+      ],
+      [
+        "F",
+        "O",
+        "C",
+        "U",
+        "S",
+        null,
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "down",
+        "clue": "Arm that lifts the camera high",
+        "answer": "CRANE",
+        "row": 0,
+        "col": 2
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "Attempt number three, say",
+        "answer": "TAKE",
+        "row": 0,
+        "col": 5
+      },
+      {
+        "number": 3,
+        "direction": "across",
+        "clue": "Swing the camera left or right",
+        "answer": "PAN",
+        "row": 1,
+        "col": 4
+      },
+      {
+        "number": 4,
+        "direction": "across",
+        "clue": "Where the camera looks from",
+        "answer": "ANGLE",
+        "row": 3,
+        "col": 1
+      },
+      {
+        "number": 5,
+        "direction": "down",
+        "clue": "Glass at the front of the camera",
+        "answer": "LENS",
+        "row": 3,
+        "col": 4
+      },
+      {
+        "number": 6,
+        "direction": "across",
+        "clue": "Make the picture sharp",
+        "answer": "FOCUS",
+        "row": 6,
+        "col": 0
+      }
+    ],
+    "bonusWord": "CAMERA",
+    "bonusHint": "It records the picture"
+  },
+  {
+    "id": 1005,
+    "title": "Animation",
+    "size": 7,
+    "solution": [
+      [
+        "F",
+        null,
+        "S",
+        "C",
+        "E",
+        "N",
+        "E"
+      ],
+      [
+        "R",
+        null,
+        "K",
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        "A",
+        null,
+        "E",
+        null,
+        "M",
+        null,
+        null
+      ],
+      [
+        "M",
+        "O",
+        "T",
+        "I",
+        "O",
+        "N",
+        null
+      ],
+      [
+        "E",
+        null,
+        "C",
+        null,
+        "D",
+        null,
+        null
+      ],
+      [
+        null,
+        null,
+        "H",
+        null,
+        "E",
+        null,
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        "C",
+        "L",
+        "A",
+        "Y"
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "down",
+        "clue": "Twenty-four of these a second",
+        "answer": "FRAME",
+        "row": 0,
+        "col": 0
+      },
+      {
+        "number": 2,
+        "direction": "across",
+        "clue": "One place, one stretch of story",
+        "answer": "SCENE",
+        "row": 0,
+        "col": 2
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "Rough early drawing",
+        "answer": "SKETCH",
+        "row": 0,
+        "col": 2
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "Digital shape an animator moves",
+        "answer": "MODEL",
+        "row": 2,
+        "col": 4
+      },
+      {
+        "number": 4,
+        "direction": "across",
+        "clue": "Movement, the whole point of it",
+        "answer": "MOTION",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Material for stop-motion figures",
+        "answer": "CLAY",
+        "row": 6,
+        "col": 3
+      }
+    ],
+    "bonusWord": "CARTOON",
+    "bonusHint": "Drawn film"
+  },
+  {
+    "id": 1006,
+    "title": "Making a Film",
+    "size": 7,
+    "solution": [
+      [
+        null,
+        "R",
+        "E",
+        "E",
+        "L",
+        null,
+        "B"
+      ],
+      [
+        null,
+        null,
+        null,
+        "D",
+        null,
+        null,
+        "U"
+      ],
+      [
+        "S",
+        null,
+        null,
+        "I",
+        null,
+        null,
+        "D"
+      ],
+      [
+        "C",
+        "A",
+        "S",
+        "T",
+        "I",
+        "N",
+        "G"
+      ],
+      [
+        "E",
+        null,
+        "E",
+        null,
+        null,
+        null,
+        "E"
+      ],
+      [
+        "N",
+        null,
+        "T",
+        null,
+        "C",
+        "U",
+        "T"
+      ],
+      [
+        "E",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "across",
+        "clue": "Spool of film",
+        "answer": "REEL",
+        "row": 0,
+        "col": 1
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "Trim and rearrange the footage",
+        "answer": "EDIT",
+        "row": 0,
+        "col": 3
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "Money the film is allowed",
+        "answer": "BUDGET",
+        "row": 0,
+        "col": 6
+      },
+      {
+        "number": 4,
+        "direction": "down",
+        "clue": "Chunk of the film in one place",
+        "answer": "SCENE",
+        "row": 2,
+        "col": 0
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Choosing who plays whom",
+        "answer": "CASTING",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 6,
+        "direction": "down",
+        "clue": "Place built for filming",
+        "answer": "SET",
+        "row": 3,
+        "col": 2
+      },
+      {
+        "number": 7,
+        "direction": "across",
+        "clue": "Word that stops the cameras",
+        "answer": "CUT",
+        "row": 5,
+        "col": 4
+      }
+    ],
+    "bonusWord": "DIRECT",
+    "bonusHint": "Tell the cast and crew what to do"
+  },
+  {
+    "id": 1007,
+    "title": "Movie Awards",
+    "size": 7,
+    "solution": [
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        "S"
+      ],
+      [
+        "P",
+        null,
+        null,
+        null,
+        "W",
+        null,
+        "P"
+      ],
+      [
+        "A",
+        null,
+        null,
+        null,
+        "I",
+        null,
+        "E"
+      ],
+      [
+        "N",
+        "O",
+        "M",
+        "I",
+        "N",
+        "E",
+        "E"
+      ],
+      [
+        "E",
+        null,
+        null,
+        null,
+        "N",
+        null,
+        "C"
+      ],
+      [
+        "L",
+        null,
+        null,
+        null,
+        "E",
+        null,
+        "H"
+      ],
+      [
+        null,
+        "A",
+        "W",
+        "A",
+        "R",
+        "D",
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "down",
+        "clue": "Thank-you talk on stage",
+        "answer": "SPEECH",
+        "row": 0,
+        "col": 6
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "Group that judges",
+        "answer": "PANEL",
+        "row": 1,
+        "col": 0
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "The name in the envelope",
+        "answer": "WINNER",
+        "row": 1,
+        "col": 4
+      },
+      {
+        "number": 4,
+        "direction": "across",
+        "clue": "One of five hoping to win",
+        "answer": "NOMINEE",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Prize for the best of something",
+        "answer": "AWARD",
+        "row": 6,
+        "col": 1
+      }
+    ],
+    "bonusWord": "TROPHY",
+    "bonusHint": "What a winner lifts"
+  },
+  {
+    "id": 1008,
+    "title": "Special Effects",
+    "size": 7,
+    "solution": [
+      [
+        null,
+        "M",
+        "O",
+        "D",
+        "E",
+        "L",
+        null
+      ],
+      [
+        null,
+        "O",
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        null,
+        "T",
+        null,
+        "R",
+        null,
+        null,
+        "B"
+      ],
+      [
+        "D",
+        "I",
+        "G",
+        "I",
+        "T",
+        "A",
+        "L"
+      ],
+      [
+        null,
+        "O",
+        null,
+        "G",
+        null,
+        null,
+        "A"
+      ],
+      [
+        null,
+        "N",
+        null,
+        null,
+        null,
+        null,
+        "S"
+      ],
+      [
+        null,
+        null,
+        "P",
+        "A",
+        "I",
+        "N",
+        "T"
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "across",
+        "clue": "Small version of a big thing",
+        "answer": "MODEL",
+        "row": 0,
+        "col": 1
+      },
+      {
+        "number": 1,
+        "direction": "down",
+        "clue": "Capture of an actor as dots",
+        "answer": "MOTION",
+        "row": 0,
+        "col": 1
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "Hidden frame holding something up",
+        "answer": "RIG",
+        "row": 2,
+        "col": 3
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "Explosion, safely done",
+        "answer": "BLAST",
+        "row": 2,
+        "col": 6
+      },
+      {
+        "number": 4,
+        "direction": "across",
+        "clue": "Made in a computer",
+        "answer": "DIGITAL",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Matte artists do it on glass",
+        "answer": "PAINT",
+        "row": 6,
+        "col": 2
+      }
+    ],
+    "bonusWord": "EFFECTS",
+    "bonusHint": "Tricks that make the impossible look real"
+  },
+  {
+    "id": 1009,
+    "title": "Movie Sound",
+    "size": 7,
+    "solution": [
+      [
+        "N",
+        null,
+        "T",
+        "H",
+        "E",
+        "M",
+        "E"
+      ],
+      [
+        "O",
+        null,
+        "O",
+        null,
+        null,
+        "O",
+        null
+      ],
+      [
+        "I",
+        null,
+        "N",
+        null,
+        null,
+        "N",
+        null
+      ],
+      [
+        "S",
+        "T",
+        "E",
+        "R",
+        "E",
+        "O",
+        null
+      ],
+      [
+        "E",
+        null,
+        null,
+        null,
+        "C",
+        null,
+        "C"
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        "H",
+        null,
+        "U"
+      ],
+      [
+        null,
+        null,
+        "S",
+        "C",
+        "O",
+        "R",
+        "E"
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "down",
+        "clue": "Unwanted sound",
+        "answer": "NOISE",
+        "row": 0,
+        "col": 0
+      },
+      {
+        "number": 2,
+        "direction": "across",
+        "clue": "Tune you hum on the way out",
+        "answer": "THEME",
+        "row": 0,
+        "col": 2
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "Quality of a sound",
+        "answer": "TONE",
+        "row": 0,
+        "col": 2
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "One channel only",
+        "answer": "MONO",
+        "row": 0,
+        "col": 5
+      },
+      {
+        "number": 4,
+        "direction": "across",
+        "clue": "Left and right channels",
+        "answer": "STEREO",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 5,
+        "direction": "down",
+        "clue": "Sound bouncing back",
+        "answer": "ECHO",
+        "row": 3,
+        "col": 4
+      },
+      {
+        "number": 6,
+        "direction": "down",
+        "clue": "Signal to start",
+        "answer": "CUE",
+        "row": 4,
+        "col": 6
+      },
+      {
+        "number": 7,
+        "direction": "across",
+        "clue": "Music written for the film",
+        "answer": "SCORE",
+        "row": 6,
+        "col": 2
+      }
+    ],
+    "bonusWord": "FOLEY",
+    "bonusHint": "Everyday sounds made by hand in a studio"
+  },
+  {
+    "id": 1010,
+    "title": "Lights on Set",
+    "size": 7,
+    "solution": [
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        "G",
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        "B",
+        "U",
+        "L",
+        "B"
+      ],
+      [
+        null,
+        "S",
+        null,
+        null,
+        null,
+        "O",
+        null
+      ],
+      [
+        "S",
+        "H",
+        "A",
+        "D",
+        "O",
+        "W",
+        null
+      ],
+      [
+        null,
+        "A",
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        null,
+        "D",
+        "I",
+        "M",
+        "M",
+        "E",
+        "R"
+      ],
+      [
+        null,
+        "E",
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "down",
+        "clue": "Soft light",
+        "answer": "GLOW",
+        "row": 0,
+        "col": 5
+      },
+      {
+        "number": 2,
+        "direction": "across",
+        "clue": "The bit that glows",
+        "answer": "BULB",
+        "row": 1,
+        "col": 3
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "Area the light misses",
+        "answer": "SHADE",
+        "row": 2,
+        "col": 1
+      },
+      {
+        "number": 4,
+        "direction": "across",
+        "clue": "Dark shape cast by a body",
+        "answer": "SHADOW",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Control that lowers the level",
+        "answer": "DIMMER",
+        "row": 5,
+        "col": 1
+      }
+    ],
+    "bonusWord": "LIGHTING",
+    "bonusHint": "Whole craft of lighting a scene"
+  },
+  {
+    "id": 1011,
+    "title": "Costume and Makeup",
+    "size": 7,
+    "solution": [
+      [
+        null,
+        "S",
+        "E",
+        "W",
+        "I",
+        "N",
+        "G"
+      ],
+      [
+        null,
+        "C",
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        null,
+        "A",
+        null,
+        "B",
+        null,
+        "B",
+        null
+      ],
+      [
+        "A",
+        "R",
+        "M",
+        "O",
+        "U",
+        "R",
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        "O",
+        null,
+        "U",
+        null
+      ],
+      [
+        null,
+        "H",
+        "A",
+        "T",
+        null,
+        "S",
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        "S",
+        null,
+        "H",
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "across",
+        "clue": "Needle-and-thread work",
+        "answer": "SEWING",
+        "row": 0,
+        "col": 1
+      },
+      {
+        "number": 1,
+        "direction": "down",
+        "clue": "Fake mark on the skin",
+        "answer": "SCAR",
+        "row": 0,
+        "col": 1
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "Footwear for a cowboy",
+        "answer": "BOOTS",
+        "row": 2,
+        "col": 3
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "Tool for applying makeup",
+        "answer": "BRUSH",
+        "row": 2,
+        "col": 5
+      },
+      {
+        "number": 4,
+        "direction": "across",
+        "clue": "Metal worn in a battle scene",
+        "answer": "ARMOUR",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Headwear",
+        "answer": "HAT",
+        "row": 5,
+        "col": 1
+      }
+    ],
+    "bonusWord": "COSTUME",
+    "bonusHint": "What a character wears"
+  },
+  {
+    "id": 1012,
+    "title": "The Script",
+    "size": 7,
+    "solution": [
+      [
+        "H",
+        "E",
+        "R",
+        "O",
+        null,
+        null,
+        "S"
+      ],
+      [
+        null,
+        "N",
+        null,
+        null,
+        "D",
+        null,
+        "C"
+      ],
+      [
+        null,
+        "D",
+        null,
+        null,
+        "I",
+        null,
+        "E"
+      ],
+      [
+        "V",
+        "I",
+        "L",
+        "L",
+        "A",
+        "I",
+        "N"
+      ],
+      [
+        null,
+        "N",
+        null,
+        null,
+        "L",
+        null,
+        "E"
+      ],
+      [
+        null,
+        "G",
+        null,
+        null,
+        "O",
+        null,
+        null
+      ],
+      [
+        null,
+        null,
+        "P",
+        "A",
+        "G",
+        "E",
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "across",
+        "clue": "Character you root for",
+        "answer": "HERO",
+        "row": 0,
+        "col": 0
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "How it all finishes",
+        "answer": "ENDING",
+        "row": 0,
+        "col": 1
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "One unit of the script",
+        "answer": "SCENE",
+        "row": 0,
+        "col": 6
+      },
+      {
+        "number": 4,
+        "direction": "down",
+        "clue": "The talking parts",
+        "answer": "DIALOG",
+        "row": 1,
+        "col": 4
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Character you root against",
+        "answer": "VILLAIN",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 6,
+        "direction": "across",
+        "clue": "Roughly one minute of film",
+        "answer": "PAGE",
+        "row": 6,
+        "col": 2
+      }
+    ],
+    "bonusWord": "SCREENPLAY",
+    "bonusHint": "The film written down"
+  },
+  {
+    "id": 1013,
+    "title": "Horror Films",
+    "size": 7,
+    "solution": [
+      [
+        "M",
+        "O",
+        "O",
+        "N",
+        null,
+        null,
+        null
+      ],
+      [
+        "I",
+        null,
+        null,
+        null,
+        null,
+        "D",
+        null
+      ],
+      [
+        "S",
+        null,
+        "G",
+        null,
+        null,
+        "A",
+        null
+      ],
+      [
+        "T",
+        "E",
+        "R",
+        "R",
+        "O",
+        "R",
+        null
+      ],
+      [
+        null,
+        null,
+        "A",
+        null,
+        null,
+        "K",
+        null
+      ],
+      [
+        null,
+        null,
+        "V",
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        "C",
+        "R",
+        "E",
+        "E",
+        "P",
+        "Y",
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "across",
+        "clue": "It is always full in these films",
+        "answer": "MOON",
+        "row": 0,
+        "col": 0
+      },
+      {
+        "number": 1,
+        "direction": "down",
+        "clue": "Low fog in the graveyard",
+        "answer": "MIST",
+        "row": 0,
+        "col": 0
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "Where the scary things are",
+        "answer": "DARK",
+        "row": 1,
+        "col": 5
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "Where the body was buried",
+        "answer": "GRAVE",
+        "row": 2,
+        "col": 2
+      },
+      {
+        "number": 4,
+        "direction": "across",
+        "clue": "Very great fear",
+        "answer": "TERROR",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Unsettling in a quiet way",
+        "answer": "CREEPY",
+        "row": 6,
+        "col": 0
+      }
+    ],
+    "bonusWord": "SCREAM",
+    "bonusHint": "Loud sound of fright"
+  },
+  {
+    "id": 1014,
+    "title": "Science Fiction",
+    "size": 7,
+    "solution": [
+      [
+        "S",
+        "P",
+        "A",
+        "C",
+        "E",
+        null,
+        null
+      ],
+      [
+        null,
+        "L",
+        null,
+        null,
+        null,
+        "A",
+        null
+      ],
+      [
+        null,
+        "A",
+        null,
+        "O",
+        null,
+        "L",
+        null
+      ],
+      [
+        "A",
+        "N",
+        "D",
+        "R",
+        "O",
+        "I",
+        "D"
+      ],
+      [
+        null,
+        "E",
+        null,
+        "B",
+        null,
+        "E",
+        null
+      ],
+      [
+        null,
+        "T",
+        null,
+        "I",
+        null,
+        "N",
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        "T",
+        null,
+        null,
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "across",
+        "clue": "The final frontier",
+        "answer": "SPACE",
+        "row": 0,
+        "col": 0
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "World going round a star",
+        "answer": "PLANET",
+        "row": 0,
+        "col": 1
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "Visitor from another world",
+        "answer": "ALIEN",
+        "row": 1,
+        "col": 5
+      },
+      {
+        "number": 4,
+        "direction": "down",
+        "clue": "Path around a planet",
+        "answer": "ORBIT",
+        "row": 2,
+        "col": 3
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Robot built to look human",
+        "answer": "ANDROID",
+        "row": 3,
+        "col": 0
+      }
+    ],
+    "bonusWord": "FUTURE",
+    "bonusHint": "When these films are usually set"
+  },
+  {
+    "id": 1015,
+    "title": "Action Films",
+    "size": 7,
+    "solution": [
+      [
+        null,
+        "C",
+        "R",
+        "A",
+        "S",
+        "H",
+        null
+      ],
+      [
+        "A",
+        null,
+        "E",
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        "G",
+        null,
+        "S",
+        null,
+        "S",
+        null,
+        null
+      ],
+      [
+        "E",
+        "S",
+        "C",
+        "A",
+        "P",
+        "E",
+        null
+      ],
+      [
+        "N",
+        null,
+        "U",
+        null,
+        "E",
+        null,
+        null
+      ],
+      [
+        "T",
+        null,
+        "E",
+        "N",
+        "E",
+        "M",
+        "Y"
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        "D",
+        null,
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "across",
+        "clue": "What the stunt car does",
+        "answer": "CRASH",
+        "row": 0,
+        "col": 1
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "Save someone",
+        "answer": "RESCUE",
+        "row": 0,
+        "col": 2
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "Hero with a licence",
+        "answer": "AGENT",
+        "row": 1,
+        "col": 0
+      },
+      {
+        "number": 4,
+        "direction": "down",
+        "clue": "How fast it all happens",
+        "answer": "SPEED",
+        "row": 2,
+        "col": 4
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Get out just in time",
+        "answer": "ESCAPE",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 6,
+        "direction": "across",
+        "clue": "Who the hero is up against",
+        "answer": "ENEMY",
+        "row": 5,
+        "col": 2
+      }
+    ],
+    "bonusWord": "CHASE",
+    "bonusHint": "Sequence where one car follows another"
+  },
+  {
+    "id": 1016,
+    "title": "Comedy Films",
+    "size": 7,
+    "solution": [
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        "R",
+        "O",
+        "A",
+        "S",
+        "T",
+        null,
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        "M",
+        null,
+        null,
+        null
+      ],
+      [
+        "T",
+        "I",
+        "M",
+        "I",
+        "N",
+        "G",
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        "L",
+        null,
+        "A",
+        null
+      ],
+      [
+        "J",
+        "O",
+        "K",
+        "E",
+        null,
+        "G",
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "across",
+        "clue": "Comic mocking of a guest",
+        "answer": "ROAST",
+        "row": 1,
+        "col": 0
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "Smaller than a laugh",
+        "answer": "SMILE",
+        "row": 1,
+        "col": 3
+      },
+      {
+        "number": 3,
+        "direction": "across",
+        "clue": "The secret of a good joke",
+        "answer": "TIMING",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 4,
+        "direction": "down",
+        "clue": "Visual joke",
+        "answer": "GAG",
+        "row": 3,
+        "col": 5
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Line written to be funny",
+        "answer": "JOKE",
+        "row": 5,
+        "col": 0
+      }
+    ],
+    "bonusWord": "LAUGH",
+    "bonusHint": "What the audience should do"
+  },
+  {
+    "id": 1017,
+    "title": "Film Festivals",
+    "size": 7,
+    "solution": [
+      [
+        null,
+        "D",
+        "E",
+        "B",
+        "U",
+        "T",
+        null
+      ],
+      [
+        "T",
+        null,
+        "N",
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        "I",
+        null,
+        "T",
+        null,
+        "V",
+        null,
+        null
+      ],
+      [
+        "C",
+        "A",
+        "R",
+        "P",
+        "E",
+        "T",
+        null
+      ],
+      [
+        "K",
+        null,
+        "Y",
+        null,
+        "N",
+        null,
+        null
+      ],
+      [
+        "E",
+        null,
+        null,
+        null,
+        "U",
+        null,
+        null
+      ],
+      [
+        "T",
+        null,
+        "P",
+        "R",
+        "E",
+        "S",
+        "S"
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "across",
+        "clue": "A first film",
+        "answer": "DEBUT",
+        "row": 0,
+        "col": 1
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "Film submitted for judging",
+        "answer": "ENTRY",
+        "row": 0,
+        "col": 2
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "Pass to get in",
+        "answer": "TICKET",
+        "row": 1,
+        "col": 0
+      },
+      {
+        "number": 4,
+        "direction": "down",
+        "clue": "Where it is all held",
+        "answer": "VENUE",
+        "row": 2,
+        "col": 4
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "It is red and stars walk on it",
+        "answer": "CARPET",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 6,
+        "direction": "across",
+        "clue": "Reporters at the event",
+        "answer": "PRESS",
+        "row": 6,
+        "col": 2
+      }
+    ],
+    "bonusWord": "PREMIERE",
+    "bonusHint": "First public showing"
+  },
+  {
+    "id": 1018,
+    "title": "Film Editing",
+    "size": 7,
+    "solution": [
+      [
+        null,
+        null,
+        null,
+        "J",
+        "U",
+        "M",
+        "P"
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        "A"
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        "C"
+      ],
+      [
+        "F",
+        "O",
+        "O",
+        "T",
+        "A",
+        "G",
+        "E"
+      ],
+      [
+        "A",
+        null,
+        null,
+        "R",
+        null,
+        null,
+        null
+      ],
+      [
+        "D",
+        null,
+        "F",
+        "I",
+        "N",
+        "A",
+        "L"
+      ],
+      [
+        "E",
+        null,
+        null,
+        "M",
+        null,
+        null,
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "across",
+        "clue": "Cut that skips forward jarringly",
+        "answer": "JUMP",
+        "row": 0,
+        "col": 3
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "How fast the film feels",
+        "answer": "PACE",
+        "row": 0,
+        "col": 6
+      },
+      {
+        "number": 3,
+        "direction": "across",
+        "clue": "All the material that was shot",
+        "answer": "FOOTAGE",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "Picture slowly going to black",
+        "answer": "FADE",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 4,
+        "direction": "down",
+        "clue": "Shorten a shot",
+        "answer": "TRIM",
+        "row": 3,
+        "col": 3
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "The locked version",
+        "answer": "FINAL",
+        "row": 5,
+        "col": 2
+      }
+    ],
+    "bonusWord": "MONTAGE",
+    "bonusHint": "Quick run of shots showing time passing"
+  },
+  {
+    "id": 1019,
+    "title": "Movie Theatres",
+    "size": 7,
+    "solution": [
+      [
+        "B",
+        null,
+        "S",
+        "E",
+        "A",
+        "T",
+        "S"
+      ],
+      [
+        "A",
+        null,
+        null,
+        "X",
+        null,
+        null,
+        null
+      ],
+      [
+        "L",
+        null,
+        null,
+        "I",
+        null,
+        "L",
+        null
+      ],
+      [
+        "C",
+        "U",
+        "R",
+        "T",
+        "A",
+        "I",
+        "N"
+      ],
+      [
+        "O",
+        null,
+        null,
+        null,
+        null,
+        "G",
+        null
+      ],
+      [
+        "N",
+        null,
+        null,
+        null,
+        null,
+        "H",
+        null
+      ],
+      [
+        "Y",
+        null,
+        "B",
+        "O",
+        "O",
+        "T",
+        "H"
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "down",
+        "clue": "Upper seating",
+        "answer": "BALCONY",
+        "row": 0,
+        "col": 0
+      },
+      {
+        "number": 2,
+        "direction": "across",
+        "clue": "Rows of them",
+        "answer": "SEATS",
+        "row": 0,
+        "col": 2
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "Green sign by the door",
+        "answer": "EXIT",
+        "row": 0,
+        "col": 3
+      },
+      {
+        "number": 4,
+        "direction": "down",
+        "clue": "It dims as the film starts",
+        "answer": "LIGHT",
+        "row": 2,
+        "col": 5
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "It opens before the film",
+        "answer": "CURTAIN",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 6,
+        "direction": "across",
+        "clue": "Little room at the back",
+        "answer": "BOOTH",
+        "row": 6,
+        "col": 2
+      }
+    ],
+    "bonusWord": "PROJECTOR",
+    "bonusHint": "Machine that throws the picture"
+  },
+  {
+    "id": 1020,
+    "title": "Behind the Scenes",
+    "size": 7,
+    "solution": [
+      [
+        null,
+        "L",
+        "U",
+        "N",
+        "C",
+        "H",
+        null
+      ],
+      [
+        "N",
+        null,
+        null,
+        null,
+        "A",
+        null,
+        null
+      ],
+      [
+        "O",
+        null,
+        null,
+        null,
+        "L",
+        null,
+        "B"
+      ],
+      [
+        "T",
+        "R",
+        "A",
+        "I",
+        "L",
+        "E",
+        "R"
+      ],
+      [
+        "E",
+        null,
+        null,
+        null,
+        null,
+        null,
+        "E"
+      ],
+      [
+        "S",
+        "E",
+        "T",
+        "U",
+        "P",
+        null,
+        "A"
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        "K"
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "across",
+        "clue": "Midday stop",
+        "answer": "LUNCH",
+        "row": 0,
+        "col": 1
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "Time you must be on set",
+        "answer": "CALL",
+        "row": 0,
+        "col": 4
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "Comments after a take",
+        "answer": "NOTES",
+        "row": 1,
+        "col": 0
+      },
+      {
+        "number": 4,
+        "direction": "down",
+        "clue": "Rest between takes",
+        "answer": "BREAK",
+        "row": 2,
+        "col": 6
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Van an actor rests in",
+        "answer": "TRAILER",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 6,
+        "direction": "across",
+        "clue": "Arranging camera and lights",
+        "answer": "SETUP",
+        "row": 5,
+        "col": 0
+      }
+    ],
+    "bonusWord": "BLOOPER",
+    "bonusHint": "Mistake kept for the credits"
+  },
+  {
+    "id": 1021,
+    "title": "Film Story",
+    "size": 7,
+    "solution": [
+      [
+        null,
+        "R",
+        "E",
+        "B",
+        "O",
+        "O",
+        "T"
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        "I"
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        "T"
+      ],
+      [
+        "P",
+        "R",
+        "E",
+        "Q",
+        "U",
+        "E",
+        "L"
+      ],
+      [
+        "A",
+        null,
+        "P",
+        null,
+        null,
+        null,
+        "E"
+      ],
+      [
+        "R",
+        null,
+        "I",
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        "T",
+        null,
+        "C",
+        "A",
+        "M",
+        "E",
+        "O"
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "across",
+        "clue": "Start the whole thing over",
+        "answer": "REBOOT",
+        "row": 0,
+        "col": 1
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "What the film is called",
+        "answer": "TITLE",
+        "row": 0,
+        "col": 6
+      },
+      {
+        "number": 3,
+        "direction": "across",
+        "clue": "The one set before",
+        "answer": "PREQUEL",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "Number two, say",
+        "answer": "PART",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 4,
+        "direction": "down",
+        "clue": "Long and grand",
+        "answer": "EPIC",
+        "row": 3,
+        "col": 2
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Tiny appearance by someone famous",
+        "answer": "CAMEO",
+        "row": 6,
+        "col": 2
+      }
+    ],
+    "bonusWord": "SEQUEL",
+    "bonusHint": "The one that comes after"
+  },
+  {
+    "id": 1022,
+    "title": "Western Films",
+    "size": 7,
+    "solution": [
+      [
+        "H",
+        null,
+        "D",
+        "U",
+        "E",
+        "L",
+        null
+      ],
+      [
+        "O",
+        null,
+        "E",
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        "R",
+        null,
+        "S",
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        "S",
+        "H",
+        "E",
+        "R",
+        "I",
+        "F",
+        "F"
+      ],
+      [
+        "E",
+        null,
+        "R",
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        null,
+        null,
+        "T",
+        "R",
+        "A",
+        "I",
+        "L"
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "down",
+        "clue": "He rides one",
+        "answer": "HORSE",
+        "row": 0,
+        "col": 0
+      },
+      {
+        "number": 2,
+        "direction": "across",
+        "clue": "Face-off in the street",
+        "answer": "DUEL",
+        "row": 0,
+        "col": 2
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "Dry, sandy setting",
+        "answer": "DESERT",
+        "row": 0,
+        "col": 2
+      },
+      {
+        "number": 3,
+        "direction": "across",
+        "clue": "Lawman with a star",
+        "answer": "SHERIFF",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 4,
+        "direction": "across",
+        "clue": "Path across the plains",
+        "answer": "TRAIL",
+        "row": 5,
+        "col": 2
+      }
+    ],
+    "bonusWord": "COWBOY",
+    "bonusHint": "Hero on horseback"
+  },
+  {
+    "id": 1023,
+    "title": "Movie Snacks",
+    "size": 7,
+    "solution": [
+      [
+        "C",
+        null,
+        null,
+        "S",
+        null,
+        null,
+        null
+      ],
+      [
+        "O",
+        null,
+        "C",
+        "A",
+        "N",
+        "D",
+        "Y"
+      ],
+      [
+        "M",
+        null,
+        null,
+        "L",
+        null,
+        null,
+        null
+      ],
+      [
+        "B",
+        "U",
+        "T",
+        "T",
+        "E",
+        "R",
+        null
+      ],
+      [
+        "O",
+        null,
+        "R",
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        null,
+        "N",
+        "A",
+        "C",
+        "H",
+        "O",
+        "S"
+      ],
+      [
+        null,
+        null,
+        "Y",
+        null,
+        null,
+        null,
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "down",
+        "clue": "Drink and popcorn together",
+        "answer": "COMBO",
+        "row": 0,
+        "col": 0
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "Sprinkled on the popcorn",
+        "answer": "SALT",
+        "row": 0,
+        "col": 3
+      },
+      {
+        "number": 3,
+        "direction": "across",
+        "clue": "Sweets in a box",
+        "answer": "CANDY",
+        "row": 1,
+        "col": 2
+      },
+      {
+        "number": 4,
+        "direction": "across",
+        "clue": "The other popcorn topping",
+        "answer": "BUTTER",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 5,
+        "direction": "down",
+        "clue": "You carry it all on this",
+        "answer": "TRAY",
+        "row": 3,
+        "col": 2
+      },
+      {
+        "number": 6,
+        "direction": "across",
+        "clue": "Chips with melted cheese",
+        "answer": "NACHOS",
+        "row": 5,
+        "col": 1
+      }
+    ],
+    "bonusWord": "POPCORN",
+    "bonusHint": "It bursts when heated"
+  },
+  {
+    "id": 1024,
+    "title": "Film Studios",
+    "size": 7,
+    "solution": [
+      [
+        "L",
+        null,
+        "S",
+        "T",
+        "A",
+        "G",
+        "E"
+      ],
+      [
+        "O",
+        null,
+        null,
+        null,
+        null,
+        "A",
+        null
+      ],
+      [
+        "G",
+        null,
+        null,
+        "S",
+        null,
+        "T",
+        null
+      ],
+      [
+        "O",
+        "F",
+        "F",
+        "I",
+        "C",
+        "E",
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        "G",
+        null,
+        null,
+        null
+      ],
+      [
+        "C",
+        "R",
+        "A",
+        "N",
+        "E",
+        null,
+        null
+      ],
+      [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "down",
+        "clue": "Animation before the film starts",
+        "answer": "LOGO",
+        "row": 0,
+        "col": 0
+      },
+      {
+        "number": 2,
+        "direction": "across",
+        "clue": "Soundproof shed for filming",
+        "answer": "STAGE",
+        "row": 0,
+        "col": 2
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "You need a pass to get past it",
+        "answer": "GATE",
+        "row": 0,
+        "col": 5
+      },
+      {
+        "number": 4,
+        "direction": "down",
+        "clue": "Big letters on a hill",
+        "answer": "SIGN",
+        "row": 2,
+        "col": 3
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Where the executives sit",
+        "answer": "OFFICE",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 6,
+        "direction": "across",
+        "clue": "It lifts heavy things",
+        "answer": "CRANE",
+        "row": 5,
+        "col": 0
+      }
+    ],
+    "bonusWord": "BACKLOT",
+    "bonusHint": "Outdoor area with standing sets"
+  },
+  {
+    "id": 1025,
+    "title": "Movie Villains",
+    "size": 7,
+    "solution": [
+      [
+        "M",
+        null,
+        null,
+        "G",
+        null,
+        null,
+        null
+      ],
+      [
+        "A",
+        null,
+        "C",
+        "R",
+        "I",
+        "M",
+        "E"
+      ],
+      [
+        "S",
+        null,
+        null,
+        "E",
+        null,
+        null,
+        null
+      ],
+      [
+        "T",
+        "H",
+        "R",
+        "E",
+        "A",
+        "T",
+        null
+      ],
+      [
+        "E",
+        null,
+        null,
+        "D",
+        null,
+        "R",
+        null
+      ],
+      [
+        "R",
+        null,
+        null,
+        null,
+        null,
+        "A",
+        null
+      ],
+      [
+        null,
+        "E",
+        "S",
+        "C",
+        "A",
+        "P",
+        "E"
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "down",
+        "clue": "The one giving the orders",
+        "answer": "MASTER",
+        "row": 0,
+        "col": 0
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "Wanting far too much",
+        "answer": "GREED",
+        "row": 0,
+        "col": 3
+      },
+      {
+        "number": 3,
+        "direction": "across",
+        "clue": "What they commit",
+        "answer": "CRIME",
+        "row": 1,
+        "col": 2
+      },
+      {
+        "number": 4,
+        "direction": "across",
+        "clue": "Promise of harm",
+        "answer": "THREAT",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 5,
+        "direction": "down",
+        "clue": "Set for the hero",
+        "answer": "TRAP",
+        "row": 3,
+        "col": 5
+      },
+      {
+        "number": 6,
+        "direction": "across",
+        "clue": "They always manage one",
+        "answer": "ESCAPE",
+        "row": 6,
+        "col": 1
+      }
+    ],
+    "bonusWord": "MENACE",
+    "bonusHint": "Something threatening"
+  },
+  {
+    "id": 1026,
+    "title": "On Location",
+    "size": 7,
+    "solution": [
+      [
+        null,
+        null,
+        null,
+        "C",
+        "A",
+        "F",
+        "E"
+      ],
+      [
+        "C",
+        null,
+        "P",
+        null,
+        "L",
+        null,
+        null
+      ],
+      [
+        "A",
+        null,
+        "E",
+        null,
+        "L",
+        null,
+        null
+      ],
+      [
+        "S",
+        "T",
+        "R",
+        "E",
+        "E",
+        "T",
+        null
+      ],
+      [
+        "T",
+        null,
+        "M",
+        null,
+        "Y",
+        null,
+        null
+      ],
+      [
+        "L",
+        null,
+        "I",
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        "E",
+        null,
+        "T",
+        "R",
+        "A",
+        "I",
+        "N"
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "across",
+        "clue": "Small place to eat",
+        "answer": "CAFE",
+        "row": 0,
+        "col": 3
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "Narrow lane between buildings",
+        "answer": "ALLEY",
+        "row": 0,
+        "col": 4
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "Stone place with towers",
+        "answer": "CASTLE",
+        "row": 1,
+        "col": 0
+      },
+      {
+        "number": 4,
+        "direction": "down",
+        "clue": "Paper letting you film there",
+        "answer": "PERMIT",
+        "row": 1,
+        "col": 2
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "It gets closed for the shoot",
+        "answer": "STREET",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 6,
+        "direction": "across",
+        "clue": "It runs on rails",
+        "answer": "TRAIN",
+        "row": 6,
+        "col": 2
+      }
+    ],
+    "bonusWord": "SCOUTING",
+    "bonusHint": "Hunting for places to film"
+  },
+  {
+    "id": 1027,
+    "title": "Film Tech",
+    "size": 7,
+    "solution": [
+      [
+        null,
+        "G",
+        "I",
+        "M",
+        "B",
+        "A",
+        "L"
+      ],
+      [
+        "M",
+        null,
+        null,
+        null,
+        "A",
+        null,
+        null
+      ],
+      [
+        "E",
+        null,
+        null,
+        null,
+        "T",
+        null,
+        "D"
+      ],
+      [
+        "M",
+        "O",
+        "N",
+        "I",
+        "T",
+        "O",
+        "R"
+      ],
+      [
+        "O",
+        null,
+        null,
+        null,
+        "E",
+        null,
+        "O"
+      ],
+      [
+        "R",
+        "I",
+        "G",
+        null,
+        "R",
+        null,
+        "N"
+      ],
+      [
+        "Y",
+        null,
+        null,
+        null,
+        "Y",
+        null,
+        "E"
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "across",
+        "clue": "It keeps the camera steady",
+        "answer": "GIMBAL",
+        "row": 0,
+        "col": 1
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "It powers the kit",
+        "answer": "BATTERY",
+        "row": 0,
+        "col": 4
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "Card the footage lands on",
+        "answer": "MEMORY",
+        "row": 1,
+        "col": 0
+      },
+      {
+        "number": 4,
+        "direction": "down",
+        "clue": "Flying camera",
+        "answer": "DRONE",
+        "row": 2,
+        "col": 6
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Screen the director watches",
+        "answer": "MONITOR",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 6,
+        "direction": "across",
+        "clue": "Frame holding the gear",
+        "answer": "RIG",
+        "row": 5,
+        "col": 0
+      }
+    ],
+    "bonusWord": "RESOLUTION",
+    "bonusHint": "How much detail a picture holds"
+  },
+  {
+    "id": 1028,
+    "title": "Fantasy Films",
+    "size": 7,
+    "solution": [
+      [
+        "C",
+        null,
+        null,
+        null,
+        "R",
+        null,
+        "E"
+      ],
+      [
+        "U",
+        null,
+        "S",
+        "P",
+        "E",
+        "L",
+        "L"
+      ],
+      [
+        "R",
+        null,
+        null,
+        null,
+        "A",
+        null,
+        "F"
+      ],
+      [
+        "S",
+        "C",
+        "R",
+        "O",
+        "L",
+        "L",
+        null
+      ],
+      [
+        "E",
+        null,
+        "I",
+        null,
+        "M",
+        null,
+        null
+      ],
+      [
+        null,
+        null,
+        "N",
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        "M",
+        "A",
+        "G",
+        "I",
+        "C",
+        null,
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "down",
+        "clue": "Magic gone bad",
+        "answer": "CURSE",
+        "row": 0,
+        "col": 0
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "Kingdom",
+        "answer": "REALM",
+        "row": 0,
+        "col": 4
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "Pointy-eared forest folk",
+        "answer": "ELF",
+        "row": 0,
+        "col": 6
+      },
+      {
+        "number": 4,
+        "direction": "across",
+        "clue": "Magic words",
+        "answer": "SPELL",
+        "row": 1,
+        "col": 2
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Rolled-up document",
+        "answer": "SCROLL",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 6,
+        "direction": "down",
+        "clue": "Small circle with great power",
+        "answer": "RING",
+        "row": 3,
+        "col": 2
+      },
+      {
+        "number": 7,
+        "direction": "across",
+        "clue": "What the wizard does",
+        "answer": "MAGIC",
+        "row": 6,
+        "col": 0
+      }
+    ],
+    "bonusWord": "QUEST",
+    "bonusHint": "Long journey with a purpose"
+  },
+  {
+    "id": 1029,
+    "title": "Watching at Home",
+    "size": 7,
+    "solution": [
+      [
+        null,
+        null,
+        "S",
+        "O",
+        "F",
+        "A",
+        null
+      ],
+      [
+        "S",
+        null,
+        "K",
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        "C",
+        null,
+        "I",
+        null,
+        "P",
+        null,
+        null
+      ],
+      [
+        "R",
+        "E",
+        "P",
+        "L",
+        "A",
+        "Y",
+        null
+      ],
+      [
+        "E",
+        null,
+        null,
+        null,
+        "U",
+        null,
+        null
+      ],
+      [
+        "E",
+        null,
+        "L",
+        "I",
+        "S",
+        "T",
+        null
+      ],
+      [
+        "N",
+        null,
+        null,
+        null,
+        "E",
+        null,
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "across",
+        "clue": "Where you watch from",
+        "answer": "SOFA",
+        "row": 0,
+        "col": 2
+      },
+      {
+        "number": 1,
+        "direction": "down",
+        "clue": "Jump past the intro",
+        "answer": "SKIP",
+        "row": 0,
+        "col": 2
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "The television itself",
+        "answer": "SCREEN",
+        "row": 1,
+        "col": 0
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "Stop it for a moment",
+        "answer": "PAUSE",
+        "row": 2,
+        "col": 4
+      },
+      {
+        "number": 4,
+        "direction": "across",
+        "clue": "Watch that bit again",
+        "answer": "REPLAY",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 5,
+        "direction": "across",
+        "clue": "Things you mean to watch",
+        "answer": "LIST",
+        "row": 5,
+        "col": 2
+      }
+    ],
+    "bonusWord": "STREAMING",
+    "bonusHint": "Watching without downloading"
+  },
+  {
+    "id": 1030,
+    "title": "Film Words",
+    "size": 7,
+    "solution": [
+      [
+        null,
+        null,
+        "C",
+        "L",
+        "O",
+        "S",
+        "E"
+      ],
+      [
+        "F",
+        null,
+        null,
+        null,
+        null,
+        "C",
+        null
+      ],
+      [
+        "R",
+        null,
+        null,
+        null,
+        null,
+        "E",
+        null
+      ],
+      [
+        "A",
+        "C",
+        "T",
+        "I",
+        "O",
+        "N",
+        null
+      ],
+      [
+        "M",
+        null,
+        "A",
+        null,
+        null,
+        "E",
+        null
+      ],
+      [
+        "E",
+        null,
+        "K",
+        null,
+        null,
+        null,
+        null
+      ],
+      [
+        null,
+        "R",
+        "E",
+        "S",
+        "E",
+        "T",
+        null
+      ]
+    ],
+    "clues": [
+      {
+        "number": 1,
+        "direction": "across",
+        "clue": "Shot right up at a face",
+        "answer": "CLOSE",
+        "row": 0,
+        "col": 2
+      },
+      {
+        "number": 2,
+        "direction": "down",
+        "clue": "Numbered part of the script",
+        "answer": "SCENE",
+        "row": 0,
+        "col": 5
+      },
+      {
+        "number": 3,
+        "direction": "down",
+        "clue": "What is inside the picture",
+        "answer": "FRAME",
+        "row": 1,
+        "col": 0
+      },
+      {
+        "number": 4,
+        "direction": "across",
+        "clue": "Word that starts the take",
+        "answer": "ACTION",
+        "row": 3,
+        "col": 0
+      },
+      {
+        "number": 5,
+        "direction": "down",
+        "clue": "Another go at the same shot",
+        "answer": "TAKE",
+        "row": 3,
+        "col": 2
+      },
+      {
+        "number": 6,
+        "direction": "across",
+        "clue": "Put everything back for another take",
+        "answer": "RESET",
+        "row": 6,
+        "col": 1
+      }
+    ],
+    "bonusWord": "CLAPPER",
+    "bonusHint": "Board that snaps shut before a take"
+  }
+];

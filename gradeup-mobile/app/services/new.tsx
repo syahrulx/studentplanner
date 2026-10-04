@@ -16,11 +16,9 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Feather from '@expo/vector-icons/Feather';
 import * as ImagePicker from 'expo-image-picker';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '@/hooks/useTheme';
-import { isDarkTheme } from '@/constants/Themes';
 import { useApp } from '@/src/context/AppContext';
 import { LocationUniCampusBlock } from '@/components/LocationUniCampusBlock';
 import * as servicesApi from '@/src/lib/servicesApi';
@@ -34,6 +32,7 @@ import {
   type PriceType,
   type ServiceNegotiationMode,
 } from '@/src/lib/servicesApi';
+import ThemedDateTimePicker from '@/components/ThemedDateTimePicker';
 
 const KIND_OPTIONS: { id: ServiceKind; title: string; subtitle: string; icon: string; tint: string }[] = [
   { id: 'request', title: 'Need a service', subtitle: 'Ask the community for help', icon: 'help-circle', tint: '#0A84FF' },
@@ -58,7 +57,6 @@ function formatDateTime(d: Date) {
 
 export default function NewServiceScreen() {
   const theme = useTheme();
-  const dark = isDarkTheme(theme.id);
   const insets = useSafeAreaInsets();
   const { user } = useApp();
   const { editId, kind: kindParam } = useLocalSearchParams<{ editId?: string; kind?: string }>();
@@ -716,19 +714,18 @@ export default function NewServiceScreen() {
               </Pressable>
               {Platform.OS === 'ios' && showDeadlinePicker && (
                 <View style={[styles.inlinePicker, { borderTopColor: theme.border }]}>
-                  <DateTimePicker
+                  <ThemedDateTimePicker
                     value={deadline || new Date()}
                     mode="datetime"
                     display="spinner"
                     minimumDate={new Date()}
-                    themeVariant={dark ? 'dark' : 'light'}
                     accentColor={activeKind.tint}
                     onChange={(_, d) => { if (d) setDeadline(d); }}
                   />
                 </View>
               )}
               {Platform.OS === 'android' && showDeadlinePicker && (
-                <DateTimePicker
+                <ThemedDateTimePicker
                   value={deadline || new Date()}
                   mode="date"
                   display="default"
@@ -740,7 +737,7 @@ export default function NewServiceScreen() {
                 />
               )}
               {Platform.OS === 'android' && showTimePicker && (
-                <DateTimePicker
+                <ThemedDateTimePicker
                   value={deadline || new Date()}
                   mode="time"
                   display="default"

@@ -15,15 +15,14 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import * as ImagePicker from 'expo-image-picker';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme, useThemePack } from '@/hooks/useTheme';
-import { isDarkTheme } from '@/constants/Themes';
 import { useApp } from '@/src/context/AppContext';
 import { LocationUniCampusBlock } from '@/components/LocationUniCampusBlock';
 import * as eventsApi from '@/src/lib/eventsApi';
 import type { PostType } from '@/src/lib/eventsApi';
+import ThemedDateTimePicker from '@/components/ThemedDateTimePicker';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,7 +45,6 @@ export default function CreatePostScreen() {
   const isMonoOnly = themePack === 'mono';
   const insets = useSafeAreaInsets();
   const { user } = useApp();
-  const dark = isDarkTheme(theme.id);
   const { editId } = useLocalSearchParams<{ editId?: string }>();
   const isEditing = !!editId;
 
@@ -454,11 +452,10 @@ export default function CreatePostScreen() {
 
             {Platform.OS === 'ios' && showDatePicker && (
               <View style={[styles.inlinePicker, { borderTopColor: theme.border }]}>
-                <DateTimePicker
+                <ThemedDateTimePicker
                   value={eventDate || new Date()}
                   mode="date"
                   display="inline"
-                  themeVariant={dark ? 'dark' : 'light'}
                   accentColor={activeTint}
                   onChange={(_, d) => { if (d) setEventDate(d); }}
                 />
@@ -473,7 +470,7 @@ export default function CreatePostScreen() {
               </View>
             )}
             {Platform.OS === 'android' && showDatePicker && (
-              <DateTimePicker
+              <ThemedDateTimePicker
                 value={eventDate || new Date()}
                 mode="date"
                 display="default"
@@ -558,19 +555,18 @@ export default function CreatePostScreen() {
 
                 {Platform.OS === 'ios' && showExpiryPicker && (
                   <View style={[styles.inlinePicker, { borderTopColor: theme.border }]}>
-                    <DateTimePicker
+                    <ThemedDateTimePicker
                       value={expiresAt}
                       mode="date"
                       display="inline"
                       minimumDate={new Date()}
-                      themeVariant={dark ? 'dark' : 'light'}
                       accentColor={activeTint}
                       onChange={(_, d) => { if (d) setExpiresAt(d); }}
                     />
                   </View>
                 )}
                 {Platform.OS === 'android' && showExpiryPicker && (
-                  <DateTimePicker
+                  <ThemedDateTimePicker
                     value={expiresAt}
                     mode="date"
                     display="default"

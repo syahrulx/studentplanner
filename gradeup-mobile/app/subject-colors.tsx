@@ -13,9 +13,19 @@ export default function SubjectColorsScreen() {
   const [customHex, setCustomHex] = useState('#003366');
 
   const subjectIds = useMemo(() => {
-    const fromCourses = new Set(courses.map((c) => c.id));
-    tasks.forEach((t) => fromCourses.add(t.courseId));
-    return Array.from(fromCourses).sort();
+    // Blank ids are dropped. A task can carry no subject at all, and adding its
+    // empty courseId put a nameless row at the top of this list — an empty
+    // string sorts first — offering a colour for a subject that does not exist.
+    const ids = new Set<string>();
+    for (const c of courses) {
+      const id = (c.id ?? '').trim();
+      if (id) ids.add(id);
+    }
+    for (const t of tasks) {
+      const id = (t.courseId ?? '').trim();
+      if (id) ids.add(id);
+    }
+    return Array.from(ids).sort();
   }, [courses, tasks]);
 
   const isValidHex = /^#([0-9A-Fa-f]{6})$/.test(customHex.trim());

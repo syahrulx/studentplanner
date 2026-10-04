@@ -56,6 +56,17 @@ export interface TimetableMenuSheetProps {
   /** Last orientation used; the Page control starts on it. */
   pdfOrientation: TimetablePdfOrientation;
   onExportPdf: (orientation: TimetablePdfOrientation) => void;
+  /** Opens the save-as-picture sheet. Separate from the PDF: a PNG is what a
+   *  student sets as a wallpaper, a PDF is what they print or send. */
+  onSaveImage: () => void;
+  /**
+   * Fired once the sheet's Modal has actually unmounted.
+   *
+   * iOS drops a request to present a modal while another is still dismissing,
+   * so a caller that opens its own modal from a row here has to wait for this
+   * rather than act on the same tick as onClose.
+   */
+  onClosed?: () => void;
   /** While the PDF is being made the row shows a spinner and ignores taps. */
   exportingPdf: boolean;
   onReset: () => void;
@@ -88,13 +99,15 @@ function isDarkSurface(color: string): boolean {
 }
 
 export default function TimetableMenuSheet(props: TimetableMenuSheetProps) {
-  const { visible, onClose, theme, T } = props;
+  const { visible, onClose, onClosed, theme, T } = props;
   const insets = useSafeAreaInsets();
   const { height: winH } = useWindowDimensions();
 
   // Stay mounted through the closing slide, then let the Modal go.
   const [mounted, setMounted] = useState(visible);
   const slide = useRef(new Animated.Value(0)).current;
+  const onClosedRef = useRef(onClosed);
+  onClosedRef.current = onClosed;
 
   useEffect(() => {
     if (visible) {
@@ -107,7 +120,9 @@ export default function TimetableMenuSheet(props: TimetableMenuSheetProps) {
         easing: Easing.in(Easing.quad),
         useNativeDriver: true,
       }).start(({ finished }) => {
-        if (finished) setMounted(false);
+        if (!finished) return;
+        setMounted(false);
+        onClosedRef.current?.();
       });
     }
   }, [visible, mounted, slide]);
@@ -167,6 +182,7 @@ function SheetContent({
   onLockScreen,
   pdfOrientation,
   onExportPdf,
+  onSaveImage,
   exportingPdf,
   onReset,
 }: TimetableMenuSheetProps) {
@@ -269,6 +285,17 @@ function SheetContent({
             variant={segmentVariant}
             style={styles.segmentWide}
           />
+        </Row>
+        <Row
+          theme={theme}
+          icon="image"
+          tile={TILE.purple}
+          label={T('timetableSaveImageTitle')}
+          sub={T('timetableSaveImageSub')}
+          onPress={onSaveImage}
+          divider
+        >
+          <Feather name="download" size={18} color={theme.textSecondary} />
         </Row>
         <Row
           theme={theme}

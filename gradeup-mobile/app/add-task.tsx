@@ -14,7 +14,6 @@ import {
   Alert,
   Switch,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import Feather from '@expo/vector-icons/Feather';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -38,9 +37,9 @@ import { SUBJECT_COLOR_OPTIONS } from '@/src/constants/subjectColors';
 import { useTranslations } from '@/src/i18n';
 import { createTaskId, getDeadlineRiskFromDueDate, getSuggestedWeekForDueDate } from '@/src/lib/taskUtils';
 import { useTheme, useThemeId } from '@/hooks/useTheme';
-import { isDarkTheme } from '@/constants/Themes';
 import type { ThemePalette } from '@/constants/Themes';
 import SubjectPickerSheet from '@/components/SubjectPickerSheet';
+import ThemedDateTimePicker from '@/components/ThemedDateTimePicker';
 
 /** Sentinel id used to represent "no subject" (task not tied to a course). */
 const NO_SUBJECT_ID = '';
@@ -1010,13 +1009,11 @@ export default function AddTask() {
             <View style={[styles.timeSheet, { backgroundColor: theme.card }]} onStartShouldSetResponder={() => true}>
               {/* UIDatePicker wheel needs explicit height or it collapses to ~0 inside Modal */}
               <View style={styles.iosTimePickerWrap}>
-                <DateTimePicker
+                <ThemedDateTimePicker
                   value={dueDateTimeToDate(dueDateISO, dueTime)}
                   mode="time"
                   display="spinner"
                   is24Hour
-                  themeVariant={isDarkTheme(themeId) ? 'dark' : 'light'}
-                  textColor={theme.text}
                   style={styles.iosTimePicker}
                   onChange={(_, date) => {
                     if (date) setDueTime(formatTimeHM(date));
@@ -1032,7 +1029,7 @@ export default function AddTask() {
       )}
 
       {Platform.OS === 'android' && showTimePicker && (
-        <DateTimePicker
+        <ThemedDateTimePicker
           value={dueDateTimeToDate(dueDateISO, dueTime)}
           mode="time"
           display="default"

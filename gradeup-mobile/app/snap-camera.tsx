@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -21,7 +21,8 @@ import { useTheme } from '@/hooks/useTheme';
 import { useUpgradePrompt } from '@/hooks/useUpgradePrompt';
 import { maxSnapsPerDay, isAtLeastPlus } from '@/src/lib/flashcardGenerationLimits';
 import { uploadSnapImage, postSnap, getMySnapsToday, getMyStreak } from '@/src/lib/snapApi';
-import type { SnapStreak } from '@/src/types';
+import { captureError } from '@/src/lib/monitoring';
+import type { SnapStreak, SnapAudience } from '@/src/types';
 
 export default function SnapCamera() {
   const { user } = useApp();
@@ -38,6 +39,28 @@ export default function SnapCamera() {
   // Streak celebration state
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationStreak, setCelebrationStreak] = useState(0);
+
+  /**
+   * Who sees this snap. Chosen per snap, and friends-only every time the
+   * screen opens — a student who shared one snap with their campus has not
+   * agreed to share the next one, and a setting they set once in April is
+   * exactly the kind of thing that gets forgotten.
+   */
+  const [audience, setAudience] = useState<SnapAudience>('friends');
+
+  // Only offer what the profile can back. The database falls back to
+  // friends-only for a student with no university, so offering it here would
+  // promise something that silently would not happen.
+  const audienceOptions = useMemo(() => {
+    const opts: { value: SnapAudience; label: string; icon: 'users' | 'map-pin' | 'home' }[] = [
+      { value: 'friends', label: 'Friends', icon: 'users' },
+    ];
+    if (user?.universityId) {
+      if (user.campus) opts.push({ value: 'campus', label: 'My campus', icon: 'map-pin' });
+      opts.push({ value: 'university', label: 'My uni', icon: 'home' });
+    }
+    return opts;
+  }, [user?.universityId, user?.campus]);
   const flashOpacity = useRef(new Animated.Value(0)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
   const glowScale = useRef(new Animated.Value(0.3)).current;
@@ -233,11 +256,23 @@ export default function SnapCamera() {
       return;
     }
 
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      quality: 0.75,
-      allowsEditing: false,
-    });
+    // launchCameraAsync throws outright when there is no usable camera — no
+    // camera at all, or one another app is already holding. Unhandled, the
+    // promise rejects and the student is left on a spinner that never ends,
+    // with nothing on screen telling them why.
+    let result: ImagePicker.ImagePickerResult;
+    try {
+      result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        quality: 0.75,
+        allowsEditing: false,
+      });
+    } catch (e) {
+      captureError(e, { where: 'snapCamera.launchCamera' });
+      Alert.alert('Camera unavailable', 'Your camera could not be opened. Close any other app using it and try again.');
+      router.back();
+      return;
+    }
 
     if (!result.canceled && result.assets?.[0]?.uri) {
       setPhotoUri(result.assets[0].uri);
@@ -252,7 +287,7 @@ export default function SnapCamera() {
     try {
       const prevStreak = streak?.currentStreak || 0;
       const imageUrl = await uploadSnapImage(photoUri);
-      await postSnap(user.id!, imageUrl);
+      await postSnap(user.id!, imageUrl, undefined, audience);
 
       // postSnap() now awaits updateStreakOnPost() synchronously, so the
       // streak should be up-to-date on the first read. Retry once as a
@@ -272,7 +307,11 @@ export default function SnapCamera() {
         // Simple success — no streak animation needed
         Alert.alert(
           '📸 Snap posted!',
-          'Your moment is now live on the map for 24 hours.',
+          audience === 'friends'
+            ? 'Your friends can see it for the next 24 hours.'
+            : audience === 'campus'
+              ? 'Your campus can see it for the next 24 hours.'
+              : 'Your university can see it for the next 24 hours.',
         );
         router.back();
       }
@@ -320,6 +359,32 @@ export default function SnapCamera() {
 
         {/* Bottom bar */}
         <View style={s.previewBottom}>
+          {audienceOptions.length > 1 && (
+            <View style={s.audienceRow}>
+              {audienceOptions.map((opt) => {
+                const active = audience === opt.value;
+                return (
+                  <Pressable
+                    key={opt.value}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    onPress={() => setAudience(opt.value)}
+                    style={({ pressed }) => [
+                      s.audiencePill,
+                      active && s.audiencePillActive,
+                      pressed && { opacity: 0.8 },
+                    ]}
+                  >
+                    <Feather name={opt.icon} size={13} color={active ? '#000' : '#fff'} />
+                    <Text style={[s.audiencePillText, active && { color: '#000' }]} numberOfLines={1}>
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+
           {/* Post button */}
           <Pressable
             style={({ pressed }) => [
@@ -335,7 +400,13 @@ export default function SnapCamera() {
             ) : (
               <>
                 <Feather name="send" size={18} color="#fff" />
-                <Text style={s.postBtnText}>Share to Map</Text>
+                <Text style={s.postBtnText}>
+                  {audience === 'friends'
+                    ? 'Share with friends'
+                    : audience === 'campus'
+                      ? 'Share with my campus'
+                      : 'Share with my uni'}
+                </Text>
               </>
             )}
           </Pressable>
@@ -626,4 +697,18 @@ const s = StyleSheet.create({
     paddingVertical: 17,
   },
   postBtnText: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  audienceRow: { flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 12 },
+  audiencePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  audiencePillActive: { backgroundColor: '#fff', borderColor: '#fff' },
+  audiencePillText: { color: '#fff', fontSize: 12, fontWeight: '700' },
 });

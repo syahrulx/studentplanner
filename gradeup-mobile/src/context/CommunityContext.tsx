@@ -143,6 +143,8 @@ interface CommunityState {
   // Study Snap
   /** Map of userId → their latest active snap (for map avatar swap). */
   friendSnaps: Map<string, StudySnap>;
+  /** Campus and university snaps from people the student is not friends with. */
+  sharedSnaps: StudySnap[];
   /** Map of userId → their current streak. */
   friendStreaks: Map<string, SnapStreak>;
   myStreak: SnapStreak | null;
@@ -208,6 +210,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
   // Study Snap
   const [friendSnaps, setFriendSnaps] = useState<Map<string, StudySnap>>(new Map());
+  const [sharedSnaps, setSharedSnaps] = useState<StudySnap[]>([]);
   const [friendStreaks, setFriendStreaks] = useState<Map<string, SnapStreak>>(new Map());
   const [myStreak, setMyStreak] = useState<SnapStreak | null>(null);
 
@@ -384,12 +387,17 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     const friendIds = friendsRef.current.map(f => f.id);
     try {
       const allIds = [userId, ...friendIds];
-      const [snapMap, streakMap] = await Promise.all([
+      const [snapMap, streakMap, shared] = await Promise.all([
         snapApi.getLatestSnapForUsers(allIds),
         snapApi.getStreaksForUsers(allIds),
+        // Already-known people are excluded here rather than merged later, so
+        // a friend who shares with their campus still appears once, as a
+        // friend.
+        snapApi.getSharedSnaps(allIds),
       ]);
       setFriendSnaps(snapMap);
       setFriendStreaks(streakMap);
+      setSharedSnaps(shared);
     } catch (e) {
       // Ignore — table may not exist yet
     }
@@ -1326,6 +1334,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     refreshMyMusic,
     refreshAll,
     friendSnaps,
+    sharedSnaps,
     friendStreaks,
     myStreak,
     refreshFriendSnaps,
@@ -1384,6 +1393,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     refreshMyMusic,
     refreshAll,
     friendSnaps,
+    sharedSnaps,
     friendStreaks,
     myStreak,
     refreshFriendSnaps,

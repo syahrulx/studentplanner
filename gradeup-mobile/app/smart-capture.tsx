@@ -13,7 +13,6 @@ import {
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import * as Haptics from 'expo-haptics';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
 
 import { useApp } from '@/src/context/AppContext';
@@ -36,6 +35,7 @@ import {
 import { markCaptureSuccess } from '@/src/lib/smartCapture/smartCaptureSetupState';
 import type { Task } from '@/src/types';
 import { recordFeedbackEvent } from '@/src/lib/feedbackSurvey';
+import ThemedDateTimePicker from '@/components/ThemedDateTimePicker';
 
 type Phase = 'scanning' | 'review' | 'empty' | 'limit' | 'error' | 'needs_vision' | 'added';
 
@@ -489,7 +489,7 @@ export default function SmartCaptureSheet() {
       </Animated.View>
 
       {datePickerFor ? (
-        <DateTimePicker
+        <ThemedDateTimePicker
           value={(() => {
             const item = items.find((i) => i.localId === datePickerFor);
             const parsed = item?.due_date ? new Date(`${item.due_date}T00:00:00`) : new Date();
