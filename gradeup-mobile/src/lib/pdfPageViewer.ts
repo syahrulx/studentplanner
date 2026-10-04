@@ -2,6 +2,8 @@ import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 
+import { captureError } from './monitoring';
+
 /**
  * Draws one PDF page inside a WebView, for platforms whose WebView cannot.
  *
@@ -150,9 +152,13 @@ export function ensurePdfJsViewer(): Promise<string | null> {
       await FileSystem.writeAsStringAsync(viewer, viewerHtml());
       await FileSystem.writeAsStringAsync(stamp, String(VIEWER_VERSION));
       return viewer;
-    } catch {
-      // A failure here is reported by the caller, which falls back to handing
-      // the WebView the PDF directly — no worse than before this existed.
+    } catch (e) {
+      // Say why. This used to fail silently and fall back to handing the
+      // WebView the PDF directly, which on Android is the blank page this
+      // whole file exists to fix — so a broken viewer looked exactly like the
+      // bug, with nothing anywhere to tell the two apart.
+      console.warn('[pdfjs] viewer could not be prepared:', e);
+      captureError(e, { where: 'pdfPageViewer.ensure' });
       ready = null;
       return null;
     }
