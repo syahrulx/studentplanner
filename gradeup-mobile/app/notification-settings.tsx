@@ -10,7 +10,6 @@ import {
   Platform,
 } from 'react-native';
 import { router } from 'expo-router';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { useApp } from '@/src/context/AppContext';
 import { getNotificationPrefs, setNotificationPrefs, type NotificationPrefs } from '@/src/storage';
 import { useTheme, useThemePack } from '@/hooks/useTheme';
@@ -22,6 +21,7 @@ import { rescheduleAllTaskNotifications } from '@/src/notificationManager';
 import { rescheduleAttendanceNotifications } from '@/src/attendanceNotifications';
 import { mergeTeachingWeeksForStoredCalendar } from '@/src/lib/academicUtils';
 import { isUserInSemesterBreak } from '@/src/lib/semesterBreakNotifications';
+import ThemedDateTimePicker from '@/components/ThemedDateTimePicker';
 
 const PAD = 20;
 const RADIUS = 14;
@@ -447,12 +447,11 @@ export default function NotificationSettings() {
           <Pressable style={styles.modalBg} onPress={() => setShowReminderTimePicker(false)}>
             <View style={[styles.timeSheet, { backgroundColor: theme.card }]} onStartShouldSetResponder={() => true}>
               <View style={styles.iosTimePickerWrap}>
-                <DateTimePicker
+                <ThemedDateTimePicker
                   value={timeStringToDate(notifPrefs?.taskReminderTime || '09:00')}
                   mode="time"
                   display="spinner"
                   is24Hour
-                  textColor={theme.text}
                   style={styles.iosTimePicker}
                   onChange={(_, date) => {
                     if (date) {
@@ -471,7 +470,7 @@ export default function NotificationSettings() {
       )}
 
       {Platform.OS === 'android' && showReminderTimePicker && (
-        <DateTimePicker
+        <ThemedDateTimePicker
           value={timeStringToDate(notifPrefs?.taskReminderTime || '09:00')}
           mode="time"
           display="default"

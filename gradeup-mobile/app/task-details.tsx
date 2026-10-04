@@ -16,12 +16,10 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import Feather from '@expo/vector-icons/Feather';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '@/src/context/AppContext';
 import { useDarkMinimalThemePack, useTheme, useThemeId, useThemePack } from '@/hooks/useTheme';
-import { isDarkTheme } from '@/constants/Themes';
 import { useCommunity } from '@/src/context/CommunityContext';
 import {
   formatDisplayDate,
@@ -43,6 +41,7 @@ import {
 } from '@/src/lib/communityApi';
 import type { Task } from '@/src/types';
 import SubjectPickerSheet from '@/components/SubjectPickerSheet';
+import ThemedDateTimePicker from '@/components/ThemedDateTimePicker';
 
 const NAVY = '#003366';
 const BG = '#f8fafc';
@@ -928,13 +927,11 @@ export default function TaskDetails() {
           <Pressable style={s.modalBg} onPress={() => setShowTimePicker(false)}>
             <View style={[s.timeSheet, { backgroundColor: theme.card }]} onStartShouldSetResponder={() => true}>
               <View style={s.iosTimePickerWrap}>
-                <DateTimePicker
+                <ThemedDateTimePicker
                   value={dueDateTimeToDate(localDueDate, localDueTime)}
                   mode="time"
                   display="spinner"
                   is24Hour
-                  themeVariant={isDarkTheme(themeId) ? 'dark' : 'light'}
-                  textColor={theme.text}
                   style={s.iosTimePicker}
                   onChange={(_, date) => {
                     if (date) {
@@ -957,7 +954,7 @@ export default function TaskDetails() {
       )}
 
       {Platform.OS === 'android' && showTimePicker && (
-        <DateTimePicker
+        <ThemedDateTimePicker
           value={dueDateTimeToDate(localDueDate, localDueTime)}
           mode="time"
           display="default"

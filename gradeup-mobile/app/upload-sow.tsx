@@ -12,7 +12,6 @@ import {
   Modal,
   Platform,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -32,6 +31,7 @@ import { buildTaskFromExtraction, getSuggestedWeekForDueDate } from '@/src/lib/t
 import { analyzeSowWeekAlignment } from '@/src/lib/sowCalendarAlignment';
 import { TaskType, type Course } from '@/src/types';
 import { teachingWeekNumberForDate } from '@/src/lib/academicWeek';
+import ThemedDateTimePicker from '@/components/ThemedDateTimePicker';
 
 const PAD = 20;
 const SECTION = 24;
@@ -1140,7 +1140,7 @@ export default function UploadSOW() {
               <Text style={[styles.datePickerTitle, { color: theme.text }]}>
                 {picker.mode === 'date' ? 'Pick due date' : 'Pick due time'}
               </Text>
-              <DateTimePicker
+              <ThemedDateTimePicker
                 value={picker.value}
                 mode={picker.mode}
                 display={Platform.OS === 'ios' ? 'spinner' : 'default'}
