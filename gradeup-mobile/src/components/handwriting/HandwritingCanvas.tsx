@@ -36,6 +36,8 @@ interface Props {
   simultaneousGestures?: GestureType[];
   disabled?: boolean;
   transparentBackground?: boolean;
+  /** Page zoom, so the paper rules scale with the ink rather than staying put. */
+  paperScale?: number;
   onChange: (strokes: HandwritingStroke[]) => void;
   onElementsChange?: (elements: HandwritingElement[]) => void;
   onCommit: (previousStrokes: HandwritingStroke[]) => void;
@@ -392,31 +394,46 @@ function PageTemplate({
   width,
   height,
   transparent,
+  /**
+   * How far the page is zoomed in.
+   *
+   * The rules used to be drawn every 30 points of laid-out canvas whatever the
+   * zoom. Zooming grows the canvas, so that produced *more* lines at the same
+   * spacing instead of the same lines further apart: the ink scaled and the
+   * paper did not, and handwriting that sat on a line drifted across several.
+   * Scaling the step keeps the ink and its line together.
+   */
+  scale = 1,
 }: {
   template: HandwritingPage['template'];
   width: number;
   height: number;
   transparent: boolean;
+  scale?: number;
 }) {
   if (transparent) return null;
   const dark = template === 'dark';
   const backgroundColor = dark ? '#151922' : '#ffffff';
   const ruleColor = dark ? '#3d4658' : '#d7dce5';
   const rules = [];
+  // Guard the step: a zero or absurd scale would otherwise spin the loops below.
+  const z = Number.isFinite(scale) && scale > 0 ? Math.min(scale, 8) : 1;
+  const rowStep = 30 * z;
+  const dotStep = 24 * z;
 
   if (template === 'ruled' || template === 'grid' || template === 'cornell' || template === 'dark') {
-    for (let y = 34; y < height; y += 30) {
+    for (let y = 34 * z; y < height; y += rowStep) {
       rules.push(<Rule key={`h-${y}`} left={0} top={y} width={width} height={StyleSheet.hairlineWidth} color={ruleColor} />);
     }
   }
   if (template === 'grid') {
-    for (let x = 30; x < width; x += 30) {
+    for (let x = rowStep; x < width; x += rowStep) {
       rules.push(<Rule key={`v-${x}`} left={x} top={0} width={StyleSheet.hairlineWidth} height={height} color={ruleColor} />);
     }
   }
   if (template === 'dots') {
-    for (let x = 24; x < width; x += 24) {
-      for (let y = 24; y < height; y += 24) {
+    for (let x = dotStep; x < width; x += dotStep) {
+      for (let y = dotStep; y < height; y += dotStep) {
         rules.push(
           <View
             key={`d-${x}-${y}`}
@@ -666,6 +683,7 @@ export default function HandwritingCanvas({
   simultaneousGestures,
   disabled = false,
   transparentBackground = false,
+  paperScale = 1,
   onChange,
   onCommit,
   onElementsChange,
@@ -1317,6 +1335,7 @@ export default function HandwritingCanvas({
           width={canvasSize.width}
           height={canvasSize.height}
           transparent={transparentBackground}
+          scale={paperScale}
         />
         <WritingGuideOverlay guide={settings.writingGuide} width={canvasSize.width} height={canvasSize.height} />
         <WebView

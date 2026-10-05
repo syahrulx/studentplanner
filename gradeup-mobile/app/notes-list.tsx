@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { View, Text, Pressable, FlatList, StyleSheet, Platform, Modal, TextInput, Alert, ScrollView, ActivityIndicator, RefreshControl } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import { captureError } from '@/src/lib/monitoring';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { useUpgradePrompt } from '@/hooks/useUpgradePrompt';
@@ -474,7 +475,14 @@ export default function NotesList() {
 
       if (error) {
         setImportProgressUi(null);
-        Alert.alert('Upload failed', 'Could not upload the file. Please check your connection and try again.');
+        // "Check your connection" was the only thing this ever said, including
+        // for files that could never upload on any connection because of the
+        // characters in their name. Say which it is.
+        captureError(error, { where: 'notesList.uploadNoteAttachment', fileName });
+        const msg = /invalid key|exceeded|too large|payload/i.test(error.message ?? '')
+          ? `"${fileName}" could not be saved. Try renaming it with plain letters and numbers, or use a smaller file.`
+          : `Could not upload "${fileName}". Please check your connection and try again.`;
+        Alert.alert('Upload failed', msg);
         return;
       }
 
@@ -573,9 +581,9 @@ export default function NotesList() {
                 size={15}
                 color={offlineSyncStatus.lastError ? '#b45309' : theme.textSecondary}
               />
-              <Text style={styles.syncWarningText} numberOfLines={2}>
+              <Text style={styles.syncWarningText} numberOfLines={3}>
                 {offlineSyncStatus.lastError
-                  ? `${offlineSyncStatus.pendingCount} note${offlineSyncStatus.pendingCount === 1 ? '' : 's'} not saved to your account yet. ${offlineSyncStatus.lastError}`
+                  ? `${offlineSyncStatus.pendingCount} note${offlineSyncStatus.pendingCount === 1 ? ' is' : 's are'} saved on this phone only, and ${offlineSyncStatus.pendingCount === 1 ? 'is' : 'are'} not on your other devices yet. We keep trying. If it stays here, send us this: ${offlineSyncStatus.lastError}`
                   : `Saving ${offlineSyncStatus.pendingCount} note${offlineSyncStatus.pendingCount === 1 ? '' : 's'} to your account…`}
               </Text>
             </View>

@@ -128,6 +128,8 @@ const TEMPLATES: Array<{ id: HandwritingTemplate; label: string; pro?: boolean }
 interface ContinuousPageProps {
   page: HandwritingPage;
   pageWidth: number;
+  /** Page zoom, passed down so the paper rules scale with the ink. */
+  paperScale: number;
   aspectRatio: number;
   documentVersion: number;
   tool: HandwritingTool;
@@ -152,6 +154,7 @@ interface ContinuousPageProps {
 function ContinuousPage({
   page,
   pageWidth,
+  paperScale,
   aspectRatio,
   documentVersion,
   tool,
@@ -256,6 +259,7 @@ function ContinuousPage({
             settings={settings}
             simultaneousGestures={documentGestures}
             transparentBackground={page.pdfPageNumber != null && !!pdfUri}
+            paperScale={paperScale}
             onChange={(strokes) => onChange(page.id, strokes)}
             onElementsChange={(elements) => onElementsChange(page.id, elements)}
             onCommit={(previous) => onCommit(page.id, previous)}
@@ -1717,6 +1721,7 @@ export default function HandwritingEditor() {
                 <ContinuousPage
                   page={item}
                   pageWidth={pageWidth}
+                  paperScale={zoomScale}
                   aspectRatio={item.pdfPageNumber != null
                     ? (pdfPageRatios[item.pdfPageNumber] ?? HANDWRITING_PAGE_ASPECT_RATIO)
                     : HANDWRITING_PAGE_ASPECT_RATIO}
