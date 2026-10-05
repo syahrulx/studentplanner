@@ -1300,7 +1300,9 @@ export default function HandwritingEditor() {
     ],
     [],
   );
-  const basePageWidth = Math.max(1, workspaceSize.width - 24);
+  // Matches the workspace inset, which drops to 0 once zoomed so the paper can
+  // reach the screen edge instead of stopping at a grey strip.
+  const basePageWidth = Math.max(1, workspaceSize.width - (zoomScale > 1 ? 0 : 24));
   const pageWidth = basePageWidth * zoomScale;
   useEffect(() => {
     committedZoom.value = zoomScale;
@@ -1662,7 +1664,17 @@ export default function HandwritingEditor() {
       ) : null}
 
       <View
-        style={[styles.workspace, isPdfAnnotation && styles.pdfWorkspace, accessibility.highContrast && styles.highContrastWorkspace]}
+        style={[
+          styles.workspace,
+          // The 12pt inset reads as paper lying on a desk at 100%. Zoomed in it
+          // reads as the edge of the page: the writing stops at a hard grey
+          // line that is not actually where the paper ends, which is exactly
+          // what students asked about. Once you are inside the page, let it run
+          // to the screen edge.
+          zoomScale > 1 && styles.workspaceZoomed,
+          isPdfAnnotation && styles.pdfWorkspace,
+          accessibility.highContrast && styles.highContrastWorkspace,
+        ]}
         onLayout={(event) => setWorkspaceSize({
           width: event.nativeEvent.layout.width,
           height: event.nativeEvent.layout.height,
@@ -1675,7 +1687,7 @@ export default function HandwritingEditor() {
               data={pages}
               keyExtractor={(page) => page.id}
               style={styles.documentList}
-              contentContainerStyle={styles.documentContent}
+              contentContainerStyle={[styles.documentContent, zoomScale > 1 && styles.documentContentZoomed]}
               showsVerticalScrollIndicator
               scrollEnabled={false}
               initialNumToRender={1}
@@ -2568,6 +2580,7 @@ const styles = StyleSheet.create({
   customColorBtn: { width: 52, height: 53, borderRadius: 10, gap: 3 },
   tinyLabel: { color: '#f8fafc', fontSize: 8, fontWeight: '700' },
   workspace: { flex: 1, position: 'relative', overflow: 'hidden', alignItems: 'center', justifyContent: 'center', padding: 12, backgroundColor: '#d9dde4' },
+  workspaceZoomed: { paddingHorizontal: 0 },
   highContrastWorkspace: { backgroundColor: '#05070a', borderTopWidth: 2, borderTopColor: '#ffffff' },
   viewOnlyBanner: { minHeight: 36, paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 8 },
   viewOnlyText: { flex: 1, fontSize: 11, fontWeight: '700' },
@@ -2576,6 +2589,7 @@ const styles = StyleSheet.create({
   documentViewport: { flex: 1, width: '100%' },
   documentList: { flex: 1, width: '100%' },
   documentContent: { alignItems: 'center', paddingHorizontal: 12, paddingTop: 12, paddingBottom: 28 },
+  documentContentZoomed: { paddingHorizontal: 0 },
   continuousPageWrap: { alignItems: 'center', marginBottom: 12 },
   continuousPaper: {
     overflow: 'hidden',
