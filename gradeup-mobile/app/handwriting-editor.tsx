@@ -1619,20 +1619,27 @@ export default function HandwritingEditor() {
               </Text>
             </View>
           </Pressable>
+        </ScrollView>
+        {/* Pinned, and only while it has something to say. As the last item in
+            the scrolling row it sat past the right edge, so the zoom level read
+            as a bare "1" and the tap that resets it could not be reached without
+            scrolling the toolbar first. Hiding it at 100% gives the width back
+            to the row, which otherwise loses the end of "Finger ink". */}
+        {zoomScale !== 1 ? (
           <Pressable
             onPress={() => {
               setZoomScale(1);
               horizontalOffset.value = 0;
             }}
-            disabled={zoomScale === 1}
-            style={styles.actionBtn}
+            style={styles.zoomResetBtn}
+            accessibilityLabel={`Zoom ${Math.round(zoomScale * 100)} percent. Tap to reset.`}
           >
-            <Feather name="zoom-out" size={17} color={zoomScale === 1 ? theme.textSecondary : theme.text} />
-            <Text style={[styles.actionLabel, { color: zoomScale === 1 ? theme.textSecondary : theme.text }]}>
+            <Feather name="zoom-out" size={17} color={theme.text} />
+            <Text style={[styles.actionLabel, { color: theme.text }]}>
               {Math.round(zoomScale * 100)}%
             </Text>
           </Pressable>
-        </ScrollView>
+        ) : null}
         <Pressable
           disabled={!canEdit}
           onPress={() => setShowAiPanel(true)}
@@ -2511,15 +2518,25 @@ const styles = StyleSheet.create({
   actionBarScrollInner: { flex: 1, height: 46 },
   actionBar: { height: 46, alignItems: 'center', paddingHorizontal: 8, gap: 3 },
   actionBtn: { height: 38, minWidth: 52, paddingHorizontal: 7, borderRadius: 10, alignItems: 'center', justifyContent: 'center', gap: 1 },
+  zoomResetBtn: {
+    height: 46,
+    width: 58,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
   aiActionBtn: {
     height: 46,
     width: 56,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 1,
+    // Bottom border only: it continues the line under the toolbar. The left
+    // border drew a stray divider beside Ask AI and, because this button is
+    // pinned over the scrolling row, it also sliced through whatever had
+    // scrolled underneath it.
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderLeftColor: 'rgba(128,128,128,0.2)',
   },
   actionLabel: { color: '#ffffff', fontSize: 9, fontWeight: '700' },
   fingerModeBtn: {
