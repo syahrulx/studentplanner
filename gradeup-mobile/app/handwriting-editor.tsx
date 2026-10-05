@@ -1300,9 +1300,14 @@ export default function HandwritingEditor() {
     ],
     [],
   );
-  // Matches the workspace inset, which drops to 0 once zoomed so the paper can
-  // reach the screen edge instead of stopping at a grey strip.
-  const basePageWidth = Math.max(1, workspaceSize.width - (zoomScale > 1 ? 0 : 24));
+  // Deliberately independent of the zoom. Tying it to `zoomScale > 1` made the
+  // page's laid-out width jump the instant the zoom crossed 1, and because the
+  // pinch runs as a visual transform until it commits, the transform was briefly
+  // measured against the other width: zooming out flashed a tiny page that only
+  // corrected on the next touch. The paper reaches the screen edge by the
+  // workspace dropping its padding instead, which changes nothing about layout
+  // size and so cannot desynchronise.
+  const basePageWidth = Math.max(1, workspaceSize.width - 24);
   const pageWidth = basePageWidth * zoomScale;
   useEffect(() => {
     committedZoom.value = zoomScale;
