@@ -17,6 +17,41 @@ export const NOTE_ATTACHMENTS_BUCKET = 'note-attachments';
  * Path: {userId}/{noteId}/{fileName}
  * Returns the storage path to store in your note record.
  */
+/**
+ * A filename safe to use as a Supabase Storage object key.
+ *
+ * The key used to be the student's filename verbatim. Storage rejects keys
+ * holding anything outside a narrow set, which includes every accented or
+ * non-Latin letter and — the common case — the curly apostrophe and en-dash
+ * that Word and macOS insert on their own. So "Rubric – Group Assignment.pdf"
+ * failed every single time, on any connection, and the app blamed the network.
+ *
+ * The student's original name is kept untouched as the note title and in
+ * attachment_file_name; only the storage path is folded down to plain ASCII.
+ */
+export function safeStorageFileName(fileName: string): string {
+  const dot = fileName.lastIndexOf('.');
+  const stem = dot > 0 ? fileName.slice(0, dot) : fileName;
+  const ext = dot > 0 ? fileName.slice(dot + 1) : '';
+  const fold = (v: string) =>
+    v
+      // Decompose accents so "é" becomes "e" rather than being dropped whole.
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      // Typographic quotes and dashes have plain equivalents; everything else
+      // outside the safe set becomes a hyphen.
+      .replace(/[\u2018\u2019\u201b]/g, "'")
+      .replace(/[\u201c\u201d]/g, '')
+      .replace(/[\u2010-\u2015]/g, '-')
+      .replace(/[^A-Za-z0-9 ._-]/g, '-')
+      .replace(/-{2,}/g, '-')
+      .replace(/^[-.\s]+|[-.\s]+$/g, '')
+      .trim();
+  const safeStem = fold(stem).slice(0, 120) || 'file';
+  const safeExt = fold(ext).toLowerCase().slice(0, 10);
+  return safeExt ? `${safeStem}.${safeExt}` : safeStem;
+}
+
 export async function uploadNoteAttachment(
   userId: string,
   noteId: string,
@@ -24,7 +59,7 @@ export async function uploadNoteAttachment(
   fileName: string,
   mimeType?: string
 ): Promise<{ path: string; error: Error | null }> {
-  const path = `${userId}/${noteId}/${fileName}`;
+  const path = `${userId}/${noteId}/${safeStorageFileName(fileName)}`;
   try {
     // 1. Read file as base64 (web-safe)
     const base64 = await readUriAsBase64(fileUri);
@@ -54,7 +89,7 @@ export async function uploadNoteAttachmentBlob(
   blob: Blob | ArrayBuffer,
   fileName: string
 ): Promise<{ path: string; error: Error | null }> {
-  const path = `${userId}/${noteId}/${fileName}`;
+  const path = `${userId}/${noteId}/${safeStorageFileName(fileName)}`;
   const body = blob instanceof ArrayBuffer ? blob : blob;
   const { error } = await supabase.storage.from(NOTE_ATTACHMENTS_BUCKET).upload(path, body, {
     contentType: blob instanceof Blob ? blob.type : 'application/octet-stream',

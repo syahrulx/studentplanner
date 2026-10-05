@@ -6,6 +6,7 @@ import { supabase } from './supabase';
 import type { Note, Flashcard } from '../types';
 import type { ReviewLogRow } from './fsrs';
 import { isHandwritingNoteContent } from './handwritingTypes';
+import { captureError } from './monitoring';
 
 const NOTES_TABLE = 'notes';
 const CARDS_TABLE = 'flashcards';
@@ -165,9 +166,18 @@ export async function upsertNote(userId: string, note: Note): Promise<void> {
     error = legacyResult.error;
   }
   if (error) {
-    // Notes historically failed silently because of a missing column — surface
-    // the real reason so we never lose user writes without noticing again.
+    // Notes historically failed silently because of a missing column. Logging
+    // it only in __DEV__ meant a rejected write still left no trace on a real
+    // phone: the note sat in the outbox retrying forever while the app showed
+    // it as saved, and the student reported "my notes do not sync" with
+    // nothing on our side to look at. Report it so the reason reaches us.
     if (__DEV__) console.error('[Note] upsert failed:', error);
+    captureError(error, {
+      where: 'studyDb.upsertNote',
+      noteId: note.id,
+      subjectId: note.subjectId,
+      hasAttachment: Boolean(note.attachmentPath),
+    });
     throw error;
   }
 }

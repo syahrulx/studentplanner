@@ -128,6 +128,8 @@ const TEMPLATES: Array<{ id: HandwritingTemplate; label: string; pro?: boolean }
 interface ContinuousPageProps {
   page: HandwritingPage;
   pageWidth: number;
+  /** Page zoom, passed down so the paper rules scale with the ink. */
+  paperScale: number;
   aspectRatio: number;
   documentVersion: number;
   tool: HandwritingTool;
@@ -152,6 +154,7 @@ interface ContinuousPageProps {
 function ContinuousPage({
   page,
   pageWidth,
+  paperScale,
   aspectRatio,
   documentVersion,
   tool,
@@ -256,6 +259,7 @@ function ContinuousPage({
             settings={settings}
             simultaneousGestures={documentGestures}
             transparentBackground={page.pdfPageNumber != null && !!pdfUri}
+            paperScale={paperScale}
             onChange={(strokes) => onChange(page.id, strokes)}
             onElementsChange={(elements) => onElementsChange(page.id, elements)}
             onCommit={(previous) => onCommit(page.id, previous)}
@@ -1296,6 +1300,13 @@ export default function HandwritingEditor() {
     ],
     [],
   );
+  // Deliberately independent of the zoom. Tying it to `zoomScale > 1` made the
+  // page's laid-out width jump the instant the zoom crossed 1, and because the
+  // pinch runs as a visual transform until it commits, the transform was briefly
+  // measured against the other width: zooming out flashed a tiny page that only
+  // corrected on the next touch. The paper reaches the screen edge by the
+  // workspace dropping its padding instead, which changes nothing about layout
+  // size and so cannot desynchronise.
   const basePageWidth = Math.max(1, workspaceSize.width - 24);
   const pageWidth = basePageWidth * zoomScale;
   useEffect(() => {
@@ -1615,20 +1626,27 @@ export default function HandwritingEditor() {
               </Text>
             </View>
           </Pressable>
+        </ScrollView>
+        {/* Pinned, and only while it has something to say. As the last item in
+            the scrolling row it sat past the right edge, so the zoom level read
+            as a bare "1" and the tap that resets it could not be reached without
+            scrolling the toolbar first. Hiding it at 100% gives the width back
+            to the row, which otherwise loses the end of "Finger ink". */}
+        {zoomScale !== 1 ? (
           <Pressable
             onPress={() => {
               setZoomScale(1);
               horizontalOffset.value = 0;
             }}
-            disabled={zoomScale === 1}
-            style={styles.actionBtn}
+            style={styles.zoomResetBtn}
+            accessibilityLabel={`Zoom ${Math.round(zoomScale * 100)} percent. Tap to reset.`}
           >
-            <Feather name="zoom-out" size={17} color={zoomScale === 1 ? theme.textSecondary : theme.text} />
-            <Text style={[styles.actionLabel, { color: zoomScale === 1 ? theme.textSecondary : theme.text }]}>
+            <Feather name="zoom-out" size={17} color={theme.text} />
+            <Text style={[styles.actionLabel, { color: theme.text }]}>
               {Math.round(zoomScale * 100)}%
             </Text>
           </Pressable>
-        </ScrollView>
+        ) : null}
         <Pressable
           disabled={!canEdit}
           onPress={() => setShowAiPanel(true)}
@@ -1651,7 +1669,17 @@ export default function HandwritingEditor() {
       ) : null}
 
       <View
-        style={[styles.workspace, isPdfAnnotation && styles.pdfWorkspace, accessibility.highContrast && styles.highContrastWorkspace]}
+        style={[
+          styles.workspace,
+          // The 12pt inset reads as paper lying on a desk at 100%. Zoomed in it
+          // reads as the edge of the page: the writing stops at a hard grey
+          // line that is not actually where the paper ends, which is exactly
+          // what students asked about. Once you are inside the page, let it run
+          // to the screen edge.
+          zoomScale > 1 && styles.workspaceZoomed,
+          isPdfAnnotation && styles.pdfWorkspace,
+          accessibility.highContrast && styles.highContrastWorkspace,
+        ]}
         onLayout={(event) => setWorkspaceSize({
           width: event.nativeEvent.layout.width,
           height: event.nativeEvent.layout.height,
@@ -1664,7 +1692,7 @@ export default function HandwritingEditor() {
               data={pages}
               keyExtractor={(page) => page.id}
               style={styles.documentList}
-              contentContainerStyle={styles.documentContent}
+              contentContainerStyle={[styles.documentContent, zoomScale > 1 && styles.documentContentZoomed]}
               showsVerticalScrollIndicator
               scrollEnabled={false}
               initialNumToRender={1}
@@ -1717,6 +1745,7 @@ export default function HandwritingEditor() {
                 <ContinuousPage
                   page={item}
                   pageWidth={pageWidth}
+                  paperScale={zoomScale}
                   aspectRatio={item.pdfPageNumber != null
                     ? (pdfPageRatios[item.pdfPageNumber] ?? HANDWRITING_PAGE_ASPECT_RATIO)
                     : HANDWRITING_PAGE_ASPECT_RATIO}
@@ -2024,7 +2053,9 @@ export default function HandwritingEditor() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.toolSheetTitle, { color: theme.text }]}>Pages</Text>
-                <Text style={[styles.toolSheetSubtitle, { color: theme.textSecondary }]}>{pages.length} pages · tap to jump</Text>
+                <Text style={[styles.toolSheetSubtitle, { color: theme.textSecondary }]}>
+                  {pages.length} {pages.length === 1 ? 'page' : 'pages'} · tap to jump
+                </Text>
               </View>
               <Pressable onPress={() => setShowPageThumbnails(false)} style={styles.sheetCloseBtn}>
                 <Feather name="x" size={20} color={theme.textSecondary} />
@@ -2504,23 +2535,37 @@ const styles = StyleSheet.create({
   actionBarScroll: { flexGrow: 0, height: 46, borderBottomWidth: StyleSheet.hairlineWidth },
   actionBarRow: { flexDirection: 'row', height: 46, borderBottomWidth: StyleSheet.hairlineWidth },
   actionBarScrollInner: { flex: 1, height: 46 },
-  actionBar: { height: 46, alignItems: 'center', paddingHorizontal: 8, gap: 3 },
-  actionBtn: { height: 38, minWidth: 52, paddingHorizontal: 7, borderRadius: 10, alignItems: 'center', justifyContent: 'center', gap: 1 },
+  // Sized so the whole row fits beside the pinned zoom and Ask AI buttons on a
+  // 402pt phone. It used to overflow by about 40pt, which clipped "Finger ink"
+  // halfway through the word and read as a broken layout rather than a row you
+  // can scroll.
+  actionBar: { height: 46, alignItems: 'center', paddingHorizontal: 6, gap: 2 },
+  actionBtn: { height: 38, minWidth: 48, paddingHorizontal: 5, borderRadius: 10, alignItems: 'center', justifyContent: 'center', gap: 1 },
+  zoomResetBtn: {
+    height: 46,
+    width: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
   aiActionBtn: {
     height: 46,
     width: 56,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 1,
+    // Bottom border only: it continues the line under the toolbar. The left
+    // border drew a stray divider beside Ask AI and, because this button is
+    // pinned over the scrolling row, it also sliced through whatever had
+    // scrolled underneath it.
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderLeftColor: 'rgba(128,128,128,0.2)',
   },
   actionLabel: { color: '#ffffff', fontSize: 9, fontWeight: '700' },
   fingerModeBtn: {
     height: 34,
-    minWidth: 92,
-    paddingHorizontal: 10,
+    minWidth: 84,
+    paddingHorizontal: 8,
     borderRadius: 17,
     borderWidth: 1,
     flexDirection: 'row',
@@ -2542,6 +2587,12 @@ const styles = StyleSheet.create({
   customColorBtn: { width: 52, height: 53, borderRadius: 10, gap: 3 },
   tinyLabel: { color: '#f8fafc', fontSize: 8, fontWeight: '700' },
   workspace: { flex: 1, position: 'relative', overflow: 'hidden', alignItems: 'center', justifyContent: 'center', padding: 12, backgroundColor: '#d9dde4' },
+  // Zoomed, the frame around the page stops reading as a desk and starts
+  // reading as the edge of the paper, top and bottom as much as left and right.
+  // Only the outer frame goes: the gap between pages is marginBottom on
+  // continuousPageWrap and stays, so a document still reads as separate sheets
+  // you scroll through.
+  workspaceZoomed: { paddingHorizontal: 0, paddingVertical: 0 },
   highContrastWorkspace: { backgroundColor: '#05070a', borderTopWidth: 2, borderTopColor: '#ffffff' },
   viewOnlyBanner: { minHeight: 36, paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 8 },
   viewOnlyText: { flex: 1, fontSize: 11, fontWeight: '700' },
@@ -2550,6 +2601,7 @@ const styles = StyleSheet.create({
   documentViewport: { flex: 1, width: '100%' },
   documentList: { flex: 1, width: '100%' },
   documentContent: { alignItems: 'center', paddingHorizontal: 12, paddingTop: 12, paddingBottom: 28 },
+  documentContentZoomed: { paddingHorizontal: 0, paddingTop: 0 },
   continuousPageWrap: { alignItems: 'center', marginBottom: 12 },
   continuousPaper: {
     overflow: 'hidden',
