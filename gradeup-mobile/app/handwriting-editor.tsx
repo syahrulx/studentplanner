@@ -2048,7 +2048,9 @@ export default function HandwritingEditor() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.toolSheetTitle, { color: theme.text }]}>Pages</Text>
-                <Text style={[styles.toolSheetSubtitle, { color: theme.textSecondary }]}>{pages.length} pages · tap to jump</Text>
+                <Text style={[styles.toolSheetSubtitle, { color: theme.textSecondary }]}>
+                  {pages.length} {pages.length === 1 ? 'page' : 'pages'} · tap to jump
+                </Text>
               </View>
               <Pressable onPress={() => setShowPageThumbnails(false)} style={styles.sheetCloseBtn}>
                 <Feather name="x" size={20} color={theme.textSecondary} />
@@ -2580,7 +2582,12 @@ const styles = StyleSheet.create({
   customColorBtn: { width: 52, height: 53, borderRadius: 10, gap: 3 },
   tinyLabel: { color: '#f8fafc', fontSize: 8, fontWeight: '700' },
   workspace: { flex: 1, position: 'relative', overflow: 'hidden', alignItems: 'center', justifyContent: 'center', padding: 12, backgroundColor: '#d9dde4' },
-  workspaceZoomed: { paddingHorizontal: 0 },
+  // Zoomed, the frame around the page stops reading as a desk and starts
+  // reading as the edge of the paper, top and bottom as much as left and right.
+  // Only the outer frame goes: the gap between pages is marginBottom on
+  // continuousPageWrap and stays, so a document still reads as separate sheets
+  // you scroll through.
+  workspaceZoomed: { paddingHorizontal: 0, paddingVertical: 0 },
   highContrastWorkspace: { backgroundColor: '#05070a', borderTopWidth: 2, borderTopColor: '#ffffff' },
   viewOnlyBanner: { minHeight: 36, paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', gap: 8 },
   viewOnlyText: { flex: 1, fontSize: 11, fontWeight: '700' },
@@ -2589,7 +2596,7 @@ const styles = StyleSheet.create({
   documentViewport: { flex: 1, width: '100%' },
   documentList: { flex: 1, width: '100%' },
   documentContent: { alignItems: 'center', paddingHorizontal: 12, paddingTop: 12, paddingBottom: 28 },
-  documentContentZoomed: { paddingHorizontal: 0 },
+  documentContentZoomed: { paddingHorizontal: 0, paddingTop: 0 },
   continuousPageWrap: { alignItems: 'center', marginBottom: 12 },
   continuousPaper: {
     overflow: 'hidden',
