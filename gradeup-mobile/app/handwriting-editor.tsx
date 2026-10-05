@@ -2516,11 +2516,15 @@ const styles = StyleSheet.create({
   actionBarScroll: { flexGrow: 0, height: 46, borderBottomWidth: StyleSheet.hairlineWidth },
   actionBarRow: { flexDirection: 'row', height: 46, borderBottomWidth: StyleSheet.hairlineWidth },
   actionBarScrollInner: { flex: 1, height: 46 },
-  actionBar: { height: 46, alignItems: 'center', paddingHorizontal: 8, gap: 3 },
-  actionBtn: { height: 38, minWidth: 52, paddingHorizontal: 7, borderRadius: 10, alignItems: 'center', justifyContent: 'center', gap: 1 },
+  // Sized so the whole row fits beside the pinned zoom and Ask AI buttons on a
+  // 402pt phone. It used to overflow by about 40pt, which clipped "Finger ink"
+  // halfway through the word and read as a broken layout rather than a row you
+  // can scroll.
+  actionBar: { height: 46, alignItems: 'center', paddingHorizontal: 6, gap: 2 },
+  actionBtn: { height: 38, minWidth: 48, paddingHorizontal: 5, borderRadius: 10, alignItems: 'center', justifyContent: 'center', gap: 1 },
   zoomResetBtn: {
     height: 46,
-    width: 58,
+    width: 46,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 1,
@@ -2541,8 +2545,8 @@ const styles = StyleSheet.create({
   actionLabel: { color: '#ffffff', fontSize: 9, fontWeight: '700' },
   fingerModeBtn: {
     height: 34,
-    minWidth: 92,
-    paddingHorizontal: 10,
+    minWidth: 84,
+    paddingHorizontal: 8,
     borderRadius: 17,
     borderWidth: 1,
     flexDirection: 'row',
