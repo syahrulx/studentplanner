@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, PanResponder, PixelRatio, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   Gesture,
   GestureDetector,
@@ -420,15 +420,27 @@ function PageTemplate({
   const z = Number.isFinite(scale) && scale > 0 ? Math.min(scale, 8) : 1;
   const rowStep = 30 * z;
   const dotStep = 24 * z;
+  /**
+   * Snap a rule to a whole device pixel.
+   *
+   * Once the step scales it stops being a round number — 34.2pt at 114% — so
+   * each rule lands on a different fraction of a pixel and a hairline gets
+   * smeared across two rows at partial alpha. The fractions repeat on a short
+   * cycle, so the page showed a regular pattern of faint and missing lines
+   * rather than even ruling. Rounding each position puts every rule back on a
+   * real pixel. (It only shows at some zooms: at 200% every offset is already
+   * whole, which is why it was easy to miss.)
+   */
+  const px = (v: number) => PixelRatio.roundToNearestPixel(v);
 
   if (template === 'ruled' || template === 'grid' || template === 'cornell' || template === 'dark') {
     for (let y = 34 * z; y < height; y += rowStep) {
-      rules.push(<Rule key={`h-${y}`} left={0} top={y} width={width} height={StyleSheet.hairlineWidth} color={ruleColor} />);
+      rules.push(<Rule key={`h-${y}`} left={0} top={px(y)} width={width} height={StyleSheet.hairlineWidth} color={ruleColor} />);
     }
   }
   if (template === 'grid') {
     for (let x = rowStep; x < width; x += rowStep) {
-      rules.push(<Rule key={`v-${x}`} left={x} top={0} width={StyleSheet.hairlineWidth} height={height} color={ruleColor} />);
+      rules.push(<Rule key={`v-${x}`} left={px(x)} top={0} width={StyleSheet.hairlineWidth} height={height} color={ruleColor} />);
     }
   }
   if (template === 'dots') {
@@ -437,7 +449,7 @@ function PageTemplate({
         rules.push(
           <View
             key={`d-${x}-${y}`}
-            style={{ position: 'absolute', left: x - 1, top: y - 1, width: 2, height: 2, borderRadius: 1, backgroundColor: '#c7cdd8' }}
+            style={{ position: 'absolute', left: px(x - 1), top: px(y - 1), width: 2, height: 2, borderRadius: 1, backgroundColor: '#c7cdd8' }}
           />,
         );
       }
@@ -445,8 +457,8 @@ function PageTemplate({
   }
   if (template === 'cornell') {
     rules.push(
-      <Rule key="cornell-v" left={width * 0.28} top={0} width={1} height={height} color="#e87878" />,
-      <Rule key="cornell-h" left={0} top={height * 0.82} width={width} height={1} color="#c7cdd8" />,
+      <Rule key="cornell-v" left={px(width * 0.28)} top={0} width={1} height={height} color="#e87878" />,
+      <Rule key="cornell-h" left={0} top={px(height * 0.82)} width={width} height={1} color="#c7cdd8" />,
     );
   }
 
