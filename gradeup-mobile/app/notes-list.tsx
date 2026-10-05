@@ -66,6 +66,20 @@ function createStyles(theme: ThemePalette) {
     searchWrap: { marginHorizontal: 20, marginBottom: 14, height: 44, borderRadius: 13, borderWidth: 1, borderColor: theme.border, backgroundColor: theme.card, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 9 },
     searchInput: { flex: 1, color: theme.text, fontSize: 14, paddingVertical: 0 },
 
+    syncWarning: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+      marginHorizontal: 20,
+      marginBottom: 12,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderRadius: 12,
+      backgroundColor: theme.backgroundSecondary,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: theme.border,
+    },
+    syncWarningText: { flex: 1, fontSize: 12, fontWeight: '600', lineHeight: 17, color: theme.textSecondary },
     folderRow: { paddingHorizontal: 20, marginBottom: 14 },
     folderRowContent: { gap: 8, paddingRight: 6 },
     folderChip: {
@@ -203,11 +217,39 @@ function createStyles(theme: ThemePalette) {
   });
 }
 
+/**
+ * Turn an extraction failure into something a student can act on.
+ *
+ * Each of these means a different thing and needs a different response, so
+ * saying "the file may be scanned or image-based" for all of them sent people
+ * off to re-scan a PDF that was fine. The raw reason is appended so a support
+ * message tells us what actually happened.
+ */
+function explainExtractionFailure(reason: string): string {
+  const r = reason.toLowerCase();
+  if (r.includes('empty text')) {
+    return 'This PDF has no text in it — the pages are images. If you compressed it, try the original file instead, as compressing often turns pages into pictures.';
+  }
+  if (r.includes('timed out') || r.includes('timeout')) {
+    return 'This PDF took too long to read. A shorter file, or splitting it in half, usually works.';
+  }
+  if (r.includes('limit') || r.includes('quota')) {
+    return 'You have used up this month\u2019s AI extraction. It resets at the start of next month.';
+  }
+  if (r.includes('no active session') || r.includes('not authenticated')) {
+    return 'You were signed out while the file was being read. Sign in and try again.';
+  }
+  if (r.includes('download failed') || r.includes('http 5') || r.includes('http 4')) {
+    return `We could not read the file on our side. This one is ours, not yours \u2014 please try again shortly.\n\n(${reason})`;
+  }
+  return `We could not read text from this PDF.\n\n(${reason})`;
+}
+
 export default function NotesList() {
   const { subjectId: subjectIdParam } = useLocalSearchParams<{ subjectId: string | string[] }>();
   const subjectId =
     typeof subjectIdParam === 'string' ? subjectIdParam : Array.isArray(subjectIdParam) ? subjectIdParam[0] ?? '' : '';
-  const { notes, handleSaveNote, deleteNote, language, user, refreshRemoteData } = useApp();
+  const { notes, handleSaveNote, deleteNote, language, user, refreshRemoteData, offlineSyncStatus } = useApp();
   const { promptUpgrade } = useUpgradePrompt();
   const T = useTranslations(language);
   const theme = useTheme();
@@ -341,20 +383,18 @@ export default function NotesList() {
       } else {
         const reason = result.detail || 'Could not read text from this PDF';
         handleSaveNote({ ...current, extractionError: reason });
-        Alert.alert(
-          'PDF Extraction Failed',
-          `Could not extract text from "${noteTitle}".\nThe file may be scanned or image-based.\n\nTap "Retry" on the note to try again.`,
-        );
+        // The alert used to say "may be scanned or image-based" whatever had
+        // gone wrong — a server error, a timeout and an exhausted AI quota all
+        // read as "your file is a picture". The real reason was already saved
+        // on the note; it just never reached the person holding the phone.
+        Alert.alert('PDF Extraction Failed', `${explainExtractionFailure(reason)}\n\nTap "Retry" on the note to try again.`);
       }
     } catch (e: any) {
       const current = notesRef.current.find((n) => n.id === noteId) ?? fallbackNote;
       if (!current) return;
       const reason = e?.message || 'Unexpected error during extraction';
       handleSaveNote({ ...current, extractionError: reason });
-      Alert.alert(
-        'PDF Extraction Failed',
-        `Something went wrong while extracting "${noteTitle}".\n\nPlease check your connection and try again.`,
-      );
+      Alert.alert('PDF Extraction Failed', `${explainExtractionFailure(reason)}\n\nTap "Retry" on the note to try again.`);
     } finally {
       setExtractingIds((prev) => {
         const next = new Set(prev);
@@ -521,6 +561,25 @@ export default function NotesList() {
             />
             {searchQuery ? <Pressable onPress={() => setSearchQuery('')} accessibilityLabel="Clear search"><Feather name="x" size={17} color={theme.textSecondary} /></Pressable> : null}
           </View>
+
+          {/* Until now a note that the server rejected looked identical to one
+              that saved: it sat in the outbox retrying while the list showed it
+              as normal, so "my notes do not sync between devices" arrived with
+              nothing visible on either side. Say it plainly instead. */}
+          {(offlineSyncStatus.pendingCount > 0 || offlineSyncStatus.lastError) ? (
+            <View style={styles.syncWarning}>
+              <Feather
+                name={offlineSyncStatus.lastError ? 'alert-triangle' : 'upload-cloud'}
+                size={15}
+                color={offlineSyncStatus.lastError ? '#b45309' : theme.textSecondary}
+              />
+              <Text style={styles.syncWarningText} numberOfLines={2}>
+                {offlineSyncStatus.lastError
+                  ? `${offlineSyncStatus.pendingCount} note${offlineSyncStatus.pendingCount === 1 ? '' : 's'} not saved to your account yet. ${offlineSyncStatus.lastError}`
+                  : `Saving ${offlineSyncStatus.pendingCount} note${offlineSyncStatus.pendingCount === 1 ? '' : 's'} to your account…`}
+              </Text>
+            </View>
+          ) : null}
 
           {/* Folder chips */}
           {(folders.length > 0) && (

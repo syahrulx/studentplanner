@@ -2351,9 +2351,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return next;
     });
     if (uid) {
+      // An empty catch here is how a rejected note stayed invisible: the write
+      // failed, the outbox kept retrying, and no one — student or us — was ever
+      // told. The queue still retries; the point is that the reason now leaves
+      // the device.
       void offlineSync.queueNoteUpsert(uid, note)
         .then(() => offlineSync.flushOfflineSync(uid))
-        .catch(() => {});
+        .catch((e) => captureError(e, { where: 'AppContext.handleSaveNote', noteId: note.id }));
     }
   }, []);
 
@@ -2372,7 +2376,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       void deleteHandwritingCache(uid, noteId);
       void offlineSync.queueNoteDelete(uid, noteId)
         .then(() => offlineSync.flushOfflineSync(uid))
-        .catch(() => {});
+        .catch((e) => captureError(e, { where: 'AppContext.deleteNote', noteId }));
     }
   }, []);
 
