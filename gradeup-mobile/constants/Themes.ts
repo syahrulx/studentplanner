@@ -88,6 +88,40 @@ export function themePrefersLightOutline(theme: ThemePalette): boolean {
   return themeIsDark(theme);
 }
 
+/**
+ * Black or white, whichever is actually readable on this colour.
+ *
+ * Assuming white works is how the flashcard answer ended up at a contrast of
+ * 2.14 on the sky-blue theme and 2.10 on the gold one — text that is there but
+ * cannot be read. Any surface painted with a colour the student chose has to
+ * ask rather than assume.
+ */
+/** The near-black used when white would be the worse choice. */
+const INK = '#0b1220';
+const INK_LUMINANCE = 0.0103;
+
+export function readableTextOn(hex: string): string {
+  const raw = hex.replace('#', '').trim();
+  if (raw.length !== 6) return '#ffffff';
+  const n = parseInt(raw, 16);
+  if (Number.isNaN(n)) return '#ffffff';
+
+  // Proper WCAG relative luminance, not the quick average backgroundLuminance
+  // uses. A fixed light/dark threshold gets mid-tone colours wrong, and those
+  // are exactly the ones where the choice matters: on the violet theme white
+  // scores 3.89 and near-black 4.82, so the threshold has to be the comparison
+  // itself rather than a number somebody picked.
+  const srgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  const L = 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
+
+  const againstWhite = 1.05 / (L + 0.05);
+  const againstInk = (L + 0.05) / (INK_LUMINANCE + 0.05);
+  return againstWhite >= againstInk ? '#ffffff' : INK;
+}
+
 export const THEMES: Record<ThemeId, ThemePalette> = {
   light: {
     id: 'light',

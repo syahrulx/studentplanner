@@ -8,7 +8,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useTranslations } from '@/src/i18n';
 import { recordFeedbackEvent } from '@/src/lib/feedbackSurvey';
-import type { ThemePalette } from '@/constants/Themes';
+import { readableTextOn, type ThemePalette } from '@/constants/Themes';
 import type { Flashcard } from '@/src/types';
 import {
   cardFaces,
@@ -155,7 +155,9 @@ function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
     cardAnswer: {
       fontSize: 19,
       fontWeight: '700',
-      color: isDarkMinimal ? '#000000' : '#ffffff',
+      // Measured against the card, not assumed. White sat at 2.14 on the
+      // sky-blue theme and 2.10 on the gold one, which is unreadable.
+      color: isDarkMinimal ? '#000000' : readableTextOn(theme.primary),
       textAlign: 'center',
       lineHeight: 26,
       marginBottom: 20,
@@ -169,8 +171,19 @@ function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
       marginTop: 22,
       paddingHorizontal: 4,
     },
-    swipeHint: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    swipeHintText: { fontSize: 13, fontWeight: '800', letterSpacing: 0.2 },
+    swipeHint: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderRadius: 999,
+    },
+    // Both carry white at 4.83 and 5.02, so the label passes AA on its own
+    // whatever the card behind it is doing.
+    swipeHintBad: { backgroundColor: '#dc2626' },
+    swipeHintGood: { backgroundColor: '#15803d' },
+    swipeHintText: { fontSize: 13, fontWeight: '800', letterSpacing: 0.2, color: '#ffffff' },
     footerHint: {
       marginTop: 12,
       textAlign: 'center',
@@ -707,15 +720,21 @@ export default function FlashcardReview() {
             /* ── BACK ── */
             <Pressable style={styles.cardBack} onPress={toggleFlip}>
               <Text style={styles.cardAnswer}>{faces?.back}</Text>
-              {/* The buttons are gone, so say what replaces them. */}
+              {/* The buttons are gone, so say what replaces them.
+                  Coloured text alone does not work here: the card behind it is
+                  the theme's primary, which is a different colour for every
+                  theme, and red and green failed WCAG AA against all ten — 1.06
+                  against the sky blue, which is invisible. The label sits on its
+                  own filled pill instead, so legibility comes from the pill and
+                  never from whatever is behind it. */}
               <View style={styles.swipeHintRow}>
-                <View style={styles.swipeHint}>
-                  <Feather name="arrow-left" size={14} color="#ef4444" />
-                  <Text style={[styles.swipeHintText, { color: '#ef4444' }]}>{ratingLabels[1]}</Text>
+                <View style={[styles.swipeHint, styles.swipeHintBad]}>
+                  <Feather name="arrow-left" size={13} color="#ffffff" />
+                  <Text style={styles.swipeHintText}>{ratingLabels[1]}</Text>
                 </View>
-                <View style={styles.swipeHint}>
-                  <Text style={[styles.swipeHintText, { color: '#22c55e' }]}>{ratingLabels[3]}</Text>
-                  <Feather name="arrow-right" size={14} color="#22c55e" />
+                <View style={[styles.swipeHint, styles.swipeHintGood]}>
+                  <Text style={styles.swipeHintText}>{ratingLabels[3]}</Text>
+                  <Feather name="arrow-right" size={13} color="#ffffff" />
                 </View>
               </View>
             </Pressable>
