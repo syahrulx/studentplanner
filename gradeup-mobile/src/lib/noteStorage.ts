@@ -6,6 +6,9 @@
  */
 import { decode } from 'base64-arraybuffer';
 import { supabase } from './supabase';
+import Constants from 'expo-constants';
+import * as FileSystem from 'expo-file-system/legacy';
+import { Platform } from 'react-native';
 import { readUriAsBase64 } from './readUriAsBase64';
 
 export const NOTE_ATTACHMENTS_BUCKET = 'note-attachments';
@@ -52,6 +55,49 @@ export function safeStorageFileName(fileName: string): string {
   return safeExt ? `${safeStem}.${safeExt}` : safeStem;
 }
 
+/**
+ * Send the file straight from disk, without it passing through JS memory.
+ *
+ * The base64 path below holds the whole file as a JavaScript string — two bytes
+ * per character — and then copies it again into an ArrayBuffer, so a 20MB PDF
+ * needs about 75MB at once and a 24MB one about 90MB. A phone under memory
+ * pressure fails that read, and the only thing the student was ever told was to
+ * check their connection, which could not have been less true: the file would
+ * fail on any connection, every time, while a classmate's 2MB slides uploaded
+ * fine. That is why it looked like one student's problem.
+ *
+ * uploadAsync streams the file from its own path, so size stops mattering.
+ */
+async function streamUpload(
+  path: string,
+  fileUri: string,
+  mimeType: string,
+): Promise<{ ok: boolean; error: Error | null }> {
+  const base = Constants.expoConfig?.extra?.supabaseUrl as string | undefined;
+  if (!base) return { ok: false, error: new Error('Missing Supabase URL') };
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  if (!token) return { ok: false, error: new Error('Not signed in') };
+
+  const url = `${base}/storage/v1/object/${NOTE_ATTACHMENTS_BUCKET}/${path
+    .split('/')
+    .map(encodeURIComponent)
+    .join('/')}`;
+  const res = await FileSystem.uploadAsync(url, fileUri, {
+    httpMethod: 'POST',
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': mimeType,
+      'x-upsert': 'true',
+    },
+  });
+  if (res.status >= 200 && res.status < 300) return { ok: true, error: null };
+  // Storage puts the real reason in the body; keep it, we have been guessing for
+  // long enough.
+  return { ok: false, error: new Error(`HTTP ${res.status}: ${(res.body ?? '').slice(0, 300)}`) };
+}
+
 export async function uploadNoteAttachment(
   userId: string,
   noteId: string,
@@ -60,16 +106,20 @@ export async function uploadNoteAttachment(
   mimeType?: string
 ): Promise<{ path: string; error: Error | null }> {
   const path = `${userId}/${noteId}/${safeStorageFileName(fileName)}`;
+  const contentType = mimeType ?? 'application/octet-stream';
   try {
-    // 1. Read file as base64 (web-safe)
+    if (Platform.OS !== 'web') {
+      const streamed = await streamUpload(path, fileUri, contentType);
+      if (streamed.ok) return { path, error: null };
+      // Fall through to the in-memory path rather than failing outright: it
+      // still works for the small files that were never the problem.
+      console.warn('[noteStorage] stream upload failed, retrying in memory:', streamed.error?.message);
+    }
+
     const base64 = await readUriAsBase64(fileUri);
-
-    // 2. Convert to ArrayBuffer
     const arrayBuffer = decode(base64);
-
-    // 3. Upload to Supabase Storage
     const { error } = await supabase.storage.from(NOTE_ATTACHMENTS_BUCKET).upload(path, arrayBuffer, {
-      contentType: mimeType ?? 'application/octet-stream',
+      contentType,
       upsert: true,
     });
 
