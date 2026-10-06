@@ -21,6 +21,7 @@ import {
   type FlashcardRating,
 } from '@/src/lib/fsrs';
 import Animated, {
+  Easing,
   useSharedValue,
   useAnimatedStyle,
   withTiming,
@@ -371,20 +372,34 @@ export default function FlashcardReview() {
   // same fixed schedule and the review stops being spaced repetition at all.
   // The gesture carries it instead — left for forgot, right for got it.
   const dragX = useSharedValue(0);
-  /** 1 only while a finger is actually dragging the card. */
-  const panning = useSharedValue(0);
+  /** The reveal flip: 1 → 0 (squeeze) → swap the face → 0 → 1 (grow). */
+  const scale = useSharedValue(1);
+  /**
+   * Whether the next card may be seen behind this one.
+   *
+   * Nothing shows while the question is up — there is nothing to swipe to yet.
+   * It fades in only once the reveal flip has finished, so it never appears
+   * through the gap at the moment the flipping card is at zero width.
+   */
+  const deckVisible = useSharedValue(0);
 
   const doSwap = useCallback(() => {
     setShowBack((prev) => !prev);
   }, []);
 
   const toggleFlip = useCallback(() => {
-    // Was a horizontal squeeze to zero width and back. It read as an animation
-    // nobody asked for, and at its narrowest the card was gone entirely, so
-    // whatever sat behind it showed through on the way. The face swaps outright
-    // now: revealing an answer is not a moment that needs decorating.
-    doSwap();
-  }, [doSwap]);
+    const toBack = !showBack;
+    // The deck goes first and comes back after, so the card behind is never
+    // visible through the gap while this one is squeezed flat.
+    deckVisible.value = 0;
+    scale.value = withTiming(0, { duration: 150, easing: Easing.in(Easing.ease) }, (done) => {
+      if (!done) return;
+      runOnJS(doSwap)();
+      scale.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.back(1.5)) }, (grown) => {
+        if (grown && toBack) deckVisible.value = withTiming(1, { duration: 170 });
+      });
+    });
+  }, [deckVisible, doSwap, scale, showBack]);
 
   const advanceCard = useCallback(() => {
     // Put the top card back at centre in the same batch that moves the index,
@@ -394,6 +409,7 @@ export default function FlashcardReview() {
     // index does not move — a rating that arrives while one is still saving, or
     // the last card in the deck — and left the card stranded off screen.
     dragX.value = 0;
+    deckVisible.value = 0;
     setShowBack(false);
     cardStartRef.current = Date.now();
     ratingBusyRef.current = false;
@@ -406,7 +422,7 @@ export default function FlashcardReview() {
       }
       return next;
     });
-  }, [list.length, dragX]);
+  }, [deckVisible, dragX, list.length]);
 
   /**
    * The card has already been thrown off screen by the gesture that graded it.
@@ -451,6 +467,7 @@ export default function FlashcardReview() {
   const cardAnimStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: dragX.value },
+      { scaleX: scale.value },
       // A few degrees of tilt so the card reads as being thrown aside rather
       // than sliding on rails.
       { rotateZ: `${dragX.value / 26}deg` },
@@ -465,7 +482,7 @@ export default function FlashcardReview() {
     // what a deck looks like and only made the screen busier.
     return {
       transform: [{ scale: 0.94 + 0.06 * t }, { translateY: (1 - t) * 14 }],
-      opacity: panning.value * (0.35 + 0.65 * t),
+      opacity: deckVisible.value * (0.5 + 0.5 * t),
     };
   });
 
@@ -517,14 +534,8 @@ export default function FlashcardReview() {
         .activeOffsetX([-14, 14])
         .failOffsetY([-18, 18])
         .enabled(showBack)
-        .onBegin(() => {
-          panning.value = 1;
-        })
         .onUpdate((e) => {
           dragX.value = e.translationX;
-        })
-        .onFinalize(() => {
-          panning.value = 0;
         })
         .onEnd((e) => {
           const go = Math.abs(e.translationX) > SWIPE_COMMIT || Math.abs(e.velocityX) > 800;
