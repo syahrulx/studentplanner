@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { View, Text, Pressable, StyleSheet, Platform, ScrollView, Dimensions } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
@@ -78,7 +78,20 @@ function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
       width: '100%',
       maxWidth: 400,
     },
-    deckUnder: { position: 'absolute', alignSelf: 'center' },
+    // Fills the card area and centres its child, rather than being an absolute
+    // box that sizes itself. With width:'100%' and no edges set it settled left
+    // of centre, so the card underneath sat slightly off from where it would
+    // land — and jumped sideways the moment it became the top card. That jump
+    // was the glitch at the end of a swipe.
+    deckLayer: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      top: 0,
+      bottom: 0,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     // FRONT card
     cardFront: {
       borderRadius: 28,
@@ -408,7 +421,11 @@ export default function FlashcardReview() {
     // frame. Doing it in an effect on the index missed the cases where the
     // index does not move — a rating that arrives while one is still saving, or
     // the last card in the deck — and left the card stranded off screen.
-    dragX.value = 0;
+    // dragX is deliberately NOT reset here. Setting it lands on the UI thread
+    // immediately, while setIndex below needs a React render first, so for the
+    // frames in between the card that just left was drawn back at centre — it
+    // flicked into view on its way out. It is reset once the next card has
+    // actually rendered, in the layout effect below.
     deckVisible.value = 0;
     setShowBack(false);
     cardStartRef.current = Date.now();
@@ -416,6 +433,9 @@ export default function FlashcardReview() {
     setIndex((i) => {
       const next = i + 1;
       if (next >= list.length) {
+        // Nothing follows, so no render will arrive to put the card back. Do it
+        // here or it stays stranded off screen behind the summary.
+        dragX.value = 0;
         setFinished(true);
         recordFeedbackEvent('flashcard_review_completed');
         return i;
@@ -434,6 +454,17 @@ export default function FlashcardReview() {
   const animateToNext = useCallback(() => {
     advanceCard();
   }, [advanceCard]);
+
+  /**
+   * Recentre only after the new card has been laid out.
+   *
+   * A layout effect runs after React has committed and before the browser
+   * paints, so the swapped-in card and the reset position land on the same
+   * frame. Doing it any earlier shows the outgoing card back in the middle.
+   */
+  useLayoutEffect(() => {
+    dragX.value = 0;
+  }, [card?.id, dragX]);
 
   const handleRate = useCallback((rating: FlashcardRating) => {
     if (!card || ratingBusyRef.current) return;
@@ -751,12 +782,14 @@ export default function FlashcardReview() {
       {/* Card */}
       <View style={styles.cardArea}>
         {nextFaces ? (
-          <Animated.View style={[styles.cardWrap, styles.deckUnder, deckStyle]} pointerEvents="none">
-            <FlashcardFace face={faceFor(false)} minHeight={CARD_MIN_HEIGHT}>
-              <Text style={[styles.cardQuestion, { color: faceFor(false).text }]} numberOfLines={4}>
-                {nextFaces.front}
-              </Text>
-            </FlashcardFace>
+          <Animated.View style={[styles.deckLayer, deckStyle]} pointerEvents="none">
+            <View style={styles.cardWrap}>
+              <FlashcardFace face={faceFor(false)} minHeight={CARD_MIN_HEIGHT}>
+                <Text style={[styles.cardQuestion, { color: faceFor(false).text }]} numberOfLines={4}>
+                  {nextFaces.front}
+                </Text>
+              </FlashcardFace>
+            </View>
           </Animated.View>
         ) : null}
         <GestureDetector gesture={cardGesture}>
