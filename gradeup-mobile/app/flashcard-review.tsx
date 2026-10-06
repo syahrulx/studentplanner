@@ -76,6 +76,7 @@ function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
       width: '100%',
       maxWidth: 400,
     },
+    deckUnder: { position: 'absolute', alignSelf: 'center' },
     // FRONT card
     cardFront: {
       borderRadius: 28,
@@ -384,6 +385,13 @@ export default function FlashcardReview() {
   }, [scale, doSwap]);
 
   const advanceCard = useCallback(() => {
+    // Put the top card back at centre in the same batch that moves the index,
+    // so the next card is already there when React paints. Doing it from the
+    // gesture, before this ran, flicked the outgoing card back into view for a
+    // frame. Doing it in an effect on the index missed the cases where the
+    // index does not move — a rating that arrives while one is still saving, or
+    // the last card in the deck — and left the card stranded off screen.
+    dragX.value = 0;
     setShowBack(false);
     cardStartRef.current = Date.now();
     ratingBusyRef.current = false;
@@ -396,7 +404,7 @@ export default function FlashcardReview() {
       }
       return next;
     });
-  }, [list.length]);
+  }, [list.length, dragX]);
 
   const animateToNext = useCallback(() => {
     scale.value = withTiming(0, {
@@ -452,6 +460,15 @@ export default function FlashcardReview() {
     ],
   }));
 
+  /** The card underneath, growing into place as the one above leaves. */
+  const deckStyle = useAnimatedStyle(() => {
+    const t = Math.min(Math.abs(dragX.value) / SWIPE_COMMIT, 1);
+    return {
+      transform: [{ scale: 0.94 + 0.06 * t }, { translateY: (1 - t) * 14 }],
+      opacity: 0.55 + 0.45 * t,
+    };
+  });
+
   /** Tints the card as you pass the point where it will count. */
   const verdictStyle = useAnimatedStyle(() => {
     const t = Math.min(Math.abs(dragX.value) / SWIPE_COMMIT, 1);
@@ -462,6 +479,14 @@ export default function FlashcardReview() {
   });
 
   const faces = useMemo(() => (card ? cardFaces(card) : null), [card]);
+
+  // The next question, drawn behind the current card so a swipe uncovers it
+  // rather than emptying the screen. Without it the card flew off, the screen
+  // was blank for a frame, and the replacement appeared from nothing — read as
+  // a glitch rather than as dealing the next card.
+  const nextQueued = list[index + 1];
+  const nextCard = nextQueued ? latestById.get(nextQueued.id) ?? nextQueued : undefined;
+  const nextFaces = useMemo(() => (nextCard ? cardFaces(nextCard) : null), [nextCard]);
 
   const scopedCards = useMemo(
     () => (noteId ? flashcards.filter((c) => c.noteId === noteId) : flashcards),
@@ -486,11 +511,12 @@ export default function FlashcardReview() {
           const go = Math.abs(e.translationX) > SWIPE_COMMIT || Math.abs(e.velocityX) > 800;
           if (go) {
             const rating: FlashcardRating = e.translationX < 0 ? 1 : 3;
+            // The card stays off screen. Resetting here put it back in the
+            // centre a frame before React swapped in the next one, so the old
+            // card flicked back into view on its way out — that was the glitch.
+            // The reset happens on the index change instead, below.
             dragX.value = withTiming(e.translationX < 0 ? -520 : 520, { duration: 180 }, (done) => {
-              if (done) {
-                dragX.value = 0;
-                runOnJS(handleRate)(rating);
-              }
+              if (done) runOnJS(handleRate)(rating);
             });
           } else {
             dragX.value = withSpring(0, { damping: 18, stiffness: 240 });
@@ -687,6 +713,13 @@ export default function FlashcardReview() {
 
       {/* Card */}
       <View style={styles.cardArea}>
+        {nextFaces ? (
+          <Animated.View style={[styles.cardWrap, styles.deckUnder, deckStyle]} pointerEvents="none">
+            <View style={styles.cardFront}>
+              <Text style={styles.cardQuestion} numberOfLines={4}>{nextFaces.front}</Text>
+            </View>
+          </Animated.View>
+        ) : null}
         <GestureDetector gesture={swipeGesture}>
         <Animated.View
           style={[styles.cardWrap, cardAnimStyle]}
