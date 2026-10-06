@@ -473,9 +473,13 @@ export default function FlashcardReview() {
   /** The card underneath, growing into place as the one above leaves. */
   const deckStyle = useAnimatedStyle(() => {
     const t = Math.min(Math.abs(dragX.value) / SWIPE_COMMIT, 1);
+    // Invisible until the card above actually moves. Sitting there at rest it
+    // was just a second card peeping out from behind the first, which is not
+    // what a deck looks like and only made the screen busier.
+    const moving = Math.min(Math.abs(dragX.value) / 12, 1);
     return {
       transform: [{ scale: 0.94 + 0.06 * t }, { translateY: (1 - t) * 14 }],
-      opacity: 0.55 + 0.45 * t,
+      opacity: moving * (0.55 + 0.45 * t),
     };
   });
 
@@ -522,9 +526,8 @@ export default function FlashcardReview() {
    * Only on the answer side. Grading a card you have not read yet is not an
    * answer, it is a coin toss, and FSRS would schedule on it all the same.
    */
-  const swipeGesture = useMemo(
-    () =>
-      Gesture.Pan()
+  const cardGesture = useMemo(() => {
+    const pan = Gesture.Pan()
         .activeOffsetX([-14, 14])
         .failOffsetY([-18, 18])
         .enabled(showBack)
@@ -545,9 +548,16 @@ export default function FlashcardReview() {
           } else {
             dragX.value = withSpring(0, { damping: 18, stiffness: 240 });
           }
-        }),
-    [dragX, handleRate, showBack],
-  );
+        });
+
+    // Exclusive, so a swipe never also counts as a tap. A Pressable next to the
+    // pan fired its onPress as the finger lifted, which flipped the card on its
+    // way off screen — the extra animation during a swipe.
+    const tap = Gesture.Tap().maxDistance(12).onEnd((_e, ok) => {
+      if (ok) runOnJS(toggleFlip)();
+    });
+    return Gesture.Exclusive(pan, tap);
+  }, [dragX, handleRate, showBack, toggleFlip]);
 
   const ratingLabels: Record<FlashcardRating, string> = {
     1: T('fsrsAgain'),
@@ -746,7 +756,7 @@ export default function FlashcardReview() {
             </FlashcardFace>
           </Animated.View>
         ) : null}
-        <GestureDetector gesture={swipeGesture}>
+        <GestureDetector gesture={cardGesture}>
         <Animated.View
           style={[styles.cardWrap, cardAnimStyle]}
           // Swiping is not available to everyone. VoiceOver and Switch Control
@@ -765,7 +775,7 @@ export default function FlashcardReview() {
           <Animated.View pointerEvents="none" style={[styles.verdictTint, verdictStyle]} />
           {!showBack ? (
             /* ── FRONT ── */
-            <Pressable onPress={toggleFlip}>
+            <View>
               <FlashcardFace face={faceFor(false)} minHeight={CARD_MIN_HEIGHT}>
               {typeBadge ? (
                 <View style={styles.cardTypeBadge}>
@@ -776,10 +786,10 @@ export default function FlashcardReview() {
               {card.hint ? <Text style={[styles.cardHint, { color: faceFor(false).hint }]}>{T('flashcardHintPrefix')} {card.hint}</Text> : null}
               <Text style={[styles.tapHint, { color: faceFor(false).hint }]}>{T('tapToReveal')}</Text>
               </FlashcardFace>
-            </Pressable>
+            </View>
           ) : (
             /* ── BACK ── */
-            <Pressable onPress={toggleFlip}>
+            <View>
               <FlashcardFace face={faceFor(true)} minHeight={CARD_MIN_HEIGHT}>
               <Text style={[styles.cardAnswer, { color: faceFor(true).text }]}>{faces?.back}</Text>
               {/* The buttons are gone, so say what replaces them.
@@ -800,7 +810,7 @@ export default function FlashcardReview() {
                 </View>
               </View>
               </FlashcardFace>
-            </Pressable>
+            </View>
           )}
         </Animated.View>
         </GestureDetector>
