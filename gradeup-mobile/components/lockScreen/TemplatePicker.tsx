@@ -1,11 +1,14 @@
-import React, { memo, useCallback, useMemo, useRef } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import Feather from '@expo/vector-icons/Feather';
 import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
 import type { ThemePalette } from '@/constants/Themes';
 import type { TranslationKey } from '@/src/i18n';
 import type { LockScreenConfig, LockScreenDayModel, LockTemplateId } from '@/src/lib/lockScreen/types';
+
+import { lockScreenUnsupportedReason } from '@/src/lib/lockScreen/lockScreenHealth';
 
 import LockCanvas from './LockCanvas';
 import { STUDIO_TRAY_HEIGHT, trayRowEntering, type StudioPanelProps } from './StudioTabs';
@@ -35,8 +38,24 @@ export interface TemplatePickerProps extends StudioPanelProps {
   height?: number;
 }
 
-const TEMPLATES: readonly { id: LockTemplateId; label: TranslationKey; sub: TranslationKey }[] = [
-  { id: 'today', label: 'lsTplToday', sub: 'lsTplTodaySub' },
+const TEMPLATES: readonly {
+  id: LockTemplateId;
+  label: TranslationKey;
+  sub: TranslationKey;
+  /**
+   * True when the picture is only right for one day, so it is worth nothing
+   * without something to redraw it each morning.
+   *
+   * iPadOS has no Shortcuts action for setting the wallpaper, so nothing can.
+   * Offering "Today" there hands an iPad student a lock screen that is correct
+   * once and quietly wrong every morning after — worse than not offering it,
+   * because they have no reason to doubt it. The week-based templates stay:
+   * they are still true for the rest of the week and a student can re-save
+   * them when it turns over.
+   */
+  daily?: boolean;
+}[] = [
+  { id: 'today', label: 'lsTplToday', sub: 'lsTplTodaySub', daily: true },
   { id: 'week', label: 'lsTplWeek', sub: 'lsTplWeekSub' },
   { id: 'timetable', label: 'lsTplTimetable', sub: 'lsTplTimetableSub' },
   { id: 'grid', label: 'lsTplGrid', sub: 'lsTplGridSub' },
@@ -86,14 +105,28 @@ export function TemplatePicker({
   const cardH = Math.max(0, Math.min((MAX_CARD_W * H) / W, height - RING_INSET * 2 - labelBlock));
   const cardW = (cardH * W) / H;
 
+  // Nothing can redraw a wallpaper on iPadOS, so a day-only template cannot be
+  // kept true there.
+  const noAutomation = lockScreenUnsupportedReason() === 'ipad';
+  const isLocked = useCallback(
+    (id: LockTemplateId) => noAutomation && TEMPLATES.some((t) => t.id === id && t.daily),
+    [noAutomation],
+  );
+
   const select = useCallback(
     (id: LockTemplateId) => {
-      if (id === config.template) return;
+      if (id === config.template || isLocked(id)) return;
       Haptics.selectionAsync().catch(() => {});
       void update({ template: id });
     },
-    [config.template, update],
+    [config.template, isLocked, update],
   );
+
+  // A student who picked Today on a phone and opened the Studio on their iPad
+  // would otherwise sit on a locked card with no way back.
+  useEffect(() => {
+    if (isLocked(config.template)) void update({ template: 'week' });
+  }, [config.template, isLocked, update]);
 
   return (
     <View style={[styles.row, { height }]}>
@@ -104,6 +137,8 @@ export function TemplatePicker({
             label={T(tpl.label)}
             sub={T(tpl.sub)}
             selected={config.template === tpl.id}
+            locked={isLocked(tpl.id)}
+            lockedNote={T('lsTplNeedsAutomation')}
             onSelect={select}
             model={model}
             config={config}
@@ -131,6 +166,8 @@ interface TemplateCardProps {
   label: string;
   sub: string;
   selected: boolean;
+  locked: boolean;
+  lockedNote: string;
   onSelect: (id: LockTemplateId) => void;
   model: LockScreenDayModel;
   config: LockScreenConfig;
@@ -151,6 +188,8 @@ const TemplateCard = memo(function TemplateCard({
   label,
   sub,
   selected,
+  locked,
+  lockedNote,
   onSelect,
   model,
   config,
@@ -176,16 +215,17 @@ const TemplateCard = memo(function TemplateCard({
   return (
     <Pressable
       onPress={() => onSelect(id)}
+      disabled={locked}
       onPressIn={() => {
-        if (!reduceMotion) press.value = withTiming(0.96, { duration: 90 });
+        if (!reduceMotion && !locked) press.value = withTiming(0.96, { duration: 90 });
       }}
       onPressOut={() => {
         press.value = withSpring(1, { damping: 18, stiffness: 260, mass: 1 });
       }}
       style={styles.pressable}
       accessibilityRole="button"
-      accessibilityLabel={`${label}. ${sub}`}
-      accessibilityState={{ selected }}
+      accessibilityLabel={locked ? `${label}. ${sub}. ${lockedNote}` : `${label}. ${sub}`}
+      accessibilityState={{ selected, disabled: locked }}
     >
       <Animated.View style={[styles.ring, ringStyle, pressStyle]}>
         <View style={[styles.card, { width: cardW, height: cardH }]} pointerEvents="none">
@@ -194,10 +234,15 @@ const TemplateCard = memo(function TemplateCard({
           </View>
           {/* Gives the dark gradients an edge against the dark tray. */}
           <View style={styles.cardEdge} />
+          {locked ? (
+            <View style={styles.lockedVeil}>
+              <Feather name="lock" size={Math.max(11, cardW * 0.22)} color="rgba(255,255,255,0.92)" />
+            </View>
+          ) : null}
         </View>
       </Animated.View>
       <Text
-        style={[styles.label, !selected && styles.labelIdle]}
+        style={[styles.label, !selected && styles.labelIdle, locked && styles.labelLocked]}
         numberOfLines={1}
         maxFontSizeMultiplier={LABEL_MAX_SCALE}
       >
@@ -241,6 +286,13 @@ const styles = StyleSheet.create({
     top: 0,
     transformOrigin: 'top left',
   },
+  lockedVeil: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8,10,14,0.62)',
+  },
+  labelLocked: { opacity: 0.45 },
   cardEdge: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: CARD_RADIUS,

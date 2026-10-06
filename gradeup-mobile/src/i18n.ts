@@ -800,6 +800,7 @@ const translations = {
     // Tray: template, background, layout, show
     lsTplToday: 'Today',
     lsTplTodaySub: "Classes + what's due",
+    lsTplNeedsAutomation: 'Needs a daily update, which iPad cannot do. Pick a week view instead.',
     lsTplWeek: 'Week',
     lsTplWeekSub: 'Your whole week',
     lsTplTimetable: 'Timetable',
@@ -2276,6 +2277,7 @@ const translations = {
     // Tray: template, background, layout, show
     lsTplToday: 'Hari Ini',
     lsTplTodaySub: 'Kelas + tugasan',
+    lsTplNeedsAutomation: 'Perlu kemas kini harian, yang iPad tidak boleh buat. Pilih paparan minggu.',
     lsTplWeek: 'Minggu',
     lsTplWeekSub: 'Seluruh minggu',
     lsTplTimetable: 'Jadual',
