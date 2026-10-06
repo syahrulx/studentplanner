@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useState, useMemo, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { View, Text, Pressable, StyleSheet, Platform, ScrollView, Dimensions } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
@@ -21,10 +21,10 @@ import {
   type FlashcardRating,
 } from '@/src/lib/fsrs';
 import Animated, {
+  Easing,
   useSharedValue,
   useAnimatedStyle,
   withTiming,
-  Easing,
   runOnJS,
   withSpring,
 } from 'react-native-reanimated';
@@ -78,7 +78,23 @@ function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
       width: '100%',
       maxWidth: 400,
     },
-    deckUnder: { position: 'absolute', alignSelf: 'center' },
+    // Fills the card area and centres its child, rather than being an absolute
+    // box that sizes itself. With width:'100%' and no edges set it settled left
+    // of centre, so the card underneath sat slightly off from where it would
+    // land — and jumped sideways the moment it became the top card. That jump
+    // was the glitch at the end of a swipe.
+    deckLayer: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      top: 0,
+      bottom: 0,
+      alignItems: 'center',
+      justifyContent: 'center',
+      // Full opacity on purpose. Dimming it would mean the card brightened at
+      // the moment it became the top card, which is one more thing to notice.
+      // It is directly behind, so it is only ever seen as the card above leaves.
+    },
     // FRONT card
     cardFront: {
       borderRadius: 28,
@@ -166,6 +182,8 @@ function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
       marginBottom: 20,
     },
     verdictTint: { ...StyleSheet.absoluteFillObject, borderRadius: 22, zIndex: 3 },
+    verdictBad: { backgroundColor: 'rgba(239,68,68,0.22)' },
+    verdictGood: { backgroundColor: 'rgba(34,197,94,0.22)' },
     swipeHintRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -325,6 +343,7 @@ export default function FlashcardReview() {
     setQueue(cards);
     setIndex(0);
     setShowBack(false);
+    setShowDeck(false);
     setShuffled(false);
     setFinished(false);
     setReviewedCount(0);
@@ -367,32 +386,41 @@ export default function FlashcardReview() {
     });
   }, [index]);
 
-  // Scale-based flip: 1 → 0 (shrink) → swap content → 0 → 1 (grow)
-  const scale = useSharedValue(1);
   // Swipe grading. The three buttons are gone, but FSRS still needs to know
   // whether the answer was known: without a grade every card comes back on the
   // same fixed schedule and the review stops being spaced repetition at all.
   // The gesture carries it instead — left for forgot, right for got it.
   const dragX = useSharedValue(0);
+  /** The reveal flip: 1 → 0 (squeeze) → swap the face → 0 → 1 (grow). */
+  const scale = useSharedValue(1);
+  /**
+   * Whether the next card is drawn behind this one.
+   *
+   * React state, not a shared value, and that is the whole point: it clears in
+   * the same commit that moves the index, so the card beneath goes on exactly
+   * the frame its replacement arrives. A shared value lands on the UI thread on
+   * its own schedule, which left either a blank frame or a glimpse of the wrong
+   * question depending on which won the race.
+   */
+  const [showDeck, setShowDeck] = useState(false);
 
   const doSwap = useCallback(() => {
     setShowBack((prev) => !prev);
   }, []);
 
   const toggleFlip = useCallback(() => {
-    scale.value = withTiming(0, {
-      duration: 150,
-      easing: Easing.in(Easing.ease),
-    }, (done) => {
-      if (done) {
-        runOnJS(doSwap)();
-        scale.value = withTiming(1, {
-          duration: 200,
-          easing: Easing.out(Easing.back(1.5)),
-        });
-      }
+    const toBack = !showBack;
+    // The deck goes first and comes back after, so the card behind is never
+    // visible through the gap while this one is squeezed flat.
+    runOnJS(setShowDeck)(false);
+    scale.value = withTiming(0, { duration: 150, easing: Easing.in(Easing.ease) }, (done) => {
+      if (!done) return;
+      runOnJS(doSwap)();
+      scale.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.back(1.5)) }, (grown) => {
+        if (grown && toBack) runOnJS(setShowDeck)(true);
+      });
     });
-  }, [scale, doSwap]);
+  }, [doSwap, scale, showBack]);
 
   const advanceCard = useCallback(() => {
     // Put the top card back at centre in the same batch that moves the index,
@@ -401,35 +429,51 @@ export default function FlashcardReview() {
     // frame. Doing it in an effect on the index missed the cases where the
     // index does not move — a rating that arrives while one is still saving, or
     // the last card in the deck — and left the card stranded off screen.
-    dragX.value = 0;
+    // dragX is not touched here: it lands on the UI thread immediately while
+    // setIndex needs React to render first, so resetting it here drew the card
+    // that had just left back at centre. It is cleared in the layout effect
+    // below, once the next card exists. showDeck is React state and so clears
+    // in this same commit, which is exactly what makes the swap atomic.
     setShowBack(false);
+    setShowDeck(false);
     cardStartRef.current = Date.now();
     ratingBusyRef.current = false;
     setIndex((i) => {
       const next = i + 1;
       if (next >= list.length) {
+        // Nothing follows, so no render will arrive to put the card back. Do it
+        // here or it stays stranded off screen behind the summary.
+        dragX.value = 0;
         setFinished(true);
         recordFeedbackEvent('flashcard_review_completed');
         return i;
       }
       return next;
     });
-  }, [list.length, dragX]);
+  }, [dragX, list.length]);
 
+  /**
+   * The card has already been thrown off screen by the gesture that graded it.
+   *
+   * This used to squeeze it to zero width and back on top of that, so a single
+   * swipe played two animations — the throw, then a flip the student never
+   * asked for and could not explain. Advancing is now just advancing.
+   */
   const animateToNext = useCallback(() => {
-    scale.value = withTiming(0, {
-      duration: 120,
-      easing: Easing.in(Easing.ease),
-    }, (done) => {
-      if (done) {
-        runOnJS(advanceCard)();
-        scale.value = withTiming(1, {
-          duration: 180,
-          easing: Easing.out(Easing.ease),
-        });
-      }
-    });
-  }, [scale, advanceCard]);
+    advanceCard();
+  }, [advanceCard]);
+
+  /**
+   * Recentre only after the new card has been laid out.
+   *
+   * A layout effect runs after React has committed and before the frame is
+   * painted, so the swapped-in card, its position and the hiding of the deck
+   * all land together. Doing any of it earlier leaves a frame with the old card
+   * back in the middle, or with nothing on screen at all.
+   */
+  useLayoutEffect(() => {
+    dragX.value = 0;
+  }, [card?.id, dragX]);
 
   const handleRate = useCallback((rating: FlashcardRating) => {
     if (!card || ratingBusyRef.current) return;
@@ -463,34 +507,28 @@ export default function FlashcardReview() {
   const cardAnimStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: dragX.value },
+      { scaleX: scale.value },
       // A few degrees of tilt so the card reads as being thrown aside rather
       // than sliding on rails.
       { rotateZ: `${dragX.value / 26}deg` },
-      { scaleX: scale.value },
     ],
   }));
 
-  /** The card underneath, growing into place as the one above leaves. */
-  const deckStyle = useAnimatedStyle(() => {
-    const t = Math.min(Math.abs(dragX.value) / SWIPE_COMMIT, 1);
-    // Invisible until the card above actually moves. Sitting there at rest it
-    // was just a second card peeping out from behind the first, which is not
-    // what a deck looks like and only made the screen busier.
-    const moving = Math.min(Math.abs(dragX.value) / 12, 1);
-    return {
-      transform: [{ scale: 0.94 + 0.06 * t }, { translateY: (1 - t) * 14 }],
-      opacity: moving * (0.55 + 0.45 * t),
-    };
-  });
-
-  /** Tints the card as you pass the point where it will count. */
-  const verdictStyle = useAnimatedStyle(() => {
-    const t = Math.min(Math.abs(dragX.value) / SWIPE_COMMIT, 1);
-    return {
-      opacity: t * 0.9,
-      backgroundColor: dragX.value < 0 ? 'rgba(239,68,68,0.22)' : 'rgba(34,197,94,0.22)',
-    };
-  });
+  /**
+   * Two fixed tints, one per direction, each fading on its own.
+   *
+   * This used to be a single overlay whose backgroundColor was recomputed every
+   * frame. Building a colour string per frame and handing it to a full-screen
+   * view costs far more than it looks: the swipe ran at 30fps while the reveal
+   * flip beside it, which only moves a transform, ran at 56. Opacity is a
+   * property the compositor can change without redrawing anything.
+   */
+  const tintBadStyle = useAnimatedStyle(() => ({
+    opacity: dragX.value < 0 ? Math.min(-dragX.value / SWIPE_COMMIT, 1) * 0.9 : 0,
+  }));
+  const tintGoodStyle = useAnimatedStyle(() => ({
+    opacity: dragX.value > 0 ? Math.min(dragX.value / SWIPE_COMMIT, 1) * 0.9 : 0,
+  }));
 
   const faces = useMemo(() => (card ? cardFaces(card) : null), [card]);
 
@@ -747,14 +785,39 @@ export default function FlashcardReview() {
 
       {/* Card */}
       <View style={styles.cardArea}>
-        {nextFaces ? (
-          <Animated.View style={[styles.cardWrap, styles.deckUnder, deckStyle]} pointerEvents="none">
-            <FlashcardFace face={faceFor(false)} minHeight={CARD_MIN_HEIGHT}>
-              <Text style={[styles.cardQuestion, { color: faceFor(false).text }]} numberOfLines={4}>
-                {nextFaces.front}
-              </Text>
-            </FlashcardFace>
-          </Animated.View>
+        {/* Static, at full size, exactly where the top card sits. It used to grow
+            into place as the card above was pulled aside, which looked like a
+            deck but meant the swap had to be timed: the thing underneath was
+            only in the right place at the end of the gesture. Sitting still, it
+            is always in the right place, so removing the card above reveals
+            something already correct and nothing has to be synchronised. */}
+        {nextFaces && showDeck ? (
+          <View
+            style={styles.deckLayer}
+            pointerEvents="none"
+            shouldRasterizeIOS
+            renderToHardwareTextureAndroid
+          >
+            <View style={styles.cardWrap}>
+              {/* Exactly what the front renders, hint included. It was only the
+                  question before, so the moment this became the top card it
+                  grew a line of text and everything shifted down — a pop a
+                  tenth of a second after the swipe had already settled, which
+                  is what still read as a glitch. Two cards that swap places
+                  have to be the same card. */}
+              <FlashcardFace face={faceFor(false)} minHeight={CARD_MIN_HEIGHT}>
+                <Text style={[styles.cardQuestion, { color: faceFor(false).text }]}>
+                  {nextFaces.front}
+                </Text>
+                {nextCard?.hint ? (
+                  <Text style={[styles.cardHint, { color: faceFor(false).hint }]}>
+                    {T('flashcardHintPrefix')} {nextCard.hint}
+                  </Text>
+                ) : null}
+                <Text style={[styles.tapHint, { color: faceFor(false).hint }]}>{T('tapToReveal')}</Text>
+              </FlashcardFace>
+            </View>
+          </View>
         ) : null}
         <GestureDetector gesture={cardGesture}>
         <Animated.View
@@ -772,7 +835,8 @@ export default function FlashcardReview() {
             if (e.nativeEvent.actionName === 'knew') handleRate(3);
           }}
         >
-          <Animated.View pointerEvents="none" style={[styles.verdictTint, verdictStyle]} />
+          <Animated.View pointerEvents="none" style={[styles.verdictTint, styles.verdictBad, tintBadStyle]} />
+          <Animated.View pointerEvents="none" style={[styles.verdictTint, styles.verdictGood, tintGoodStyle]} />
           {!showBack ? (
             /* ── FRONT ── */
             <View>
