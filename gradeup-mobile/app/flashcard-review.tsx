@@ -24,7 +24,6 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
-  Easing,
   runOnJS,
   withSpring,
 } from 'react-native-reanimated';
@@ -367,32 +366,25 @@ export default function FlashcardReview() {
     });
   }, [index]);
 
-  // Scale-based flip: 1 → 0 (shrink) → swap content → 0 → 1 (grow)
-  const scale = useSharedValue(1);
   // Swipe grading. The three buttons are gone, but FSRS still needs to know
   // whether the answer was known: without a grade every card comes back on the
   // same fixed schedule and the review stops being spaced repetition at all.
   // The gesture carries it instead — left for forgot, right for got it.
   const dragX = useSharedValue(0);
+  /** 1 only while a finger is actually dragging the card. */
+  const panning = useSharedValue(0);
 
   const doSwap = useCallback(() => {
     setShowBack((prev) => !prev);
   }, []);
 
   const toggleFlip = useCallback(() => {
-    scale.value = withTiming(0, {
-      duration: 150,
-      easing: Easing.in(Easing.ease),
-    }, (done) => {
-      if (done) {
-        runOnJS(doSwap)();
-        scale.value = withTiming(1, {
-          duration: 200,
-          easing: Easing.out(Easing.back(1.5)),
-        });
-      }
-    });
-  }, [scale, doSwap]);
+    // Was a horizontal squeeze to zero width and back. It read as an animation
+    // nobody asked for, and at its narrowest the card was gone entirely, so
+    // whatever sat behind it showed through on the way. The face swaps outright
+    // now: revealing an answer is not a moment that needs decorating.
+    doSwap();
+  }, [doSwap]);
 
   const advanceCard = useCallback(() => {
     // Put the top card back at centre in the same batch that moves the index,
@@ -416,20 +408,16 @@ export default function FlashcardReview() {
     });
   }, [list.length, dragX]);
 
+  /**
+   * The card has already been thrown off screen by the gesture that graded it.
+   *
+   * This used to squeeze it to zero width and back on top of that, so a single
+   * swipe played two animations — the throw, then a flip the student never
+   * asked for and could not explain. Advancing is now just advancing.
+   */
   const animateToNext = useCallback(() => {
-    scale.value = withTiming(0, {
-      duration: 120,
-      easing: Easing.in(Easing.ease),
-    }, (done) => {
-      if (done) {
-        runOnJS(advanceCard)();
-        scale.value = withTiming(1, {
-          duration: 180,
-          easing: Easing.out(Easing.ease),
-        });
-      }
-    });
-  }, [scale, advanceCard]);
+    advanceCard();
+  }, [advanceCard]);
 
   const handleRate = useCallback((rating: FlashcardRating) => {
     if (!card || ratingBusyRef.current) return;
@@ -466,7 +454,6 @@ export default function FlashcardReview() {
       // A few degrees of tilt so the card reads as being thrown aside rather
       // than sliding on rails.
       { rotateZ: `${dragX.value / 26}deg` },
-      { scaleX: scale.value },
     ],
   }));
 
@@ -476,10 +463,9 @@ export default function FlashcardReview() {
     // Invisible until the card above actually moves. Sitting there at rest it
     // was just a second card peeping out from behind the first, which is not
     // what a deck looks like and only made the screen busier.
-    const moving = Math.min(Math.abs(dragX.value) / 12, 1);
     return {
       transform: [{ scale: 0.94 + 0.06 * t }, { translateY: (1 - t) * 14 }],
-      opacity: moving * (0.55 + 0.45 * t),
+      opacity: panning.value * (0.35 + 0.65 * t),
     };
   });
 
@@ -531,8 +517,14 @@ export default function FlashcardReview() {
         .activeOffsetX([-14, 14])
         .failOffsetY([-18, 18])
         .enabled(showBack)
+        .onBegin(() => {
+          panning.value = 1;
+        })
         .onUpdate((e) => {
           dragX.value = e.translationX;
+        })
+        .onFinalize(() => {
+          panning.value = 0;
         })
         .onEnd((e) => {
           const go = Math.abs(e.translationX) > SWIPE_COMMIT || Math.abs(e.velocityX) > 800;
