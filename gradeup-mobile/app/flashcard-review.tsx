@@ -421,12 +421,13 @@ export default function FlashcardReview() {
     // frame. Doing it in an effect on the index missed the cases where the
     // index does not move — a rating that arrives while one is still saving, or
     // the last card in the deck — and left the card stranded off screen.
-    // dragX is deliberately NOT reset here. Setting it lands on the UI thread
-    // immediately, while setIndex below needs a React render first, so for the
-    // frames in between the card that just left was drawn back at centre — it
-    // flicked into view on its way out. It is reset once the next card has
-    // actually rendered, in the layout effect below.
-    deckVisible.value = 0;
+    // Neither dragX nor deckVisible is touched here, and for the same reason:
+    // both land on the UI thread immediately, while setIndex below needs React
+    // to render first. Hiding the deck here left the frames in between with the
+    // outgoing card still off screen and the card beneath already gone — one
+    // completely blank frame, which is what the swipe still looked wrong on.
+    // Both are cleared once the next card has actually rendered, in the layout
+    // effect below.
     setShowBack(false);
     cardStartRef.current = Date.now();
     ratingBusyRef.current = false;
@@ -458,13 +459,15 @@ export default function FlashcardReview() {
   /**
    * Recentre only after the new card has been laid out.
    *
-   * A layout effect runs after React has committed and before the browser
-   * paints, so the swapped-in card and the reset position land on the same
-   * frame. Doing it any earlier shows the outgoing card back in the middle.
+   * A layout effect runs after React has committed and before the frame is
+   * painted, so the swapped-in card, its position and the hiding of the deck
+   * all land together. Doing any of it earlier leaves a frame with the old card
+   * back in the middle, or with nothing on screen at all.
    */
   useLayoutEffect(() => {
     dragX.value = 0;
-  }, [card?.id, dragX]);
+    deckVisible.value = 0;
+  }, [card?.id, deckVisible, dragX]);
 
   const handleRate = useCallback((rating: FlashcardRating) => {
     if (!card || ratingBusyRef.current) return;
@@ -784,10 +787,22 @@ export default function FlashcardReview() {
         {nextFaces ? (
           <Animated.View style={[styles.deckLayer, deckStyle]} pointerEvents="none">
             <View style={styles.cardWrap}>
+              {/* Exactly what the front renders, hint included. It was only the
+                  question before, so the moment this became the top card it
+                  grew a line of text and everything shifted down — a pop a
+                  tenth of a second after the swipe had already settled, which
+                  is what still read as a glitch. Two cards that swap places
+                  have to be the same card. */}
               <FlashcardFace face={faceFor(false)} minHeight={CARD_MIN_HEIGHT}>
-                <Text style={[styles.cardQuestion, { color: faceFor(false).text }]} numberOfLines={4}>
+                <Text style={[styles.cardQuestion, { color: faceFor(false).text }]}>
                   {nextFaces.front}
                 </Text>
+                {nextCard?.hint ? (
+                  <Text style={[styles.cardHint, { color: faceFor(false).hint }]}>
+                    {T('flashcardHintPrefix')} {nextCard.hint}
+                  </Text>
+                ) : null}
+                <Text style={[styles.tapHint, { color: faceFor(false).hint }]}>{T('tapToReveal')}</Text>
               </FlashcardFace>
             </View>
           </Animated.View>
