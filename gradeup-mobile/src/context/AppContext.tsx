@@ -73,6 +73,7 @@ import {
 } from '../storage';
 import { subjectAutoColor } from '../lib/timetableSlotColors';
 import { captureError } from '../lib/monitoring';
+import type { FlashcardStyleId } from '../lib/flashcardStyles';
 import {
   scheduleRevisionNotification,
   cancelAllRevisionNotifications,
@@ -314,6 +315,8 @@ type AppState = {
   /** @internal Manually mark data as ready (e.g. after sign-up completes profile save). */
   markDataReady: () => void;
   offlineSyncStatus: OfflineSyncStatus;
+  flashcardStyle: FlashcardStyleId;
+  setFlashcardStyle: (id: FlashcardStyleId) => void;
   retryOfflineSync: () => Promise<void>;
 };
 
@@ -456,6 +459,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [offlineSyncStatus.pendingCount, offlineSyncStatus.syncing, retryOfflineSync]);
   const [theme, setThemeState] = useState<ThemeId>('light');
   const [themePack, setThemePackState] = useState<ThemePackId>('none');
+  const [flashcardStyle, setFlashcardStyleState] = useState<FlashcardStyleId>('classic');
   const [customThemeColors, setCustomThemeColorsState] = useState<CustomThemeColors | null>(null);
   const [themePreviewExpiry, setThemePreviewExpiryState] = useState<number | null>(null);
   const [spiderBlueAccents, setSpiderBlueAccentsState] = useState(true);
@@ -1010,6 +1014,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
           if (tp.themePack && validPacks.includes(tp.themePack as ThemePackId)) {
             setThemePackState(tp.themePack as ThemePackId);
+            if (tp.flashcardStyle) setFlashcardStyleState(tp.flashcardStyle as FlashcardStyleId);
             void persistThemePack(tp.themePack as ThemePackId);
           }
           if (typeof tp.spiderBlueAccents === 'boolean') {
@@ -1568,13 +1573,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       themePack: ThemePackId;
       spiderBlueAccents: boolean;
       customThemeColors: CustomThemeColors | null;
+      flashcardStyle?: FlashcardStyleId;
     }) => {
       const uid = user.id?.trim();
       if (!uid) return;
       try {
         await profileDb.updateProfile(uid, { themePreferences: prefs });
-      } catch {
-        /* theme_preferences column may not be migrated yet */
+      } catch (e) {
+        // Swallowed whole until now, on the guess that the column might not be
+        // migrated. It is, everywhere, and the guess meant a preference that
+        // failed to save looked saved and then came back wrong on the next
+        // device. Report it rather than assume the reason.
+        captureError(e, { where: 'appContext.syncThemePreferencesToProfile' });
       }
     },
     [user.id],
@@ -1601,6 +1611,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       customThemeColors,
     });
   }, [theme, spiderBlueAccents, customThemeColors, syncThemePreferencesToProfile]);
+
+  const setFlashcardStyle = useCallback((id: FlashcardStyleId) => {
+    setFlashcardStyleState(id);
+    void syncThemePreferencesToProfile({
+      theme,
+      themePack,
+      spiderBlueAccents,
+      customThemeColors,
+      flashcardStyle: id,
+    });
+  }, [theme, themePack, spiderBlueAccents, customThemeColors, syncThemePreferencesToProfile]);
 
   const setCustomThemeColors = useCallback((colors: CustomThemeColors | null) => {
     setCustomThemeColorsState(colors);
@@ -2961,6 +2982,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       refreshRemoteData,
       markDataReady,
       offlineSyncStatus,
+      flashcardStyle,
+      setFlashcardStyle,
       retryOfflineSync,
     }),
     [
@@ -3052,6 +3075,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       refreshRemoteData,
       markDataReady,
       offlineSyncStatus,
+      flashcardStyle,
+      setFlashcardStyle,
       retryOfflineSync,
     ],
   );

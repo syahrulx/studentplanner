@@ -6,6 +6,8 @@ import { fetchProfileRow, invalidateProfileCache } from './profileCache';
 export interface ThemePreferencesRow {
   theme?: string;
   themePack?: string;
+  /** Which flashcard card style the student picked. A paid perk. */
+  flashcardStyle?: string;
   spiderBlueAccents?: boolean;
   customThemeColors?: {
     primary: string;

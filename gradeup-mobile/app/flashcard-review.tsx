@@ -9,6 +9,8 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useTranslations } from '@/src/i18n';
 import { recordFeedbackEvent } from '@/src/lib/feedbackSurvey';
 import { readableTextOn, type ThemePalette } from '@/constants/Themes';
+import { FlashcardFace } from '@/components/FlashcardFace';
+import { resolveFlashcardStyle } from '@/src/lib/flashcardStyles';
 import type { Flashcard } from '@/src/types';
 import {
   cardFaces,
@@ -270,7 +272,15 @@ export default function FlashcardReview() {
   /** Set when the session was started from one subject in Study now. */
   const subjectId = typeof params.subjectId === 'string' && params.subjectId.length > 0 ? params.subjectId : undefined;
   const mode: ReviewMode = params.mode === 'due' ? 'due' : 'deck';
-  const { flashcards, notes, user, language, reviewFlashcard } = useApp();
+  const { flashcards, notes, user, language, reviewFlashcard, flashcardStyle } = useApp();
+  // Falls through to Classic when the plan no longer covers the saved choice,
+  // so a lapsed subscriber sees the free card rather than one they stopped
+  // paying for — without deleting what they picked, so it returns if they come
+  // back.
+  const style = useMemo(
+    () => resolveFlashcardStyle(flashcardStyle, user?.subscriptionPlan),
+    [flashcardStyle, user?.subscriptionPlan],
+  );
   const T = useTranslations(language);
   const theme = useTheme();
   const isDarkMinimal = useDarkMinimalThemePack();
@@ -479,6 +489,20 @@ export default function FlashcardReview() {
   });
 
   const faces = useMemo(() => (card ? cardFaces(card) : null), [card]);
+
+  /** Classic is the theme's own card; the paid styles carry their own colours. */
+  const faceFor = useCallback(
+    (back: boolean) => {
+      if (style.id === 'classic') {
+        return back
+          ? { background: [isDarkMinimal ? '#f5f5f5' : theme.primary], text: isDarkMinimal ? '#000000' : readableTextOn(theme.primary), hint: '#dbeafe', radius: 28 }
+          : { background: [theme.card], text: theme.text, hint: theme.textSecondary, radius: 28 };
+      }
+      return back ? style.back : style.front;
+    },
+    [isDarkMinimal, style, theme.card, theme.primary, theme.text, theme.textSecondary],
+  );
+
 
   // The next question, drawn behind the current card so a swipe uncovers it
   // rather than emptying the screen. Without it the card flew off, the screen
@@ -715,9 +739,11 @@ export default function FlashcardReview() {
       <View style={styles.cardArea}>
         {nextFaces ? (
           <Animated.View style={[styles.cardWrap, styles.deckUnder, deckStyle]} pointerEvents="none">
-            <View style={styles.cardFront}>
-              <Text style={styles.cardQuestion} numberOfLines={4}>{nextFaces.front}</Text>
-            </View>
+            <FlashcardFace face={faceFor(false)} minHeight={CARD_MIN_HEIGHT}>
+              <Text style={[styles.cardQuestion, { color: faceFor(false).text }]} numberOfLines={4}>
+                {nextFaces.front}
+              </Text>
+            </FlashcardFace>
           </Animated.View>
         ) : null}
         <GestureDetector gesture={swipeGesture}>
@@ -739,20 +765,23 @@ export default function FlashcardReview() {
           <Animated.View pointerEvents="none" style={[styles.verdictTint, verdictStyle]} />
           {!showBack ? (
             /* ── FRONT ── */
-            <Pressable style={styles.cardFront} onPress={toggleFlip}>
+            <Pressable onPress={toggleFlip}>
+              <FlashcardFace face={faceFor(false)} minHeight={CARD_MIN_HEIGHT}>
               {typeBadge ? (
                 <View style={styles.cardTypeBadge}>
                   <Text style={styles.cardTypeBadgeText}>{typeBadge}</Text>
                 </View>
               ) : null}
-              <Text style={styles.cardQuestion}>{faces?.front}</Text>
-              {card.hint ? <Text style={styles.cardHint}>{T('flashcardHintPrefix')} {card.hint}</Text> : null}
-              <Text style={styles.tapHint}>{T('tapToReveal')}</Text>
+              <Text style={[styles.cardQuestion, { color: faceFor(false).text }]}>{faces?.front}</Text>
+              {card.hint ? <Text style={[styles.cardHint, { color: faceFor(false).hint }]}>{T('flashcardHintPrefix')} {card.hint}</Text> : null}
+              <Text style={[styles.tapHint, { color: faceFor(false).hint }]}>{T('tapToReveal')}</Text>
+              </FlashcardFace>
             </Pressable>
           ) : (
             /* ── BACK ── */
-            <Pressable style={styles.cardBack} onPress={toggleFlip}>
-              <Text style={styles.cardAnswer}>{faces?.back}</Text>
+            <Pressable onPress={toggleFlip}>
+              <FlashcardFace face={faceFor(true)} minHeight={CARD_MIN_HEIGHT}>
+              <Text style={[styles.cardAnswer, { color: faceFor(true).text }]}>{faces?.back}</Text>
               {/* The buttons are gone, so say what replaces them.
                   Coloured text alone does not work here: the card behind it is
                   the theme's primary, which is a different colour for every
@@ -770,6 +799,7 @@ export default function FlashcardReview() {
                   <Feather name="arrow-right" size={13} color="#ffffff" />
                 </View>
               </View>
+              </FlashcardFace>
             </Pressable>
           )}
         </Animated.View>
