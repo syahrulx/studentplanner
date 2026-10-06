@@ -5,9 +5,12 @@ import { useApp } from '@/src/context/AppContext';
 import { useDarkMinimalThemePack, useTheme } from '@/hooks/useTheme';
 import { Icons } from '@/src/constants';
 import Feather from '@expo/vector-icons/Feather';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useTranslations } from '@/src/i18n';
 import { recordFeedbackEvent } from '@/src/lib/feedbackSurvey';
-import type { ThemePalette } from '@/constants/Themes';
+import { readableTextOn, type ThemePalette } from '@/constants/Themes';
+import { FlashcardFace } from '@/components/FlashcardFace';
+import { resolveFlashcardStyle } from '@/src/lib/flashcardStyles';
 import type { Flashcard } from '@/src/types';
 import {
   cardFaces,
@@ -15,7 +18,6 @@ import {
   formatInterval,
   isDue,
   nextDueDate,
-  previewIntervals,
   type FlashcardRating,
 } from '@/src/lib/fsrs';
 import Animated, {
@@ -24,6 +26,7 @@ import Animated, {
   withTiming,
   Easing,
   runOnJS,
+  withSpring,
 } from 'react-native-reanimated';
 
 type ReviewMode = 'deck' | 'due';
@@ -75,6 +78,7 @@ function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
       width: '100%',
       maxWidth: 400,
     },
+    deckUnder: { position: 'absolute', alignSelf: 'center' },
     // FRONT card
     cardFront: {
       borderRadius: 28,
@@ -154,34 +158,35 @@ function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
     cardAnswer: {
       fontSize: 19,
       fontWeight: '700',
-      color: isDarkMinimal ? '#000000' : '#ffffff',
+      // Measured against the card, not assumed. White sat at 2.14 on the
+      // sky-blue theme and 2.10 on the gold one, which is unreadable.
+      color: isDarkMinimal ? '#000000' : readableTextOn(theme.primary),
       textAlign: 'center',
       lineHeight: 26,
       marginBottom: 20,
     },
-    ratingRow: {
+    verdictTint: { ...StyleSheet.absoluteFillObject, borderRadius: 22, zIndex: 3 },
+    swipeHintRow: {
       flexDirection: 'row',
-      gap: 8,
-      width: '100%',
-    },
-    ratingBtn: {
-      flex: 1,
-      // Single-line labels now, so pad more to keep a comfortable tap target.
-      paddingVertical: 16,
-      paddingHorizontal: 6,
-      borderRadius: 14,
       alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: isDarkMinimal ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.15)',
+      justifyContent: 'space-between',
+      width: '100%',
+      marginTop: 22,
+      paddingHorizontal: 4,
     },
-    ratingBtnGood: { backgroundColor: primaryCta },
-    ratingLabel: {
-      fontSize: 13,
-      fontWeight: '800',
-      textAlign: 'center',
-      color: isDarkMinimal ? '#000000' : '#ffffff',
+    swipeHint: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderRadius: 999,
     },
-    ratingLabelGood: { color: primaryCtaText },
+    // Both carry white at 4.83 and 5.02, so the label passes AA on its own
+    // whatever the card behind it is doing.
+    swipeHintBad: { backgroundColor: '#dc2626' },
+    swipeHintGood: { backgroundColor: '#15803d' },
+    swipeHintText: { fontSize: 13, fontWeight: '800', letterSpacing: 0.2, color: '#ffffff' },
     footerHint: {
       marginTop: 12,
       textAlign: 'center',
@@ -257,7 +262,9 @@ function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
  * schedules fine on a subset of ratings. "Too easy" is kept because it is
  * clearly distinguishable and stops well-known cards coming back too often.
  */
-const RATINGS: FlashcardRating[] = [1, 3, 4];
+
+/** How far the card must travel before the swipe counts as an answer. */
+const SWIPE_COMMIT = 96;
 
 export default function FlashcardReview() {
   const params = useLocalSearchParams<{ noteId?: string; mode?: string; subjectId?: string }>();
@@ -265,7 +272,15 @@ export default function FlashcardReview() {
   /** Set when the session was started from one subject in Study now. */
   const subjectId = typeof params.subjectId === 'string' && params.subjectId.length > 0 ? params.subjectId : undefined;
   const mode: ReviewMode = params.mode === 'due' ? 'due' : 'deck';
-  const { flashcards, notes, user, language, reviewFlashcard } = useApp();
+  const { flashcards, notes, user, language, reviewFlashcard, flashcardStyle } = useApp();
+  // Falls through to Classic when the plan no longer covers the saved choice,
+  // so a lapsed subscriber sees the free card rather than one they stopped
+  // paying for — without deleting what they picked, so it returns if they come
+  // back.
+  const style = useMemo(
+    () => resolveFlashcardStyle(flashcardStyle, user?.subscriptionPlan),
+    [flashcardStyle, user?.subscriptionPlan],
+  );
   const T = useTranslations(language);
   const theme = useTheme();
   const isDarkMinimal = useDarkMinimalThemePack();
@@ -354,6 +369,11 @@ export default function FlashcardReview() {
 
   // Scale-based flip: 1 → 0 (shrink) → swap content → 0 → 1 (grow)
   const scale = useSharedValue(1);
+  // Swipe grading. The three buttons are gone, but FSRS still needs to know
+  // whether the answer was known: without a grade every card comes back on the
+  // same fixed schedule and the review stops being spaced repetition at all.
+  // The gesture carries it instead — left for forgot, right for got it.
+  const dragX = useSharedValue(0);
 
   const doSwap = useCallback(() => {
     setShowBack((prev) => !prev);
@@ -375,6 +395,13 @@ export default function FlashcardReview() {
   }, [scale, doSwap]);
 
   const advanceCard = useCallback(() => {
+    // Put the top card back at centre in the same batch that moves the index,
+    // so the next card is already there when React paints. Doing it from the
+    // gesture, before this ran, flicked the outgoing card back into view for a
+    // frame. Doing it in an effect on the index missed the cases where the
+    // index does not move — a rating that arrives while one is still saving, or
+    // the last card in the deck — and left the card stranded off screen.
+    dragX.value = 0;
     setShowBack(false);
     cardStartRef.current = Date.now();
     ratingBusyRef.current = false;
@@ -387,7 +414,7 @@ export default function FlashcardReview() {
       }
       return next;
     });
-  }, [list.length]);
+  }, [list.length, dragX]);
 
   const animateToNext = useCallback(() => {
     scale.value = withTiming(0, {
@@ -434,20 +461,103 @@ export default function FlashcardReview() {
   }, [noteId]);
 
   const cardAnimStyle = useAnimatedStyle(() => ({
-    transform: [{ scaleX: scale.value }],
+    transform: [
+      { translateX: dragX.value },
+      // A few degrees of tilt so the card reads as being thrown aside rather
+      // than sliding on rails.
+      { rotateZ: `${dragX.value / 26}deg` },
+      { scaleX: scale.value },
+    ],
   }));
 
-  const intervals = useMemo(
-    () => (card ? previewIntervals(card, new Date()) : null),
-    [card],
-  );
+  /** The card underneath, growing into place as the one above leaves. */
+  const deckStyle = useAnimatedStyle(() => {
+    const t = Math.min(Math.abs(dragX.value) / SWIPE_COMMIT, 1);
+    // Invisible until the card above actually moves. Sitting there at rest it
+    // was just a second card peeping out from behind the first, which is not
+    // what a deck looks like and only made the screen busier.
+    const moving = Math.min(Math.abs(dragX.value) / 12, 1);
+    return {
+      transform: [{ scale: 0.94 + 0.06 * t }, { translateY: (1 - t) * 14 }],
+      opacity: moving * (0.55 + 0.45 * t),
+    };
+  });
+
+  /** Tints the card as you pass the point where it will count. */
+  const verdictStyle = useAnimatedStyle(() => {
+    const t = Math.min(Math.abs(dragX.value) / SWIPE_COMMIT, 1);
+    return {
+      opacity: t * 0.9,
+      backgroundColor: dragX.value < 0 ? 'rgba(239,68,68,0.22)' : 'rgba(34,197,94,0.22)',
+    };
+  });
+
   const faces = useMemo(() => (card ? cardFaces(card) : null), [card]);
+
+  /** Classic is the theme's own card; the paid styles carry their own colours. */
+  const faceFor = useCallback(
+    (back: boolean) => {
+      if (style.id === 'classic') {
+        return back
+          ? { background: [isDarkMinimal ? '#f5f5f5' : theme.primary], text: isDarkMinimal ? '#000000' : readableTextOn(theme.primary), hint: '#dbeafe', radius: 28 }
+          : { background: [theme.card], text: theme.text, hint: theme.textSecondary, radius: 28 };
+      }
+      return back ? style.back : style.front;
+    },
+    [isDarkMinimal, style, theme.card, theme.primary, theme.text, theme.textSecondary],
+  );
+
+
+  // The next question, drawn behind the current card so a swipe uncovers it
+  // rather than emptying the screen. Without it the card flew off, the screen
+  // was blank for a frame, and the replacement appeared from nothing — read as
+  // a glitch rather than as dealing the next card.
+  const nextQueued = list[index + 1];
+  const nextCard = nextQueued ? latestById.get(nextQueued.id) ?? nextQueued : undefined;
+  const nextFaces = useMemo(() => (nextCard ? cardFaces(nextCard) : null), [nextCard]);
 
   const scopedCards = useMemo(
     () => (noteId ? flashcards.filter((c) => c.noteId === noteId) : flashcards),
     [flashcards, noteId],
   );
   const dueNow = useMemo(() => dueCounts(scopedCards, new Date()).due, [scopedCards]);
+
+  /**
+   * Only on the answer side. Grading a card you have not read yet is not an
+   * answer, it is a coin toss, and FSRS would schedule on it all the same.
+   */
+  const cardGesture = useMemo(() => {
+    const pan = Gesture.Pan()
+        .activeOffsetX([-14, 14])
+        .failOffsetY([-18, 18])
+        .enabled(showBack)
+        .onUpdate((e) => {
+          dragX.value = e.translationX;
+        })
+        .onEnd((e) => {
+          const go = Math.abs(e.translationX) > SWIPE_COMMIT || Math.abs(e.velocityX) > 800;
+          if (go) {
+            const rating: FlashcardRating = e.translationX < 0 ? 1 : 3;
+            // The card stays off screen. Resetting here put it back in the
+            // centre a frame before React swapped in the next one, so the old
+            // card flicked back into view on its way out — that was the glitch.
+            // The reset happens on the index change instead, below.
+            dragX.value = withTiming(e.translationX < 0 ? -520 : 520, { duration: 180 }, (done) => {
+              if (done) runOnJS(handleRate)(rating);
+            });
+          } else {
+            dragX.value = withSpring(0, { damping: 18, stiffness: 240 });
+          }
+        });
+
+    // Exclusive, so a swipe never also counts as a tap. A Pressable next to the
+    // pan fired its onPress as the finger lifted, which flipped the card on its
+    // way off screen — the extra animation during a swipe.
+    const tap = Gesture.Tap().maxDistance(12).onEnd((_e, ok) => {
+      if (ok) runOnJS(toggleFlip)();
+    });
+    return Gesture.Exclusive(pan, tap);
+  }, [dragX, handleRate, showBack, toggleFlip]);
 
   const ratingLabels: Record<FlashcardRating, string> = {
     1: T('fsrsAgain'),
@@ -637,50 +747,73 @@ export default function FlashcardReview() {
 
       {/* Card */}
       <View style={styles.cardArea}>
-        <Animated.View style={[styles.cardWrap, cardAnimStyle]}>
+        {nextFaces ? (
+          <Animated.View style={[styles.cardWrap, styles.deckUnder, deckStyle]} pointerEvents="none">
+            <FlashcardFace face={faceFor(false)} minHeight={CARD_MIN_HEIGHT}>
+              <Text style={[styles.cardQuestion, { color: faceFor(false).text }]} numberOfLines={4}>
+                {nextFaces.front}
+              </Text>
+            </FlashcardFace>
+          </Animated.View>
+        ) : null}
+        <GestureDetector gesture={cardGesture}>
+        <Animated.View
+          style={[styles.cardWrap, cardAnimStyle]}
+          // Swiping is not available to everyone. VoiceOver and Switch Control
+          // users get the same two answers as rotor actions, so removing the
+          // buttons does not remove the feature.
+          accessible
+          accessibilityActions={showBack ? [
+            { name: 'forgot', label: ratingLabels[1] },
+            { name: 'knew', label: ratingLabels[3] },
+          ] : undefined}
+          onAccessibilityAction={(e) => {
+            if (e.nativeEvent.actionName === 'forgot') handleRate(1);
+            if (e.nativeEvent.actionName === 'knew') handleRate(3);
+          }}
+        >
+          <Animated.View pointerEvents="none" style={[styles.verdictTint, verdictStyle]} />
           {!showBack ? (
             /* ── FRONT ── */
-            <Pressable style={styles.cardFront} onPress={toggleFlip}>
+            <View>
+              <FlashcardFace face={faceFor(false)} minHeight={CARD_MIN_HEIGHT}>
               {typeBadge ? (
                 <View style={styles.cardTypeBadge}>
                   <Text style={styles.cardTypeBadgeText}>{typeBadge}</Text>
                 </View>
               ) : null}
-              <Text style={styles.cardQuestion}>{faces?.front}</Text>
-              {card.hint ? <Text style={styles.cardHint}>{T('flashcardHintPrefix')} {card.hint}</Text> : null}
-              <Text style={styles.tapHint}>{T('tapToReveal')}</Text>
-            </Pressable>
+              <Text style={[styles.cardQuestion, { color: faceFor(false).text }]}>{faces?.front}</Text>
+              {card.hint ? <Text style={[styles.cardHint, { color: faceFor(false).hint }]}>{T('flashcardHintPrefix')} {card.hint}</Text> : null}
+              <Text style={[styles.tapHint, { color: faceFor(false).hint }]}>{T('tapToReveal')}</Text>
+              </FlashcardFace>
+            </View>
           ) : (
             /* ── BACK ── */
-            <Pressable style={styles.cardBack} onPress={toggleFlip}>
-              <Text style={styles.cardAnswer}>{faces?.back}</Text>
-              <View style={styles.ratingRow}>
-                {RATINGS.map((r) => {
-                  const good = r === 3;
-                  return (
-                    <Pressable
-                      key={r}
-                      style={[styles.ratingBtn, good && styles.ratingBtnGood]}
-                      onPress={() => handleRate(r)}
-                      // The interval stays out of the visible label but is kept
-                      // here so screen-reader users still get the schedule.
-                      accessibilityLabel={`${ratingLabels[r]}${intervals?.[r] ? `, next in ${intervals[r]}` : ''}`}
-                    >
-                      <Text
-                        style={[styles.ratingLabel, good && styles.ratingLabelGood]}
-                        numberOfLines={1}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.8}
-                      >
-                        {ratingLabels[r]}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
+            <View>
+              <FlashcardFace face={faceFor(true)} minHeight={CARD_MIN_HEIGHT}>
+              <Text style={[styles.cardAnswer, { color: faceFor(true).text }]}>{faces?.back}</Text>
+              {/* The buttons are gone, so say what replaces them.
+                  Coloured text alone does not work here: the card behind it is
+                  the theme's primary, which is a different colour for every
+                  theme, and red and green failed WCAG AA against all ten — 1.06
+                  against the sky blue, which is invisible. The label sits on its
+                  own filled pill instead, so legibility comes from the pill and
+                  never from whatever is behind it. */}
+              <View style={styles.swipeHintRow}>
+                <View style={[styles.swipeHint, styles.swipeHintBad]}>
+                  <Feather name="arrow-left" size={13} color="#ffffff" />
+                  <Text style={styles.swipeHintText}>{ratingLabels[1]}</Text>
+                </View>
+                <View style={[styles.swipeHint, styles.swipeHintGood]}>
+                  <Text style={styles.swipeHintText}>{ratingLabels[3]}</Text>
+                  <Feather name="arrow-right" size={13} color="#ffffff" />
+                </View>
               </View>
-            </Pressable>
+              </FlashcardFace>
+            </View>
           )}
         </Animated.View>
+        </GestureDetector>
       </View>
 
       <Text style={styles.footerHint}>

@@ -445,6 +445,17 @@ export default function Settings() {
             <Text style={[styles.menuLabel, { color: theme.text }]}>{T('subjectColours')}</Text>
             <Feather name="chevron-right" size={20} color={theme.textSecondary} />
           </Pressable>
+          <View style={styles.dividerList} />
+          <Pressable
+            style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+            onPress={() => router.push('/flashcard-styles' as any)}
+          >
+            <View style={[styles.iconBox, { backgroundColor: themedIconBg('#8b5cf6') }]}>
+              <Feather name="layers" size={18} color={themedIconFg('#fff')} />
+            </View>
+            <Text style={[styles.menuLabel, { color: theme.text }]}>{T('flashcardStyleTitle')}</Text>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </Pressable>
         </View>
 
         <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>

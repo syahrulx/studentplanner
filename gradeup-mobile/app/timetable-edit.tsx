@@ -14,10 +14,11 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
+import ColorPicker from 'react-native-wheel-color-picker';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { useTranslations, TranslationKey } from '@/src/i18n';
-import { TIMETABLE_SLOT_COLOR_OPTIONS, getSlotColorForSubjectCode, getTimetableEntryColor } from '@/src/lib/timetableSlotColors';
+import { TIMETABLE_SLOT_COLOR_OPTIONS, getSlotColorForSubjectCode, getTimetableEntryColor, isPresetSlotColor } from '@/src/lib/timetableSlotColors';
 import {
   findOverlappingTimetableEntry,
   normalizeTimeDisplay,
@@ -130,6 +131,8 @@ export default function TimetableEditScreen() {
   const [lecturer, setLecturer] = useState('');
   const [location, setLocation] = useState('');
   const [slotColor, setSlotColor] = useState<string | undefined>(undefined);
+  const [showSlotColorWheel, setShowSlotColorWheel] = useState(false);
+  const [customColorDraft, setCustomColorDraft] = useState('#3b82f6');
   // Remembers the user's last picked length-from-start chip so the chip stays highlighted
   // even when we can't derive it from the current start/end (e.g. empty start time).
   const [pickedDurationHours, setPickedDurationHours] = useState<number | null>(null);
@@ -695,6 +698,28 @@ export default function TimetableEditScreen() {
                       ]}
                     />
                   ))}
+                  {/* Ten presets cover most timetables, but a student colour-coding
+                      by lecturer or by campus runs out of them, and the ten are
+                      not anyone's own palette. The wheel is the same one the
+                      custom theme and the pen already use. */}
+                  <Pressable
+                    onPress={() => {
+                      setCustomColorDraft(slotColor && !isPresetSlotColor(slotColor) ? slotColor : '#3b82f6');
+                      setShowSlotColorWheel(true);
+                    }}
+                    accessibilityLabel={T('timetableSlotColourCustom')}
+                    style={[
+                      styles.colorDot,
+                      styles.customColorDot,
+                      slotColor != null && slotColor !== '' && !isPresetSlotColor(slotColor)
+                        ? [styles.colorDotOn, { backgroundColor: slotColor }]
+                        : null,
+                    ]}
+                  >
+                    {slotColor == null || slotColor === '' || isPresetSlotColor(slotColor) ? (
+                      <Feather name="plus" size={15} color="#ffffff" />
+                    ) : null}
+                  </Pressable>
                 </ScrollView>
 
                 <Text style={[styles.label, { color: theme.textSecondary, marginTop: 14 }]}>{T('timetableLecturer')}</Text>
@@ -754,6 +779,45 @@ export default function TimetableEditScreen() {
               </ScrollView>
             </View>
           </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* Its own modal, over the class sheet, so picking a colour never costs the
+          half-filled form underneath. */}
+      <Modal visible={showSlotColorWheel} transparent animationType="fade" onRequestClose={() => setShowSlotColorWheel(false)}>
+        <View style={styles.wheelBackdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowSlotColorWheel(false)} accessibilityLabel={T('cancel')} />
+          <View style={[styles.wheelCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <Text style={[styles.wheelTitle, { color: theme.text }]}>{T('timetableSlotColourCustom')}</Text>
+            <View style={styles.wheelBox}>
+              <ColorPicker
+                color={customColorDraft}
+                onColorChange={setCustomColorDraft}
+                thumbSize={28}
+                sliderSize={28}
+                noSnap
+                row={false}
+              />
+            </View>
+            <View style={styles.wheelPreviewRow}>
+              <View style={[styles.wheelPreview, { backgroundColor: customColorDraft }]} />
+              <Text style={[styles.wheelHex, { color: theme.textSecondary }]}>{customColorDraft.toUpperCase()}</Text>
+            </View>
+            <View style={styles.wheelActions}>
+              <Pressable
+                onPress={() => setShowSlotColorWheel(false)}
+                style={[styles.wheelBtn, { borderColor: theme.border }]}
+              >
+                <Text style={{ color: theme.text, fontWeight: '700' }}>{T('cancel')}</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => { setSlotColor(customColorDraft); setShowSlotColorWheel(false); }}
+                style={[styles.wheelBtn, { backgroundColor: theme.primary, borderColor: theme.primary }]}
+              >
+                <Text style={{ color: theme.textInverse, fontWeight: '800' }}>{T('save')}</Text>
+              </Pressable>
+            </View>
+          </View>
         </View>
       </Modal>
     </View>
@@ -867,6 +931,16 @@ const styles = StyleSheet.create({
   colorChipOn: { borderWidth: 2 },
   colorDot: { width: 36, height: 36, borderRadius: 18 },
   colorDotOn: { borderWidth: 3, borderColor: '#fff', shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 4 },
+  customColorDot: { backgroundColor: '#64748b', alignItems: 'center', justifyContent: 'center' },
+  wheelBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
+  wheelCard: { width: '100%', maxWidth: 360, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, padding: 18 },
+  wheelTitle: { fontSize: 17, fontWeight: '800', textAlign: 'center', marginBottom: 12 },
+  wheelBox: { height: 260 },
+  wheelPreviewRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 14 },
+  wheelPreview: { width: 30, height: 30, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(128,128,128,0.4)' },
+  wheelHex: { fontSize: 13, fontWeight: '700', letterSpacing: 0.6 },
+  wheelActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  wheelBtn: { flex: 1, paddingVertical: 13, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center' },
   secondaryActions: { marginTop: 18, gap: 10 },
   btnGhost: {
     flexDirection: 'row',

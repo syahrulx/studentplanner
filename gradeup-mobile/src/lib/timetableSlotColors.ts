@@ -37,6 +37,13 @@ export function getSlotColorForSubjectCode(code: string): string {
 /** What the per-class colour picker offers. */
 export const TIMETABLE_SLOT_COLOR_OPTIONS = [...AUTO_COLORS];
 
+/** Whether a colour is one of the ten offered, as opposed to one the student mixed. */
+export function isPresetSlotColor(c: string | undefined | null): boolean {
+  if (!c) return false;
+  const v = c.trim().toLowerCase();
+  return AUTO_COLORS.some((p) => p.toLowerCase() === v);
+}
+
 export function getTimetableEntryColor(
   e: { subjectCode: string; slotColor?: string },
   subjectColors?: Record<string, string>
