@@ -179,6 +179,8 @@ function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
       marginBottom: 20,
     },
     verdictTint: { ...StyleSheet.absoluteFillObject, borderRadius: 22, zIndex: 3 },
+    verdictBad: { backgroundColor: 'rgba(239,68,68,0.22)' },
+    verdictGood: { backgroundColor: 'rgba(34,197,94,0.22)' },
     swipeHintRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -520,14 +522,21 @@ export default function FlashcardReview() {
     };
   });
 
-  /** Tints the card as you pass the point where it will count. */
-  const verdictStyle = useAnimatedStyle(() => {
-    const t = Math.min(Math.abs(dragX.value) / SWIPE_COMMIT, 1);
-    return {
-      opacity: t * 0.9,
-      backgroundColor: dragX.value < 0 ? 'rgba(239,68,68,0.22)' : 'rgba(34,197,94,0.22)',
-    };
-  });
+  /**
+   * Two fixed tints, one per direction, each fading on its own.
+   *
+   * This used to be a single overlay whose backgroundColor was recomputed every
+   * frame. Building a colour string per frame and handing it to a full-screen
+   * view costs far more than it looks: the swipe ran at 30fps while the reveal
+   * flip beside it, which only moves a transform, ran at 56. Opacity is a
+   * property the compositor can change without redrawing anything.
+   */
+  const tintBadStyle = useAnimatedStyle(() => ({
+    opacity: dragX.value < 0 ? Math.min(-dragX.value / SWIPE_COMMIT, 1) * 0.9 : 0,
+  }));
+  const tintGoodStyle = useAnimatedStyle(() => ({
+    opacity: dragX.value > 0 ? Math.min(dragX.value / SWIPE_COMMIT, 1) * 0.9 : 0,
+  }));
 
   const faces = useMemo(() => (card ? cardFaces(card) : null), [card]);
 
@@ -785,7 +794,12 @@ export default function FlashcardReview() {
       {/* Card */}
       <View style={styles.cardArea}>
         {nextFaces ? (
-          <Animated.View style={[styles.deckLayer, deckStyle]} pointerEvents="none">
+          <Animated.View
+            style={[styles.deckLayer, deckStyle]}
+            pointerEvents="none"
+            shouldRasterizeIOS
+            renderToHardwareTextureAndroid
+          >
             <View style={styles.cardWrap}>
               {/* Exactly what the front renders, hint included. It was only the
                   question before, so the moment this became the top card it
@@ -823,7 +837,8 @@ export default function FlashcardReview() {
             if (e.nativeEvent.actionName === 'knew') handleRate(3);
           }}
         >
-          <Animated.View pointerEvents="none" style={[styles.verdictTint, verdictStyle]} />
+          <Animated.View pointerEvents="none" style={[styles.verdictTint, styles.verdictBad, tintBadStyle]} />
+          <Animated.View pointerEvents="none" style={[styles.verdictTint, styles.verdictGood, tintGoodStyle]} />
           {!showBack ? (
             /* ── FRONT ── */
             <View>
