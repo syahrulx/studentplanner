@@ -198,10 +198,17 @@ serve(async (req: Request) => {
       const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
       if (!supabaseUrl || !serviceKey) return json(500, { error: 'missing_env' });
 
-      // 1. Bulk insert into in_app_notifications
-      // Chunk into batches of 500 to avoid payload size limits
+      // 1. Bulk insert into in_app_notifications, paced.
+      // in_app_notifications is on the realtime publication, so every row is
+      // checked against every open subscription, and each open app re-counts
+      // its unread badge when its row lands. Writing all rows back to back
+      // (≈31k for "all") made the database spike, so pause between batches to
+      // spread the load. ~62 batches × ~1s ≈ 1 minute for every user, which
+      // stays well inside the edge function time limit.
       const chunkSize = 500;
+      const pauseBetweenBatchesMs = 700;
       for (let i = 0; i < recipients.length; i += chunkSize) {
+        if (i > 0) await new Promise((resolve) => setTimeout(resolve, pauseBetweenBatchesMs));
         const batchIds = recipients.slice(i, i + chunkSize);
         const rows = batchIds.map((uid) => ({
           user_id: uid,
