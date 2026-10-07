@@ -22,12 +22,25 @@ import type { SubscriptionPlan } from '../types';
 import { isAtLeastPlus, isPro } from './flashcardGenerationLimits';
 
 /** The animated scenes. Each is drawn by a branch of ProfileBannerView. */
-export type ProfileBannerDesign = 'sakura' | 'lofi' | 'grid' | 'arcade';
+export type ProfileBannerDesign = 'sakura' | 'lofi' | 'grid' | 'arcade' | 'nebula';
+
+/**
+ * The one account that may wear the owner banner.
+ *
+ * A user id, not an email address. An email can be changed, and whoever ended
+ * up with the old one would inherit the banner; a Supabase user id cannot
+ * change and is never reassigned.
+ *
+ * It is not a secret — anyone can read it out of the bundle — but there is
+ * nothing to gain from it. The id only unlocks a decoration, and the banner a
+ * student has saved is still their own row, which RLS already guards.
+ */
+export const OWNER_USER_ID = 'a44b03d4-3ab8-47f5-91cf-f88720fcb204';
 
 export interface ProfileBanner {
   id: string;
   name: string;
-  tier: 'free' | 'plus' | 'pro';
+  tier: 'free' | 'plus' | 'pro' | 'owner';
   kind: 'theme' | 'color' | 'design';
   /** kind 'color' only. */
   color?: string;
@@ -56,6 +69,11 @@ const PLUS_COLORS: { id: string; name: string; color: string }[] = [
   { id: 'ink', name: 'Ink', color: '#39404c' },
 ];
 
+/** One of a kind, and not offered to anyone else. See OWNER_USER_ID. */
+const OWNER_DESIGNS: { id: string; name: string; design: ProfileBannerDesign }[] = [
+  { id: 'nebula', name: 'Nebula', design: 'nebula' },
+];
+
 const PRO_DESIGNS: { id: string; name: string; design: ProfileBannerDesign }[] = [
   { id: 'sakura', name: 'Sakura', design: 'sakura' },
   { id: 'lofi', name: 'Lofi', design: 'lofi' },
@@ -77,6 +95,12 @@ export const PROFILE_BANNERS: Record<string, ProfileBanner> = {
       { id: d.id, name: d.name, tier: 'pro', kind: 'design', design: d.design } as ProfileBanner,
     ]),
   ),
+  ...Object.fromEntries(
+    OWNER_DESIGNS.map((d) => [
+      d.id,
+      { id: d.id, name: d.name, tier: 'owner', kind: 'design', design: d.design } as ProfileBanner,
+    ]),
+  ),
 };
 
 /** The free colour first, then the Plus palette. */
@@ -93,14 +117,28 @@ export const PROFILE_BANNERS: Record<string, ProfileBanner> = {
 export const UNSET_BANNER_COLOR = '#4a5260';
 
 export const PROFILE_BANNER_COLORS: string[] = ['theme', ...PLUS_COLORS.map((c) => c.id)];
-export const PROFILE_BANNER_DESIGNS: string[] = PRO_DESIGNS.map((d) => d.id);
+/**
+ * The designs to offer, which is not the same as the designs that exist.
+ *
+ * The owner banner is left out of everyone else's picker entirely rather than
+ * shown with a padlock. A locked tile is an advert — it is there to be wanted —
+ * and this one cannot be bought at any price, so showing it would only invite
+ * a question with no good answer.
+ */
+export function profileBannerDesignsFor(userId?: string | null): string[] {
+  const base = PRO_DESIGNS.map((d) => d.id);
+  return userId === OWNER_USER_ID ? [...base, ...OWNER_DESIGNS.map((d) => d.id)] : base;
+}
 
 export function canUseProfileBanner(
   id: string,
   plan: SubscriptionPlan | null | undefined,
+  userId?: string | null,
 ): boolean {
   const tier = PROFILE_BANNERS[id]?.tier ?? 'free';
   if (tier === 'free') return true;
+  // Not for sale, so no plan reaches it.
+  if (tier === 'owner') return userId === OWNER_USER_ID;
   if (tier === 'plus') return isAtLeastPlus(plan);
   return isPro(plan);
 }
@@ -126,11 +164,12 @@ export function canUseProfileBanner(
 export function resolveProfileBanner(
   id: string | null | undefined,
   plan: SubscriptionPlan | null | undefined,
+  userId?: string | null,
 ): ProfileBanner {
   const known = id ? PROFILE_BANNERS[id] : undefined;
   if (!known) return PROFILE_BANNERS.theme;
   if (plan === undefined) return known;
-  return canUseProfileBanner(known.id, plan) ? known : PROFILE_BANNERS.theme;
+  return canUseProfileBanner(known.id, plan, userId) ? known : PROFILE_BANNERS.theme;
 }
 
 // ── What the card is allowed to say ────────────────────────────────────────

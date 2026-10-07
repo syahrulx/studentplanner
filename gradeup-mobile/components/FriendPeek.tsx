@@ -90,7 +90,11 @@ export function FriendPeek({ person, onClose, onOpenProfile }: Props) {
 
   const bannerId = person?.profile_banner !== undefined ? person.profile_banner : fetched?.banner;
   const hidden = person?.profile_hidden_fields !== undefined ? person.profile_hidden_fields : fetched?.hidden;
-  const banner = resolveProfileBanner(bannerId, person?.plan);
+  // person.id matters as well as the plan: the owner banner is unlocked by who
+  // you are, not by what you pay, and without it this card would drop the
+  // owner's own banner back to the theme colour while every other screen kept
+  // drawing it.
+  const banner = resolveProfileBanner(bannerId, person?.plan, person?.id);
 
   // A row is drawn only if there is something in it AND they have not hidden
   // it. An empty row would otherwise advertise that something was hidden,

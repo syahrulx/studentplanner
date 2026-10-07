@@ -63,7 +63,7 @@ export default function Profile() {
   const theme = useTheme();
   const profileHeroBg = themeId === 'light' ? DEEP_SEA_PALETTE.primary : theme.primary;
   const myCard = useProfileCard(user.id);
-  const myBanner = resolveProfileBanner(myCard?.banner, user.subscriptionPlan);
+  const myBanner = resolveProfileBanner(myCard?.banner, user.subscriptionPlan, user.id);
   const T = useTranslations(language);
   const totalWeeks = academicCalendar?.totalWeeks ?? 14;
   const semesterPhase = user.semesterPhase ?? 'teaching';

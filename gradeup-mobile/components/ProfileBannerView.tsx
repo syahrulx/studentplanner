@@ -320,6 +320,196 @@ function Arcade({ height }: { height: number }) {
   );
 }
 
+// ── Nebula: a pixel galaxy. One account only, see OWNER_USER_ID. ───────────
+
+/** One blocky star that blinks. */
+function PixelStar({
+  left, top, size, dur, delay, tone,
+}: { left: string; top: number; size: number; dur: number; delay: number; tone: string }) {
+  const t = useLoop(dur, delay);
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        left: left as any,
+        top,
+        width: size,
+        height: size,
+        backgroundColor: tone,
+        // Stepped, not a smooth fade. A star that eases in and out reads as a
+        // soft glow; one that snaps between two values reads as a pixel.
+        opacity: t.interpolate({ inputRange: [0, 0.49, 0.5, 1], outputRange: [0.25, 0.25, 1, 1] }),
+      }}
+    />
+  );
+}
+
+function Nebula({ height }: { height: number }) {
+  // One cell. Everything is a whole number of these, which is what keeps the
+  // scene on a grid at any banner size instead of landing on half pixels.
+  // Rounded up, not down. At 62pt a rounded-down cell came out at 2px and the
+  // scene turned to confetti; 3px keeps the blocks readable as blocks.
+  const px = Math.max(2, Math.ceil(height / 27));
+
+  /**
+   * Three clusters, not eight scattered blocks.
+   *
+   * Spread out and fairly opaque, they read as rectangles someone has left on
+   * the sky. Overlapped at low opacity they stack: the middle of a cluster
+   * ends up denser than its edges, which is what makes a cloud a cloud rather
+   * than a shape. Every block is still whole cells, so nothing goes soft.
+   */
+  const clouds = useMemo(
+    () => [
+      // left
+      { left: '3%', top: 4, w: 9, h: 5, tone: 'rgba(59,130,246,0.13)' },
+      { left: '6%', top: 2, w: 7, h: 6, tone: 'rgba(96,165,250,0.12)' },
+      { left: '8%', top: 6, w: 10, h: 4, tone: 'rgba(34,211,238,0.10)' },
+      { left: '11%', top: 5, w: 5, h: 4, tone: 'rgba(59,130,246,0.14)' },
+      // centre, lower
+      { left: '42%', top: 12, w: 12, h: 6, tone: 'rgba(34,211,238,0.11)' },
+      { left: '46%', top: 10, w: 9, h: 7, tone: 'rgba(59,130,246,0.12)' },
+      { left: '49%', top: 14, w: 11, h: 5, tone: 'rgba(37,99,235,0.13)' },
+      { left: '53%', top: 13, w: 6, h: 4, tone: 'rgba(125,211,252,0.10)' },
+      // right, upper
+      { left: '72%', top: 3, w: 10, h: 6, tone: 'rgba(96,165,250,0.12)' },
+      { left: '76%', top: 5, w: 8, h: 5, tone: 'rgba(34,211,238,0.11)' },
+      { left: '79%', top: 2, w: 6, h: 5, tone: 'rgba(37,99,235,0.14)' },
+    ],
+    [],
+  );
+
+  const stars = useMemo(
+    () => [
+      { left: '8%', top: 2, size: 1, dur: 3100, delay: 0, tone: '#ffffff' },
+      { left: '19%', top: 4, size: 2, dur: 2300, delay: 600, tone: '#ffffff' },
+      { left: '31%', top: 6, size: 1, dur: 4200, delay: 1400, tone: '#bae6fd' },
+      { left: '43%', top: 20, size: 1, dur: 2800, delay: 300, tone: '#ffffff' },
+      { left: '56%', top: 10, size: 1, dur: 3600, delay: 1900, tone: '#bae6fd' },
+      { left: '68%', top: 17, size: 1, dur: 2600, delay: 900, tone: '#ffffff' },
+      { left: '79%', top: 21, size: 1, dur: 3900, delay: 2300, tone: '#ffffff' },
+      { left: '86%', top: 6, size: 2, dur: 3300, delay: 1100, tone: '#ffffff' },
+      { left: '96%', top: 3, size: 1, dur: 2100, delay: 1700, tone: '#bae6fd' },
+    ],
+    [],
+  );
+
+  // Steady ones, so the sky is not all blinking at once.
+  const still = useMemo(
+    () => [
+      { left: '14%', top: 9, size: 1, o: 0.7, tone: '#bae6fd' },
+      { left: '24%', top: 15, size: 1, o: 0.55, tone: '#ffffff' },
+      { left: '37%', top: 2, size: 1, o: 0.8, tone: '#ffffff' },
+      { left: '49%', top: 5, size: 2, o: 0.9, tone: '#ffffff' },
+      { left: '62%', top: 3, size: 1, o: 0.6, tone: '#ffffff' },
+      { left: '73%', top: 11, size: 1, o: 0.75, tone: '#bae6fd' },
+      { left: '92%', top: 13, size: 1, o: 0.65, tone: '#ffffff' },
+    ],
+    [],
+  );
+
+  const drift = useLoop(30000);
+  const shoot = useLoop(7000);
+  const ring = useLoop(5000);
+
+  return (
+    <>
+      <LinearGradient
+        colors={['#010615', '#06183a', '#0b2f62', '#15528c']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+
+      {/* The nebula drifts as one piece, exactly 24 cells, so the loop point
+          lands back on the grid and the jump is invisible. */}
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          ...StyleSheet.absoluteFillObject,
+          transform: [{ translateX: drift.interpolate({ inputRange: [0, 1], outputRange: [0, -24 * px] }) }],
+        }}
+      >
+        {clouds.map((c, i) => (
+          <View
+            key={i}
+            style={{
+              position: 'absolute',
+              left: c.left as any,
+              top: c.top * px,
+              width: c.w * px,
+              height: c.h * px,
+              backgroundColor: c.tone,
+            }}
+          />
+        ))}
+      </Animated.View>
+
+      {still.map((s, i) => (
+        <View
+          key={`st${i}`}
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: s.left as any,
+            top: s.top * px,
+            width: s.size * px,
+            height: s.size * px,
+            backgroundColor: s.tone,
+            opacity: s.o,
+          }}
+        />
+      ))}
+
+      {stars.map((s, i) => (
+        <PixelStar key={`tw${i}`} {...s} top={s.top * px} size={s.size * px} />
+      ))}
+
+      {/* Shooting star: visible for a quarter of the loop, then nothing. The
+          pause is what makes it an event rather than traffic. */}
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          left: '11%',
+          top: 2 * px,
+          width: 8 * px,
+          height: px,
+          backgroundColor: '#e0f2fe',
+          opacity: shoot.interpolate({ inputRange: [0, 0.04, 0.22, 0.26, 1], outputRange: [0, 1, 1, 0, 0] }),
+          transform: [
+            { translateX: shoot.interpolate({ inputRange: [0, 0.22, 1], outputRange: [0, 46 * px, 46 * px] }) },
+            { translateY: shoot.interpolate({ inputRange: [0, 0.22, 1], outputRange: [0, 22 * px, 22 * px] }) },
+          ],
+        }}
+      />
+
+      {/* A small ringed planet, built from whole cells. */}
+      <Animated.View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          right: 4 * px,
+          bottom: 2 * px,
+          width: 7 * px,
+          height: px,
+          backgroundColor: '#7dd3fc',
+          opacity: ring.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.8, 0.45, 0.8] }),
+        }}
+      />
+      <View
+        pointerEvents="none"
+        style={{ position: 'absolute', right: 5 * px, bottom: 3 * px, width: 5 * px, height: 4 * px, backgroundColor: '#38bdf8' }}
+      />
+      <View
+        pointerEvents="none"
+        style={{ position: 'absolute', right: 6 * px, bottom: 5 * px, width: 3 * px, height: px, backgroundColor: '#e0f2fe' }}
+      />
+    </>
+  );
+}
+
 // ── The banner itself ──────────────────────────────────────────────────────
 
 export function ProfileBannerView({ banner, themeColor, height, style }: Props) {
@@ -332,6 +522,7 @@ export function ProfileBannerView({ banner, themeColor, height, style }: Props) 
           {banner.design === 'lofi' && <Lofi height={height} />}
           {banner.design === 'grid' && <Grid height={height} />}
           {banner.design === 'arcade' && <Arcade height={height} />}
+          {banner.design === 'nebula' && <Nebula height={height} />}
         </>
       ) : (
         <View style={[StyleSheet.absoluteFill, { backgroundColor: flat }]} />

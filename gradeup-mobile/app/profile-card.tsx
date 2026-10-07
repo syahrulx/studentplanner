@@ -35,7 +35,7 @@ import {
   PROFILE_BANNERS,
   resolveProfileBanner,
   PROFILE_BANNER_COLORS,
-  PROFILE_BANNER_DESIGNS,
+  profileBannerDesignsFor,
   PROFILE_CARD_FIELDS,
   canUseProfileBanner,
   isFieldVisible,
@@ -54,6 +54,8 @@ export default function ProfileCardScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState<FriendPeekPerson | null>(null);
+  // Everyone sees the four Pro designs. One account sees a fifth.
+  const designIds = useMemo(() => profileBannerDesignsFor(user.id), [user.id]);
 
   useEffect(() => {
     let alive = true;
@@ -102,7 +104,7 @@ export default function ProfileCardScreen() {
   };
 
   const pickBanner = (id: string) => {
-    if (!canUseProfileBanner(id, plan)) {
+    if (!canUseProfileBanner(id, plan, user.id)) {
       const b = PROFILE_BANNERS[id];
       promptUpgrade({
         plan: b.tier === 'pro' ? 'pro' : 'plus',
@@ -204,7 +206,7 @@ export default function ProfileCardScreen() {
             // design here while every other screen correctly showed them the
             // theme colour — the one place that is meant to tell them what
             // their card looks like would have been the one place lying.
-            banner={resolveProfileBanner(banner, plan)}
+            banner={resolveProfileBanner(banner, plan, user.id)}
             themeColor={theme.primary}
             height={72}
           />
@@ -235,7 +237,7 @@ export default function ProfileCardScreen() {
         <View style={s.swatchRow}>
           {PROFILE_BANNER_COLORS.map((id) => {
             const b = PROFILE_BANNERS[id];
-            const locked = !canUseProfileBanner(id, plan);
+            const locked = !canUseProfileBanner(id, plan, user.id);
             const selected = banner === id;
             return (
               <Pressable
@@ -273,9 +275,9 @@ export default function ProfileCardScreen() {
           <Text style={[s.sectionTier, { color: theme.primary }]}>Pro</Text>
         </View>
         <View style={s.bannerGrid}>
-          {PROFILE_BANNER_DESIGNS.map((id) => {
+          {designIds.map((id) => {
             const b = PROFILE_BANNERS[id];
-            const locked = !canUseProfileBanner(id, plan);
+            const locked = !canUseProfileBanner(id, plan, user.id);
             const selected = banner === id;
             return (
               <Pressable
