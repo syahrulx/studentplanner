@@ -249,7 +249,20 @@ function inferShortName(name: string, fallbackId: string): string {
   return trimmed.length > 18 ? trimmed.slice(0, 18) : trimmed;
 }
 
-function mergeRemoteUniversities(rows: Array<{ id: string; name: string; api_endpoint: string | null; login_method: 'manual' | 'api' }>): UniversityConfig[] {
+type UniversityRow = {
+  id: string;
+  name: string;
+  api_endpoint: string | null;
+  login_method: 'manual' | 'api';
+  // Absent until migration 20260930000001 runs; the select uses '*' so an older database still loads.
+  short_name?: string | null;
+};
+
+function rowShortName(row: UniversityRow): string | undefined {
+  return String(row.short_name || '').trim() || undefined;
+}
+
+function mergeRemoteUniversities(rows: UniversityRow[]): UniversityConfig[] {
   const byId = new Map<string, UniversityConfig>();
   const localById = new Map(UNIVERSITIES.map((u) => [u.id, u]));
   for (const row of rows) {
@@ -265,7 +278,7 @@ function mergeRemoteUniversities(rows: Array<{ id: string; name: string; api_end
     byId.set(id, {
       id,
       name,
-      shortName: existing?.shortName ?? inferShortName(name, id),
+      shortName: rowShortName(row) ?? existing?.shortName ?? inferShortName(name, id),
       loginUrl,
       timetableUrl: existing?.timetableUrl,
       mode,
@@ -387,13 +400,13 @@ export async function getUniversitiesForCountry(country: string): Promise<Univer
   const cc = (country || HOME_COUNTRY).toUpperCase();
   const { data, error } = await supabase
     .from('universities')
-    .select('id,name,api_endpoint,login_method')
+    .select('*')
     .eq('country', cc)
     .order('name', { ascending: true });
 
   if (cc === HOME_COUNTRY) {
     if (error || !data) return universitiesCache;
-    const rows = data as Array<{ id: string; name: string; api_endpoint: string | null; login_method: 'manual' | 'api' }>;
+    const rows = data as UniversityRow[];
     if (rows.length === 0) return universitiesCache;
     universitiesCache = mergeRemoteUniversities(rows);
     universitiesCacheHasDatabaseIds = true;
@@ -401,12 +414,12 @@ export async function getUniversitiesForCountry(country: string): Promise<Univer
   }
 
   if (error || !data) return [];
-  return (data as Array<{ id: string; name: string; api_endpoint: string | null; login_method: 'manual' | 'api' }>)
+  return (data as UniversityRow[])
     .filter((row) => row.id && row.name)
     .map((row) => ({
       id: row.id,
       name: row.name,
-      shortName: inferShortName(row.name, row.id),
+      shortName: rowShortName(row) ?? inferShortName(row.name, row.id),
       loginUrl: String(row.api_endpoint || '').trim() || 'https://example.com/',
       mode: row.login_method === 'api' ? ('api' as const) : ('webview' as const),
       logoEmoji: '🏫',
