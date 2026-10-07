@@ -24,6 +24,7 @@ import { ProfileBannerView } from '@/components/ProfileBannerView';
 import {
   resolveProfileBanner,
   isFieldVisible,
+  UNSET_BANNER_COLOR,
   type ProfileCardField,
 } from '@/src/lib/profileBanners';
 import type { SubscriptionPlan } from '@/src/types';
@@ -100,7 +101,19 @@ export function FriendPeek({ person, onClose, onOpenProfile }: Props) {
     { key: 'faculty', icon: 'layers', label: 'Faculty', value: person?.faculty },
     { key: 'course', icon: 'book-open', label: 'Course', value: person?.course },
   ];
-  const rows = all.filter((r) => r.value && isFieldVisible(r.key, hidden));
+  /**
+   * A dash is not an answer.
+   *
+   * Profiles imported from a portal carry "-" where a field was left blank, so
+   * a card showed "Campus —" and "Course —" as though those were facts about
+   * the student. A row with nothing in it is left out, exactly like a row they
+   * chose to hide: an empty line would only advertise what is missing.
+   */
+  const hasValue = (v?: string) => {
+    const t = (v ?? '').trim();
+    return t.length > 0 && t !== '-' && t !== '--' && t !== 'N/A';
+  };
+  const rows = all.filter((r) => hasValue(r.value) && isFieldVisible(r.key, hidden));
 
   /**
    * What they are doing and playing sit under the name, not in the table below.
@@ -112,11 +125,11 @@ export function FriendPeek({ person, onClose, onOpenProfile }: Props) {
    * everywhere else in the app.
    */
   const presence = [
-    isFieldVisible('status', hidden) && person?.activityText
-      ? { key: 'status', icon: person.activityIcon ?? 'activity', text: person.activityText }
+    person && isFieldVisible('status', hidden) && hasValue(person.activityText)
+      ? { key: 'status', icon: person.activityIcon ?? 'activity', text: person.activityText! }
       : null,
-    isFieldVisible('song', hidden) && person?.songText
-      ? { key: 'song', icon: 'music' as const, text: person.songText }
+    person && isFieldVisible('song', hidden) && hasValue(person.songText)
+      ? { key: 'song', icon: 'music' as const, text: person.songText! }
       : null,
   ].filter(Boolean) as { key: string; icon: React.ComponentProps<typeof Feather>['name']; text: string }[];
 
@@ -130,7 +143,14 @@ export function FriendPeek({ person, onClose, onOpenProfile }: Props) {
       <Pressable style={s.backdrop} onPress={onClose} accessibilityLabel="Close">
         {/* Swallows the tap so pressing the card itself does not close it. */}
         <Pressable style={[s.card, { backgroundColor: theme.card }]} onPress={() => {}}>
-          <ProfileBannerView banner={banner} themeColor={theme.primary} height={BANNER_HEIGHT} />
+          {/* Your theme only on your own card. `plan` is set by the customise
+              screen and by nothing else, so it is also what tells us whose
+              card this is — see resolveProfileBanner. */}
+          <ProfileBannerView
+            banner={banner}
+            themeColor={person?.plan !== undefined ? theme.primary : UNSET_BANNER_COLOR}
+            height={BANNER_HEIGHT}
+          />
 
           <Pressable style={s.closeBtn} onPress={onClose} hitSlop={10} accessibilityLabel="Close">
             <Feather name="x" size={18} color="#fff" />

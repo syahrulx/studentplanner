@@ -80,6 +80,18 @@ export const PROFILE_BANNERS: Record<string, ProfileBanner> = {
 };
 
 /** The free colour first, then the Plus palette. */
+/**
+ * The banner for someone else who has not chosen one.
+ *
+ * Not your theme colour. "Theme colour" is a real choice in the picker and it
+ * means "follow the app theme" — but on another student's card we have no idea
+ * which theme they use, so drawing yours put your colour on every friend you
+ * tapped and made all of their cards look like your own. A neutral says what
+ * is true: they have not picked anything. It is deliberately outside the Plus
+ * palette, so an unchosen banner is never mistaken for a paid one.
+ */
+export const UNSET_BANNER_COLOR = '#4a5260';
+
 export const PROFILE_BANNER_COLORS: string[] = ['theme', ...PLUS_COLORS.map((c) => c.id)];
 export const PROFILE_BANNER_DESIGNS: string[] = PRO_DESIGNS.map((d) => d.id);
 

@@ -21,7 +21,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
 import { useProfileCard } from '@/hooks/useProfileCard';
 import { ProfileBannerView } from '@/components/ProfileBannerView';
-import { resolveProfileBanner } from '@/src/lib/profileBanners';
+import { resolveProfileBanner, UNSET_BANNER_COLOR } from '@/src/lib/profileBanners';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { useTranslations } from '@/src/i18n';
@@ -378,7 +378,7 @@ export default function FriendProfileScreen() {
           shows. The avatar clears its bottom edge by the ring's width, so the
           join touches the ring and never crosses their face. */}
       <View style={[s.bannerWrap, { backgroundColor: theme.card }]}>
-        <ProfileBannerView banner={friendBanner} themeColor={theme.primary} height={BANNER_H} />
+        <ProfileBannerView banner={friendBanner} themeColor={UNSET_BANNER_COLOR} height={BANNER_H} />
       </View>
 
       <View style={s.identity}>
