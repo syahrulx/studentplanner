@@ -37,11 +37,9 @@ import {
   ACIDLING_SPRITE_URL,
   NOIR_WEBLING_SPRITE_URL,
   DIO_CAT_SPRITE_URL,
+  PlaygroundCodexPet,
   type CodexPetAnimationName,
 } from '@/components/PlaygroundCodexPet';
-// Same sprites, same timings, drawn natively instead of inside a WebView —
-// and this screen was mounting two of them at once.
-import { PlaygroundCodexPetSprite } from '@/components/PlaygroundCodexPetSprite';
 
 /** Generate a unique ID without external deps. */
 function generateId(): string {
@@ -875,13 +873,13 @@ export default function ChatRoomScreen() {
           pointerEvents="box-only"
         >
           {isCatTheme ? (
-            <PlaygroundCodexPetSprite
+            <PlaygroundCodexPet
               spriteUri={DIO_CAT_SPRITE_URL}
               animation={codexPetAnim}
               size={PET_SIZE}
             />
           ) : (
-            <PlaygroundCodexPetSprite
+            <PlaygroundCodexPet
               spriteUri={isSpiderTheme ? NOIR_WEBLING_SPRITE_URL : ACIDLING_SPRITE_URL}
               animation={codexPetAnim}
               size={PET_SIZE}

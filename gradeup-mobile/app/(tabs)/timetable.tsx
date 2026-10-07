@@ -26,10 +26,9 @@ import {
   ACIDLING_SPRITE_URL,
   NOIR_WEBLING_SPRITE_URL,
   DIO_CAT_SPRITE_URL,
+  PlaygroundCodexPet,
   type CodexPetAnimationName,
 } from '@/components/PlaygroundCodexPet';
-// Same sprites, same timings, drawn natively instead of inside a WebView.
-import { PlaygroundCodexPetSprite } from '@/components/PlaygroundCodexPetSprite';
 import { useTranslations } from '@/src/i18n';
 import { useResponsive } from '@/hooks/useResponsive';
 import * as roomsApi from '@/src/lib/campusRoomsApi';
@@ -1621,7 +1620,7 @@ export default function TimetableScreen() {
                       },
                     ]}
                   >
-                    <PlaygroundCodexPetSprite
+                    <PlaygroundCodexPet
                       spriteUri={isCatTheme ? DIO_CAT_SPRITE_URL : (isSpiderTheme ? NOIR_WEBLING_SPRITE_URL : ACIDLING_SPRITE_URL)}
                       animation={codexPetAnim}
                       size={playgroundPetSize}
