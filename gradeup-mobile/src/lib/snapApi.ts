@@ -436,7 +436,14 @@ export async function removeReaction(snapId: string, userId: string): Promise<vo
   if (error) throw error;
 }
 
-/** Get all reactions for a snap. */
+/**
+ * Get all reactions for a snap, with the name and avatar of whoever left each.
+ *
+ * The names are what make "who liked this" possible. Showing them is the
+ * caller's decision, not this function's: a snap shared with a whole campus
+ * reaches people who are not friends with each other, so the viewer only puts
+ * the list in front of the snap's own author.
+ */
 export async function getSnapReactions(snapId: string): Promise<SnapReaction[]> {
   const { data, error } = await supabase
     .from('snap_reactions')
@@ -449,7 +456,24 @@ export async function getSnapReactions(snapId: string): Promise<SnapReaction[]> 
     return [];
   }
 
-  return (data || []).map(rowToReaction);
+  const reactions = (data || []).map(rowToReaction);
+
+  const reactorIds = [...new Set(reactions.map(r => r.userId))];
+  if (reactorIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, name, avatar_url')
+      .in('id', reactorIds);
+
+    const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+    for (const reaction of reactions) {
+      const prof = profileMap.get(reaction.userId);
+      reaction.reactorName = prof?.name || 'Someone';
+      reaction.reactorAvatar = prof?.avatar_url || undefined;
+    }
+  }
+
+  return reactions;
 }
 
 // =============================================================================

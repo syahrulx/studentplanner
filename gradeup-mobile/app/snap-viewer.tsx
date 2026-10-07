@@ -8,6 +8,8 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -55,6 +57,19 @@ export default function SnapViewer() {
   const [myReaction, setMyReaction] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [viewBlocked, setViewBlocked] = useState(false);
+  const [showReactors, setShowReactors] = useState(false);
+
+  /**
+   * Who liked a snap is shown to the person who posted it, and to nobody else.
+   *
+   * A snap can be shared with a whole campus or a whole university, and the
+   * students who react to one of those are not friends with each other. Putting
+   * that list in front of every viewer would hand each of them a roll of names
+   * they never agreed to share. The author already knows who their audience is,
+   * so the list tells them nothing new about anyone else. Everyone still sees
+   * the counts.
+   */
+  const isMySnap = Boolean(snap && user.id && snap.userId === user.id);
 
   const loadSnap = useCallback(async () => {
     if (!snapId) {
@@ -295,9 +310,20 @@ export default function SnapViewer() {
           <Text style={s.captionText}>{snap.caption}</Text>
         ) : null}
 
-        {/* Reaction counts */}
+        {/* Reaction counts. The whole row opens the list of names, but only
+            for the author — see isMySnap. */}
         {reactions.length > 0 && (
-          <View style={s.reactionSummary}>
+          <Pressable
+            accessibilityRole={isMySnap ? 'button' : undefined}
+            accessibilityLabel={
+              isMySnap
+                ? `${reactions.length} ${reactions.length === 1 ? 'like' : 'likes'}. See who liked this`
+                : `${reactions.length} ${reactions.length === 1 ? 'like' : 'likes'}`
+            }
+            disabled={!isMySnap}
+            onPress={() => setShowReactors(true)}
+            style={({ pressed }) => [s.reactionSummary, pressed && isMySnap && { opacity: 0.7 }]}
+          >
             {Object.entries(
               reactions.reduce<Record<string, number>>((acc, r) => {
                 acc[r.emoji] = (acc[r.emoji] || 0) + 1;
@@ -309,7 +335,13 @@ export default function SnapViewer() {
                 <Text style={s.reactionCount}>{count}</Text>
               </View>
             ))}
-          </View>
+            <View style={s.reactionTotal}>
+              <Text style={s.reactionTotalText}>
+                {reactions.length} {reactions.length === 1 ? 'like' : 'likes'}
+              </Text>
+              {isMySnap && <Feather name="chevron-right" size={13} color="rgba(255,255,255,0.75)" />}
+            </View>
+          </Pressable>
         )}
 
         {/* Reaction bar */}
@@ -344,6 +376,35 @@ export default function SnapViewer() {
           )}
         </View>
       </View>
+
+      {/* Who liked it — author only. */}
+      <Modal
+        visible={showReactors && isMySnap}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowReactors(false)}
+      >
+        <Pressable style={s.reactorsBackdrop} onPress={() => setShowReactors(false)}>
+          <Pressable style={[s.reactorsSheet, { backgroundColor: theme.card }]} onPress={() => {}}>
+            <View style={[s.reactorsHandle, { backgroundColor: theme.textSecondary + '40' }]} />
+            <Text style={[s.reactorsTitle, { color: theme.text }]}>
+              {reactions.length} {reactions.length === 1 ? 'like' : 'likes'}
+            </Text>
+            <ScrollView style={s.reactorsList} showsVerticalScrollIndicator={false}>
+              {reactions.map((r) => (
+                <View key={r.id} style={s.reactorRow}>
+                  <Avatar name={r.reactorName || 'Someone'} avatarUrl={r.reactorAvatar} size={38} />
+                  <Text style={[s.reactorName, { color: theme.text }]} numberOfLines={1}>
+                    {r.reactorName || 'Someone'}
+                  </Text>
+                  <Text style={s.reactorEmoji}>{r.emoji}</Text>
+                </View>
+              ))}
+              <View style={{ height: 24 }} />
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -409,6 +470,23 @@ const s = StyleSheet.create({
     borderRadius: 20,
   },
   reactionEmoji: { fontSize: 14 },
+  reactionTotal: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingLeft: 2 },
+  reactionTotalText: { color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: '700' },
+  reactorsBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  reactorsSheet: {
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingTop: 10,
+    paddingHorizontal: 20,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    maxHeight: '70%',
+  },
+  reactorsHandle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
+  reactorsTitle: { fontSize: 17, fontWeight: '800', marginBottom: 10 },
+  reactorsList: { flexGrow: 0 },
+  reactorRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 9 },
+  reactorName: { flex: 1, fontSize: 15, fontWeight: '600' },
+  reactorEmoji: { fontSize: 19 },
   reactionCount: { color: '#fff', fontSize: 12, fontWeight: '700' },
 
   reactionBar: {

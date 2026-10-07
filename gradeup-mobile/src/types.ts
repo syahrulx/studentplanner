@@ -305,6 +305,7 @@ export interface SnapReaction {
   createdAt: string;
   /** Joined reactor profile info */
   reactorName?: string;
+  reactorAvatar?: string;
 }
 
 /* ── University & Timetable ─────────────────────────────── */

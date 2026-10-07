@@ -12,6 +12,7 @@ import {
   ScrollView,
   Animated,
   Easing,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -31,6 +32,8 @@ export default function SnapCamera() {
 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [posting, setPosting] = useState(false);
+  /** 200 is the database's own limit — snap_caption_length on study_snaps. */
+  const [caption, setCaption] = useState('');
   const [snapsToday, setSnapsToday] = useState(0);
   const [streak, setStreak] = useState<SnapStreak | null>(null);
   const [loading, setLoading] = useState(true);
@@ -287,7 +290,7 @@ export default function SnapCamera() {
     try {
       const prevStreak = streak?.currentStreak || 0;
       const imageUrl = await uploadSnapImage(photoUri);
-      await postSnap(user.id!, imageUrl, undefined, audience);
+      await postSnap(user.id!, imageUrl, caption.trim() || undefined, audience);
 
       // postSnap() now awaits updateStreakOnPost() synchronously, so the
       // streak should be up-to-date on the first read. Retry once as a
@@ -325,6 +328,9 @@ export default function SnapCamera() {
 
   const handleRetake = () => {
     setPhotoUri(null);
+    // A caption written for the photo you just threw away does not belong on
+    // the next one.
+    setCaption('');
     setTimeout(() => {
       handleOpenCamera();
     }, 100);
@@ -358,7 +364,31 @@ export default function SnapCamera() {
         </View>
 
         {/* Bottom bar */}
-        <View style={s.previewBottom}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={s.previewBottom}
+        >
+          {/* Caption. Sits on the photo the way a story caption does, rather
+              than on a separate screen after posting — by then the moment the
+              snap was about has passed. */}
+          <View style={s.captionWrap}>
+            <TextInput
+              style={s.captionInput}
+              value={caption}
+              onChangeText={setCaption}
+              placeholder="Add a caption"
+              placeholderTextColor="rgba(255,255,255,0.55)"
+              maxLength={200}
+              multiline
+              returnKeyType="done"
+              blurOnSubmit
+              accessibilityLabel="Snap caption"
+            />
+            {caption.length >= 160 && (
+              <Text style={s.captionCount}>{200 - caption.length}</Text>
+            )}
+          </View>
+
           {audienceOptions.length > 1 && (
             <View style={s.audienceRow}>
               {audienceOptions.map((opt) => {
@@ -410,7 +440,7 @@ export default function SnapCamera() {
               </>
             )}
           </Pressable>
-        </View>
+        </KeyboardAvoidingView>
 
         {/* ─── STREAK CELEBRATION ─── */}
         {showCelebration && (
@@ -697,6 +727,27 @@ const s = StyleSheet.create({
     paddingVertical: 17,
   },
   postBtnText: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  captionWrap: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  captionInput: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+    // A caption can run to three lines before it starts to cover the photo.
+    maxHeight: 76,
+    padding: 0,
+  },
+  captionCount: { color: 'rgba(255,255,255,0.65)', fontSize: 12, fontWeight: '700', paddingBottom: 2 },
   audienceRow: { flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 12 },
   audiencePill: {
     flexDirection: 'row',
