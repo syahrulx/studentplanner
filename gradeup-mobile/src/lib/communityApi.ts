@@ -43,10 +43,18 @@ export interface FriendProfile {
   id: string;
   name: string;
   university?: string;
+  /** Campus name, e.g. "UiTM Kampus Sungai Petani". From profiles.campus. */
+  campus?: string;
   avatar_url?: string;
   bio?: string;
   faculty?: string;
+  /**
+   * Legacy. Nothing in the app has written profiles.course for a long time —
+   * what a student actually fills in lands in profiles.program. Read `program`
+   * first and keep this as the fallback for the old rows that still have it.
+   */
   course?: string;
+  program?: string;
   class_group?: string;
 }
 
@@ -537,7 +545,7 @@ export async function getFriends(userId: string): Promise<FriendProfile[]> {
   // Fetch their profiles
   const { data: profiles, error: pErr } = await supabase
     .from('profiles')
-    .select('id, name, university, avatar_url, bio, faculty, course, class_group')
+    .select('id, name, university, campus, avatar_url, bio, faculty, course, program, class_group')
     .in('id', friendIds);
 
   if (pErr) throw pErr;
@@ -559,7 +567,7 @@ export async function getIncomingRequests(userId: string): Promise<Friendship[]>
   const requesterIds = data.map((f) => f.requester_id);
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('id, name, university, avatar_url, bio, faculty, course, class_group')
+    .select('id, name, university, campus, avatar_url, bio, faculty, course, program, class_group')
     .in('id', requesterIds);
 
   const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
@@ -579,7 +587,7 @@ export async function getOutgoingRequests(userId: string): Promise<Friendship[]>
   const addresseeIds = data.map((f) => f.addressee_id);
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('id, name, university, avatar_url, bio, faculty, course, class_group')
+    .select('id, name, university, campus, avatar_url, bio, faculty, course, program, class_group')
     .in('id', addresseeIds);
 
   const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
@@ -664,7 +672,7 @@ export async function getSuggestions(
   // 6. Fetch profiles for these top nearby users
   const { data: profiles, error: profError } = await supabase
     .from('profiles')
-    .select('id, name, university, avatar_url, bio, faculty, course, class_group')
+    .select('id, name, university, campus, avatar_url, bio, faculty, course, program, class_group')
     .in('id', topNearbyIds);
 
   if (profError) throw profError;
@@ -688,7 +696,7 @@ export async function searchUsers(userId: string, query: string): Promise<Friend
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, name, university, avatar_url, bio, faculty, course, class_group')
+    .select('id, name, university, campus, avatar_url, bio, faculty, course, program, class_group')
     .neq('id', userId)
     .ilike('name', `%${escapedQuery}%`)
     .limit(20);
@@ -779,7 +787,7 @@ export async function getCircleMembers(circleId: string): Promise<CircleMember[]
   const userIds = members.map((m) => m.user_id);
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('id, name, university, avatar_url, bio, faculty, course, class_group')
+    .select('id, name, university, campus, avatar_url, bio, faculty, course, program, class_group')
     .in('id', userIds);
 
   const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
@@ -1207,7 +1215,7 @@ export async function sendBump(senderId: string, receiverId: string) {
 export async function getUserProfile(userId: string): Promise<FriendProfile | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, name, university, avatar_url, bio, faculty, course, class_group')
+    .select('id, name, university, campus, avatar_url, bio, faculty, course, program, class_group')
     .eq('id', userId)
     .single();
 

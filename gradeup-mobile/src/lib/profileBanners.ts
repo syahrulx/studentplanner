@@ -1,0 +1,150 @@
+/**
+ * Banners for the profile card — the strip behind a student's picture.
+ *
+ * Three kinds, and the kind is the tier:
+ *
+ *   - `theme`  (free) the app theme's own colour, which is what a card has
+ *              always had.
+ *   - `color`  (Plus) a flat colour from a set list. Plus buys the palette,
+ *              not one particular colour.
+ *   - `design` (Pro)  a small animated scene, drawn in ProfileBannerView.
+ *
+ * Nothing here is a picture file. Every design is drawn with React Native's
+ * own Animated API at whatever size the banner happens to be, so there is no
+ * asset to license, nothing added to the bundle, and the picker's 54pt tiles
+ * and the card's 108pt banner run the same code rather than being two sets of
+ * art that can drift apart.
+ *
+ * Purely decoration either way. A banner never changes what the card says, so
+ * a locked one costs a student nothing except the look.
+ */
+import type { SubscriptionPlan } from '../types';
+import { isAtLeastPlus, isPro } from './flashcardGenerationLimits';
+
+/** The animated scenes. Each is drawn by a branch of ProfileBannerView. */
+export type ProfileBannerDesign = 'sakura' | 'lofi' | 'grid' | 'arcade';
+
+export interface ProfileBanner {
+  id: string;
+  name: string;
+  tier: 'free' | 'plus' | 'pro';
+  kind: 'theme' | 'color' | 'design';
+  /** kind 'color' only. */
+  color?: string;
+  /** kind 'design' only. */
+  design?: ProfileBannerDesign;
+}
+
+/**
+ * The Plus palette.
+ *
+ * Deliberately muted. The first set of paid banners were saturated gradients
+ * and they fought with all ten of the app's themes — a card ended up looking
+ * pasted in from somewhere else. A flat, slightly dusty colour sits behind a
+ * photograph without competing with it, which is the whole job of a banner.
+ */
+const PLUS_COLORS: { id: string; name: string; color: string }[] = [
+  { id: 'slate', name: 'Slate', color: '#5b6775' },
+  { id: 'ocean', name: 'Ocean', color: '#356b86' },
+  { id: 'forest', name: 'Forest', color: '#4a7257' },
+  { id: 'olive', name: 'Olive', color: '#73804f' },
+  { id: 'sand', name: 'Sand', color: '#bb9a6e' },
+  { id: 'clay', name: 'Clay', color: '#a96a55' },
+  { id: 'rose', name: 'Rose', color: '#b2788a' },
+  { id: 'plum', name: 'Plum', color: '#6f5676' },
+  { id: 'sky', name: 'Sky', color: '#6f9bba' },
+  { id: 'ink', name: 'Ink', color: '#39404c' },
+];
+
+const PRO_DESIGNS: { id: string; name: string; design: ProfileBannerDesign }[] = [
+  { id: 'sakura', name: 'Sakura', design: 'sakura' },
+  { id: 'lofi', name: 'Lofi', design: 'lofi' },
+  { id: 'grid', name: 'Grid', design: 'grid' },
+  { id: 'arcade', name: 'Arcade', design: 'arcade' },
+];
+
+export const PROFILE_BANNERS: Record<string, ProfileBanner> = {
+  theme: { id: 'theme', name: 'Theme colour', tier: 'free', kind: 'theme' },
+  ...Object.fromEntries(
+    PLUS_COLORS.map((c) => [
+      c.id,
+      { id: c.id, name: c.name, tier: 'plus', kind: 'color', color: c.color } as ProfileBanner,
+    ]),
+  ),
+  ...Object.fromEntries(
+    PRO_DESIGNS.map((d) => [
+      d.id,
+      { id: d.id, name: d.name, tier: 'pro', kind: 'design', design: d.design } as ProfileBanner,
+    ]),
+  ),
+};
+
+/** The free colour first, then the Plus palette. */
+export const PROFILE_BANNER_COLORS: string[] = ['theme', ...PLUS_COLORS.map((c) => c.id)];
+export const PROFILE_BANNER_DESIGNS: string[] = PRO_DESIGNS.map((d) => d.id);
+
+export function canUseProfileBanner(
+  id: string,
+  plan: SubscriptionPlan | null | undefined,
+): boolean {
+  const tier = PROFILE_BANNERS[id]?.tier ?? 'free';
+  if (tier === 'free') return true;
+  if (tier === 'plus') return isAtLeastPlus(plan);
+  return isPro(plan);
+}
+
+/**
+ * The banner to actually draw.
+ *
+ * `plan` is deliberately three-valued, and the difference matters:
+ *
+ *   - a plan (including null, meaning free) — this is a card we can price, so
+ *     their own. A banner they can no longer afford falls back to the theme
+ *     colour, which is what tells a lapsed student what they have lost.
+ *   - `undefined` — we do not know the plan, which is every card belonging to
+ *     somebody else. Draw what they chose. We cannot read another student's
+ *     subscription, and gating on what we cannot read would mean nobody ever
+ *     saw anyone's paid banner, which is the entire point of selling one.
+ *
+ * Either way an unknown id falls back to the theme colour. That is also what
+ * retires a banner safely: the saturated gradients this file used to sell are
+ * gone, and anyone who had picked one gets their theme colour back rather
+ * than a blank strip.
+ */
+export function resolveProfileBanner(
+  id: string | null | undefined,
+  plan: SubscriptionPlan | null | undefined,
+): ProfileBanner {
+  const known = id ? PROFILE_BANNERS[id] : undefined;
+  if (!known) return PROFILE_BANNERS.theme;
+  if (plan === undefined) return known;
+  return canUseProfileBanner(known.id, plan) ? known : PROFILE_BANNERS.theme;
+}
+
+// ── What the card is allowed to say ────────────────────────────────────────
+
+export type ProfileCardField = 'university' | 'campus' | 'faculty' | 'course' | 'status' | 'song';
+
+export const PROFILE_CARD_FIELDS: { key: ProfileCardField; label: string }[] = [
+  { key: 'university', label: 'University' },
+  { key: 'campus', label: 'Campus' },
+  { key: 'faculty', label: 'Faculty' },
+  { key: 'course', label: 'Course' },
+  { key: 'status', label: 'What you are doing' },
+  { key: 'song', label: 'What you are listening to' },
+];
+
+/**
+ * Hidden rather than shown, deliberately.
+ *
+ * An empty list has to mean "show everything", because that is what every one
+ * of the existing profiles will have the moment this ships. Storing the shown
+ * fields instead would read every existing student as having hidden all six,
+ * and 30,000 cards would go blank on release day.
+ */
+export function isFieldVisible(
+  field: ProfileCardField,
+  hidden: string[] | null | undefined,
+): boolean {
+  return !hidden?.includes(field);
+}
