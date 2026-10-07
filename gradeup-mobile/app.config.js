@@ -129,6 +129,19 @@ export default ({ config }) => {
       versionCode: release.androidVersionCode,
       intentFilters: [
         ...existingIntentFilters,
+        // Google's OAuth redirect for the Android client type comes back on the
+        // reversed package name, not on `rencana://`. Expo registers the app's
+        // own scheme automatically but not this one, so without this filter the
+        // consent screen completes and the browser has nowhere to return to.
+        ...(baseAndroid.package
+          ? [
+              {
+                action: 'VIEW',
+                data: [{ scheme: baseAndroid.package }],
+                category: ['BROWSABLE', 'DEFAULT'],
+              },
+            ]
+          : []),
         {
           action: 'VIEW',
           autoVerify: true,

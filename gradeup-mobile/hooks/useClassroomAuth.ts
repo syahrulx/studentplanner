@@ -3,10 +3,12 @@ import { Platform } from 'react-native';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import {
   GOOGLE_CLASSROOM_SCOPES,
   GOOGLE_DISCOVERY,
   getGoogleClientIds,
+  androidRedirectUri,
 } from '@/src/lib/googleOauth';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -37,12 +39,28 @@ function pickClientAndRedirect(ids: ReturnType<typeof getGoogleClientIds>): {
   }
 
   if (Platform.OS === 'android') {
-    const cid = ids.webClientId;
-    if (!cid || cid.length === 0) return null;
-    return {
-      clientId: cid,
-      redirectUri: '',
-    };
+    // An Android client, redirecting on the package name — the direct
+    // equivalent of what iOS does above.
+    //
+    // This used to be the Web client id with an empty redirectUri, which meant
+    // Android could not run an OAuth flow at all. It could only reuse a token
+    // saved during a Google login, so anyone who had signed in with Apple or
+    // with an email address could never connect Classroom, and nothing in the
+    // app would ever let them.
+    const cid = ids.androidClientId;
+    const pkg = (Constants.expoConfig as any)?.android?.package;
+    if (cid && cid.length > 0 && pkg) {
+      return { clientId: cid, redirectUri: androidRedirectUri(pkg) };
+    }
+
+    // No Android client configured: fall back to exactly what this did before.
+    // The Web client id cannot complete an exchange from a phone, but it keeps
+    // `notConfigured` false, and that is what lets the saved-token path run at
+    // all. Returning null here would have marked the whole feature
+    // unconfigured and broken Classroom for the students it works for today.
+    const web = ids.webClientId;
+    if (!web || web.length === 0) return null;
+    return { clientId: web, redirectUri: '' };
   }
 
   // Web
@@ -113,14 +131,36 @@ export function useClassroomAuth(): ClassroomAuthState {
    * If no tokens exist, the user must sign out and sign in with Google.
    */
   const androidPromptAsync = useCallback(async (): Promise<AuthSession.AuthSessionResult> => {
+    /**
+     * Ask Google properly, in a browser.
+     *
+     * This is what Android never had. Every dead end below used to end in
+     * "sign out and sign in with Google" — advice that does not even work for
+     * a student who signed up with Apple or with an email address, because
+     * there is no Google account to sign back in with. Now the dead ends lead
+     * here instead, and connecting Classroom no longer depends on how somebody
+     * happened to create their Rencana account.
+     *
+     * The saved-token path below still runs first. For the students it already
+     * works for, nothing changes and no browser opens.
+     */
+    const askGoogle = async (): Promise<AuthSession.AuthSessionResult | null> => {
+      if (!request) return null;
+      const result = await stdPromptAsync();
+      setAndroidResponse(result);
+      return result;
+    };
+
     try {
       const raw = await AsyncStorage.getItem('googleProviderTokens');
 
       if (!raw) {
+        const viaBrowser = await askGoogle();
+        if (viaBrowser) return viaBrowser;
         const errorResult = {
           type: 'error',
           error: new Error(
-            'Google Classroom requires a Google account. Please sign out and sign in with Google to connect Classroom.',
+            'Google Classroom is not set up for this build. Please update the app and try again.',
           ),
         } as unknown as AuthSession.AuthSessionResult;
         setAndroidResponse(errorResult);
@@ -134,6 +174,8 @@ export function useClassroomAuth(): ClassroomAuthState {
       };
 
       if (!tokens.accessToken) {
+        const viaBrowser = await askGoogle();
+        if (viaBrowser) return viaBrowser;
         const errorResult = {
           type: 'error',
           error: new Error(
@@ -178,6 +220,11 @@ export function useClassroomAuth(): ClassroomAuthState {
           }
         }
 
+        // The saved token is dead and could not be refreshed. Rather than
+        // telling a student to sign out of Rencana — which never had anything
+        // to do with Classroom — just ask Google again.
+        const viaBrowser = await askGoogle();
+        if (viaBrowser) return viaBrowser;
         const errorResult = {
           type: 'error',
           error: new Error(
@@ -212,7 +259,7 @@ export function useClassroomAuth(): ClassroomAuthState {
       setAndroidResponse(errorResult);
       return errorResult;
     }
-  }, []);
+  }, [request, stdPromptAsync]);
 
   const isAndroid = Platform.OS === 'android';
 
@@ -234,8 +281,22 @@ export function useClassroomAuth(): ClassroomAuthState {
     };
   }, [stdPromptAsync, androidPromptAsync, notConfigured, isAndroid]);
 
+  /**
+   * Android returns the real request once it has one.
+   *
+   * It used to always hand back DUMMY_REQUEST, because Android could not run
+   * an OAuth flow and the screen only needed something truthy to get past its
+   * `if (!request) return` guard. Now that Android can ask Google properly,
+   * the screen needs the real object: it reads request.codeVerifier to finish
+   * the PKCE exchange, and a dummy has none, so the sign-in would complete and
+   * then fail with "missing PKCE verifier".
+   *
+   * The dummy stays for the case where no Android client id is configured. The
+   * screen still opens, the saved-token path still runs, and the behaviour is
+   * exactly what it is today.
+   */
   return {
-    request: isAndroid ? DUMMY_REQUEST : request,
+    request: isAndroid ? (request ?? DUMMY_REQUEST) : request,
     response: isAndroid ? androidResponse : response,
     promptAsync: safePromptAsync,
     redirectUri,
