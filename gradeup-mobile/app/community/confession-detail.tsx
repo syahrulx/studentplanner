@@ -62,6 +62,15 @@ export default function ConfessionDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [commentDraft, setCommentDraft] = useState('');
   const [replyingTo, setReplyingTo] = useState<ConfessionComment | null>(null);
+  /**
+   * The exact "@Name " text put into the draft.
+   *
+   * Kept verbatim rather than matched with a pattern on the way out. Aliases
+   * have spaces in them, so a pattern that stops at the first space turned
+   * "@Kopi O " into a stray "O" left sitting in the box.
+   */
+  const [insertedTag, setInsertedTag] = useState('');
+  const commentInputRef = useRef<TextInput>(null);
   const [submitting, setSubmitting] = useState(false);
   const [activeReactionPicker, setActiveReactionPicker] = useState(false);
 
@@ -256,12 +265,43 @@ export default function ConfessionDetailScreen() {
       setConfession((c) => (c ? { ...c, comment_count: c.comment_count + 1 } : c));
       setCommentDraft('');
       setReplyingTo(null);
+      setInsertedTag('');
     } catch (e: any) {
       Alert.alert(T('error'), e?.message || T('confessionCommentError'));
     } finally {
       setSubmitting(false);
     }
   };
+
+  /**
+   * Start a reply, and say who it is to.
+   *
+   * Threads stay one level deep: answering a reply attaches to the same
+   * top-level comment rather than nesting further, which is the only shape the
+   * grouping below and the parent_id column support. The person being answered
+   * is named in the draft instead, so a conversation several replies long is
+   * still followable — "@Laksa" reads as an answer to Laksa wherever it sits.
+   */
+  const beginReply = useCallback((target: ConfessionComment) => {
+    const root = target.parent_id
+      ? comments.find((c) => c.id === target.parent_id) ?? target
+      : target;
+    setReplyingTo({ ...root, __tagAlias: target.alias } as ConfessionComment & { __tagAlias?: string });
+    const tag = `@${displayAlias(target.alias)} `;
+    setCommentDraft((d) => {
+      const body = insertedTag && d.startsWith(insertedTag) ? d.slice(insertedTag.length) : d;
+      return tag + body;
+    });
+    setInsertedTag(tag);
+    commentInputRef.current?.focus();
+  }, [comments, displayAlias, insertedTag]);
+
+  /** Drops the reply and takes its mention with it. */
+  const cancelReply = useCallback(() => {
+    setReplyingTo(null);
+    setCommentDraft((d) => (insertedTag && d.startsWith(insertedTag) ? d.slice(insertedTag.length) : d));
+    setInsertedTag('');
+  }, [insertedTag]);
 
   // Group comments hierarchically
   const groupedComments = React.useMemo(() => {
@@ -293,13 +333,14 @@ export default function ConfessionDetailScreen() {
           )}
           <Text style={[s.commentTime, { color: theme.textSecondary }]}>{timeAgo(item.created_at)}</Text>
           
-          {!isReply && (
-            <Pressable hitSlop={12} onPress={() => {
-              setReplyingTo(item);
-            }} style={{ marginRight: 12 }}>
-              <Text style={{ fontSize: 12, fontWeight: '600', color: theme.textSecondary }}>Reply</Text>
-            </Pressable>
-          )}
+          {/* Offered on replies too. Only top-level comments had it, so the
+              moment a conversation started nobody could answer the person they
+              were actually reading. */}
+          <Pressable hitSlop={12} onPress={() => beginReply(item)} style={{ marginRight: 12 }}>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: theme.textSecondary }}>
+              {T('confessionReply')}
+            </Text>
+          </Pressable>
 
           <Pressable hitSlop={12} onPress={() => handleCommentMenu(item)}>
             <Feather name="more-horizontal" size={16} color={theme.textSecondary} />
@@ -458,17 +499,21 @@ export default function ConfessionDetailScreen() {
         {replyingTo && (
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 8 }}>
             <Text style={{ fontSize: 12, color: theme.textSecondary, fontWeight: '600' }}>
-              Replying to <Text style={{ color: theme.primary }}>{displayAlias(replyingTo.alias)}</Text>
+              {T('confessionReplyingTo')}{' '}
+              <Text style={{ color: theme.primary }}>
+                {displayAlias((replyingTo as ConfessionComment & { __tagAlias?: string }).__tagAlias ?? replyingTo.alias)}
+              </Text>
             </Text>
-            <Pressable hitSlop={12} onPress={() => setReplyingTo(null)}>
+            <Pressable hitSlop={12} onPress={cancelReply}>
               <Feather name="x" size={16} color={theme.textSecondary} />
             </Pressable>
           </View>
         )}
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 10, paddingHorizontal: 12 }}>
           <TextInput
+            ref={commentInputRef}
             style={[s.input, { color: theme.text, backgroundColor: theme.background, borderColor: theme.border }]}
-            placeholder={replyingTo ? 'Write a reply...' : T('confessionCommentPlaceholder')}
+            placeholder={replyingTo ? T('confessionReplyPlaceholder') : T('confessionCommentPlaceholder')}
             placeholderTextColor={theme.textSecondary}
             value={commentDraft}
             onChangeText={setCommentDraft}
