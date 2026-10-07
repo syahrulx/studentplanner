@@ -13,18 +13,18 @@ import type { FlashcardStyleFace } from '@/src/lib/flashcardStyles';
  */
 export function FlashcardFace({
   face,
-  minHeight,
+  height,
   children,
 }: {
   face: FlashcardStyleFace;
-  minHeight: number;
+  height: number;
   children: React.ReactNode;
 }) {
   const radius = face.radius;
 
   const shell: ViewStyle = {
     borderRadius: radius,
-    minHeight,
+    height,
     paddingVertical: 32,
     paddingHorizontal: 26,
     alignItems: 'center',
@@ -48,7 +48,7 @@ export function FlashcardFace({
       {/* Ruled paper. Drawn behind the words, never over them. */}
       {face.rules ? (
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
-          {Array.from({ length: Math.ceil(minHeight / face.rules.gap) }).map((_, i) => (
+          {Array.from({ length: Math.ceil(height / face.rules.gap) }).map((_, i) => (
             <View
               key={i}
               style={{

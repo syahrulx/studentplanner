@@ -39,7 +39,20 @@ type ReviewMode = 'deck' | 'due';
  * shape across devices, and keeps the front and back the same size so the card
  * does not resize when it flips.
  */
-const CARD_MIN_HEIGHT = Math.max(240, Math.round(Dimensions.get('window').height * 0.3));
+/**
+ * Every card is exactly this tall — a fixed height, not a floor.
+ *
+ * It was a minimum, so a card grew to fit a long question. That meant two
+ * cards in the deck were different sizes: the one waiting underneath stuck out
+ * past the one in front, which read as a bigger card behind, and it shrank to
+ * normal the instant it became the top card. That size change at the end of
+ * every swipe is what still looked like a glitch after the positions and the
+ * timing had all been fixed. Two cards that swap places have to be the same
+ * size as well as the same card.
+ */
+/** Side padding of the card area. The deck layer must match it — see deckLayer. */
+const CARD_AREA_PAD = 24;
+const CARD_HEIGHT = Math.max(240, Math.round(Dimensions.get('window').height * 0.3));
 
 function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
   const monoAccent = '#9ca3af';
@@ -72,7 +85,7 @@ function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
-      paddingHorizontal: 24,
+      paddingHorizontal: CARD_AREA_PAD,
     },
     cardWrap: {
       width: '100%',
@@ -91,6 +104,18 @@ function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
       bottom: 0,
       alignItems: 'center',
       justifyContent: 'center',
+      /**
+       * The same side padding as cardArea, and that is the whole point.
+       *
+       * This layer is absolutely positioned, so left:0 / right:0 put it across
+       * the area's full width, padding included — while the card on top sits
+       * inside that padding. Both cards are width:'100%' of whatever contains
+       * them, so the one underneath came out 48pt wider than the one in front
+       * on any screen narrower than its 400pt cap. That is the card that
+       * looked bigger underneath, and it snapped to the narrower width the
+       * moment it became the top card.
+       */
+      paddingHorizontal: CARD_AREA_PAD,
       // Full opacity on purpose. Dimming it would mean the card brightened at
       // the moment it became the top card, which is one more thing to notice.
       // It is directly behind, so it is only ever seen as the card above leaves.
@@ -101,9 +126,9 @@ function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
       backgroundColor: theme.card,
       paddingVertical: 36,
       paddingHorizontal: 28,
-      // Front and back share a floor so the card fills more of a tall screen
-      // and does not jump in size when it flips.
-      minHeight: CARD_MIN_HEIGHT,
+      // Front and back share one height, so the card does not change size when
+      // it flips or when the next card takes its place.
+      height: CARD_HEIGHT,
       alignItems: 'center',
       justifyContent: 'center',
       shadowColor: '#000',
@@ -162,7 +187,7 @@ function createStyles(theme: ThemePalette, isDarkMinimal: boolean) {
       backgroundColor: isDarkMinimal ? '#f5f5f5' : theme.primary,
       paddingVertical: 32,
       paddingHorizontal: 24,
-      minHeight: CARD_MIN_HEIGHT,
+      height: CARD_HEIGHT,
       alignItems: 'center',
       justifyContent: 'center',
       shadowColor: '#000',
@@ -805,8 +830,13 @@ export default function FlashcardReview() {
                   tenth of a second after the swipe had already settled, which
                   is what still read as a glitch. Two cards that swap places
                   have to be the same card. */}
-              <FlashcardFace face={faceFor(false)} minHeight={CARD_MIN_HEIGHT}>
-                <Text style={[styles.cardQuestion, { color: faceFor(false).text }]}>
+              <FlashcardFace face={faceFor(false)} height={CARD_HEIGHT}>
+                <Text
+                  style={[styles.cardQuestion, { color: faceFor(false).text }]}
+                  numberOfLines={8}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.6}
+                >
                   {nextFaces.front}
                 </Text>
                 {nextCard?.hint ? (
@@ -840,13 +870,24 @@ export default function FlashcardReview() {
           {!showBack ? (
             /* ── FRONT ── */
             <View>
-              <FlashcardFace face={faceFor(false)} minHeight={CARD_MIN_HEIGHT}>
+              <FlashcardFace face={faceFor(false)} height={CARD_HEIGHT}>
               {typeBadge ? (
                 <View style={styles.cardTypeBadge}>
                   <Text style={styles.cardTypeBadgeText}>{typeBadge}</Text>
                 </View>
               ) : null}
-              <Text style={[styles.cardQuestion, { color: faceFor(false).text }]}>{faces?.front}</Text>
+              {/* The card is a fixed height now, so text that would once have
+                  stretched it shrinks to fit instead of being clipped by the
+                  shell. The same three props are on the card underneath, so
+                  what is waiting there is exactly what arrives. */}
+              <Text
+                style={[styles.cardQuestion, { color: faceFor(false).text }]}
+                numberOfLines={8}
+                adjustsFontSizeToFit
+                minimumFontScale={0.6}
+              >
+                {faces?.front}
+              </Text>
               {card.hint ? <Text style={[styles.cardHint, { color: faceFor(false).hint }]}>{T('flashcardHintPrefix')} {card.hint}</Text> : null}
               <Text style={[styles.tapHint, { color: faceFor(false).hint }]}>{T('tapToReveal')}</Text>
               </FlashcardFace>
@@ -854,8 +895,15 @@ export default function FlashcardReview() {
           ) : (
             /* ── BACK ── */
             <View>
-              <FlashcardFace face={faceFor(true)} minHeight={CARD_MIN_HEIGHT}>
-              <Text style={[styles.cardAnswer, { color: faceFor(true).text }]}>{faces?.back}</Text>
+              <FlashcardFace face={faceFor(true)} height={CARD_HEIGHT}>
+              <Text
+                style={[styles.cardAnswer, { color: faceFor(true).text }]}
+                numberOfLines={8}
+                adjustsFontSizeToFit
+                minimumFontScale={0.6}
+              >
+                {faces?.back}
+              </Text>
               {/* The buttons are gone, so say what replaces them.
                   Coloured text alone does not work here: the card behind it is
                   the theme's primary, which is a different colour for every

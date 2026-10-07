@@ -66,7 +66,7 @@ export default function FlashcardStylesScreen() {
               ]}
             >
               <View style={styles.previewWrap}>
-                <FlashcardFace face={face} minHeight={92}>
+                <FlashcardFace face={face} height={92}>
                   <Text style={{ color: face.text, fontWeight: '700', fontSize: 13 }}>Aa</Text>
                 </FlashcardFace>
               </View>
