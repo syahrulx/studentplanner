@@ -33,6 +33,7 @@ import { ProfileBannerView } from '@/components/ProfileBannerView';
 import { FriendPeek, type FriendPeekPerson } from '@/components/FriendPeek';
 import {
   PROFILE_BANNERS,
+  resolveProfileBanner,
   PROFILE_BANNER_COLORS,
   PROFILE_BANNER_DESIGNS,
   PROFILE_CARD_FIELDS,
@@ -198,7 +199,12 @@ export default function ProfileCardScreen() {
           ]}
         >
           <ProfileBannerView
-            banner={PROFILE_BANNERS[banner]}
+            // Resolved against the plan, not drawn raw. A student who bought
+            // Pro, picked a design and then lapsed would otherwise see that
+            // design here while every other screen correctly showed them the
+            // theme colour — the one place that is meant to tell them what
+            // their card looks like would have been the one place lying.
+            banner={resolveProfileBanner(banner, plan)}
             themeColor={theme.primary}
             height={72}
           />
@@ -295,7 +301,7 @@ export default function ProfileCardScreen() {
                   <Text style={[s.bannerName, { color: theme.text }]} numberOfLines={1}>
                     {b.name}
                   </Text>
-                  {selected && <Feather name="check" size={15} color={theme.primary} />}
+                  {selected && !locked && <Feather name="check" size={15} color={theme.primary} />}
                 </View>
               </Pressable>
             );
