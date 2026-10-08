@@ -190,9 +190,20 @@ export function resolveProfileBanner(
 
 // ── What the card is allowed to say ────────────────────────────────────────
 
-export type ProfileCardField = 'university' | 'campus' | 'faculty' | 'course' | 'status' | 'song';
+export type ProfileCardField =
+  | 'photo'
+  | 'university'
+  | 'campus'
+  | 'faculty'
+  | 'course'
+  | 'status'
+  | 'song';
 
 export const PROFILE_CARD_FIELDS: { key: ProfileCardField; label: string }[] = [
+  // Hiding this swaps the photograph for initials rather than removing it.
+  // A card with a hole where a face goes looks broken; a card with initials
+  // looks like a choice.
+  { key: 'photo', label: 'Profile picture' },
   { key: 'university', label: 'University' },
   { key: 'campus', label: 'Campus' },
   { key: 'faculty', label: 'Faculty' },

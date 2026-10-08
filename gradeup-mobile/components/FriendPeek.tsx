@@ -113,6 +113,15 @@ export function FriendPeek({ person, onClose, onOpenProfile }: Props) {
    * the student. A row with nothing in it is left out, exactly like a row they
    * chose to hide: an empty line would only advertise what is missing.
    */
+  /**
+   * A hidden photo becomes initials, not a hole.
+   *
+   * Removing the avatar entirely would leave the card looking broken; the
+   * fallback Avatar already draws initials on a coloured circle, so the
+   * layout is unchanged and it reads as a choice rather than a failure.
+   */
+  const showPhoto = isFieldVisible('photo', hidden);
+
   const hasValue = (v?: string) => {
     const t = (v ?? '').trim();
     return t.length > 0 && t !== '-' && t !== '--' && t !== 'N/A';
@@ -162,15 +171,21 @@ export function FriendPeek({ person, onClose, onOpenProfile }: Props) {
 
           <View style={s.body}>
             <Pressable
-              accessibilityRole={person?.avatar_url ? 'button' : undefined}
-              accessibilityLabel={person?.avatar_url ? `See ${person.name}'s picture` : undefined}
+              accessibilityRole={person?.avatar_url && showPhoto ? 'button' : undefined}
+              accessibilityLabel={
+                person?.avatar_url && showPhoto ? `See ${person.name}'s picture` : undefined
+              }
               // Only a real photo is worth opening full size. Enlarging the
               // two-letter fallback would just be big letters.
-              disabled={!person?.avatar_url}
+              disabled={!person?.avatar_url || !showPhoto}
               onPress={() => setPhotoOpen(true)}
               style={[s.avatarRing, { borderColor: theme.card, backgroundColor: theme.card }]}
             >
-              <Avatar name={person?.name || ''} avatarUrl={person?.avatar_url} size={AVATAR_SIZE} />
+              <Avatar
+                name={person?.name || ''}
+                avatarUrl={showPhoto ? person?.avatar_url : undefined}
+                size={AVATAR_SIZE}
+              />
             </Pressable>
 
             <Text style={[s.name, { color: theme.text }]} numberOfLines={2}>
@@ -241,7 +256,7 @@ export function FriendPeek({ person, onClose, onOpenProfile }: Props) {
       {/* The picture, full size. Its own Modal, stacked on the card's, so
           closing it returns you to the card rather than to the list. */}
       <Modal
-        visible={photoOpen && Boolean(person?.avatar_url)}
+        visible={photoOpen && showPhoto && Boolean(person?.avatar_url)}
         transparent
         animationType="fade"
         onRequestClose={() => setPhotoOpen(false)}

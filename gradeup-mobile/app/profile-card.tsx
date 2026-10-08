@@ -54,6 +54,9 @@ export default function ProfileCardScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState<FriendPeekPerson | null>(null);
+  // Collapsed by default. Seven switches is a wall; most students set this
+  // once and never open it again.
+  const [showsOpen, setShowsOpen] = useState(false);
   // Everyone sees the four Pro designs. One account sees a fifth.
   const designIds = useMemo(() => profileBannerDesignsFor(user.id), [user.id]);
 
@@ -119,6 +122,21 @@ export default function ProfileCardScreen() {
     }
     setBanner(id);
     void save(id, hidden);
+  };
+
+  const allHidden = PROFILE_CARD_FIELDS.every((f) => hidden.includes(f.key));
+
+  /**
+   * One tap for all of it.
+   *
+   * Hiding everything row by row took seven taps and seven writes. The card
+   * keeps the name whatever happens, so this is as private as it gets without
+   * leaving the board.
+   */
+  const toggleAll = () => {
+    const next = allHidden ? [] : PROFILE_CARD_FIELDS.map((f) => f.key as string);
+    setHidden(next);
+    void save(banner, next);
   };
 
   const toggleField = (key: ProfileCardField) => {
@@ -312,29 +330,59 @@ export default function ProfileCardScreen() {
 
         <View style={s.sectionRow}>
           <Text style={[s.section, { color: theme.textSecondary }]}>WHAT YOUR CARD SHOWS</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={allHidden ? 'Show everything on your card' : 'Hide everything on your card'}
+            onPress={toggleAll}
+            hitSlop={8}
+            style={({ pressed }) => [s.hideAll, { borderColor: theme.border, marginLeft: 'auto' }, pressed && { opacity: 0.6 }]}
+          >
+            <Feather name={allHidden ? 'eye-off' : 'eye'} size={14} color={theme.textSecondary} />
+            <Text style={[s.hideAllText, { color: theme.textSecondary }]}>
+              {allHidden ? 'Show all' : 'Hide all'}
+            </Text>
+          </Pressable>
         </View>
+
         <View style={[s.cardGroup, { backgroundColor: theme.card }]}>
-          {PROFILE_CARD_FIELDS.map((f, i) => (
-            <View
-              key={f.key}
-              style={[
-                s.fieldRow,
-                i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.border },
-              ]}
-            >
-              <Text style={[s.fieldLabel, { color: theme.text }]}>{f.label}</Text>
-              <Switch
-                value={isFieldVisible(f.key, hidden)}
-                onValueChange={() => toggleField(f.key)}
-                trackColor={{ true: theme.primary }}
-                accessibilityLabel={`Show ${f.label} on your card`}
-              />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showsOpen }}
+            onPress={() => setShowsOpen((v) => !v)}
+            style={({ pressed }) => [s.fieldRow, pressed && { opacity: 0.7 }]}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={[s.fieldLabel, { color: theme.text }]}>Details</Text>
+              <Text style={[s.fieldSummary, { color: theme.textSecondary }]} numberOfLines={1}>
+                {/* What is on, in one line, so the list does not have to be
+                    opened just to check. */}
+                {PROFILE_CARD_FIELDS.filter((f) => isFieldVisible(f.key, hidden))
+                  .map((f) => f.label)
+                  .join(' · ') || 'Nothing shown'}
+              </Text>
             </View>
-          ))}
+            <Feather name={showsOpen ? 'chevron-up' : 'chevron-down'} size={20} color={theme.textSecondary} />
+          </Pressable>
+
+          {showsOpen &&
+            PROFILE_CARD_FIELDS.map((f) => (
+              <View
+                key={f.key}
+                style={[s.fieldRow, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.border }]}
+              >
+                <Text style={[s.fieldLabel, { color: theme.text }]}>{f.label}</Text>
+                <Switch
+                  value={isFieldVisible(f.key, hidden)}
+                  onValueChange={() => toggleField(f.key)}
+                  trackColor={{ true: theme.primary }}
+                  accessibilityLabel={`Show ${f.label} on your card`}
+                />
+              </View>
+            ))}
         </View>
         <Text style={[s.footnote, { color: theme.textSecondary }]}>
           Turning one off hides the row completely — nobody is shown a blank line where it was.
-          Your name and picture always show.
+          Hiding your picture shows your initials instead. Your name always shows.
         </Text>
 
         <View style={{ height: 40 }} />
@@ -443,5 +491,16 @@ const s = StyleSheet.create({
     paddingVertical: 12,
   },
   fieldLabel: { fontSize: 15, fontWeight: '600' },
+  fieldSummary: { fontSize: 12, fontWeight: '600', marginTop: 2 },
+  hideAll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  hideAllText: { fontSize: 12, fontWeight: '700' },
   footnote: { fontSize: 12, fontWeight: '600', lineHeight: 18, marginTop: 10 },
 });
