@@ -24,7 +24,6 @@ import { useProfileCard } from '@/hooks/useProfileCard';
 import { ProfileBannerView } from '@/components/ProfileBannerView';
 import { resolveProfileBanner } from '@/src/lib/profileBanners';
 import Feather from '@expo/vector-icons/Feather';
-import { DEEP_SEA_PALETTE } from '@/constants/Themes';
 import { useTranslations } from '@/src/i18n';
 import { featherForLegacyCircleEmoji } from '@/src/lib/featherGlyphUi';
 import {
@@ -54,14 +53,12 @@ export default function Profile() {
   const {
     user,
     language,
-    theme: themeId,
     setUser,
     updateProfile,
     academicCalendar,
   } = useApp();
   const { locationVisibility, setLocationVisibility, circles, userId } = useCommunity();
   const theme = useTheme();
-  const profileHeroBg = themeId === 'light' ? DEEP_SEA_PALETTE.primary : theme.primary;
   const myCard = useProfileCard(user.id);
   const myBanner = resolveProfileBanner(myCard?.banner, user.subscriptionPlan, user.id);
   const T = useTranslations(language);
@@ -488,7 +485,19 @@ export default function Profile() {
       <View style={[styles.heroWrap, { backgroundColor: theme.card }]}>
         <ProfileBannerView
           banner={myBanner}
-          themeColor={profileHeroBg}
+          // The theme's own accent, with no special case.
+          //
+          // This used to force a deep navy whenever themeId was 'light', which
+          // made sense when the hero was a solid block carrying white text —
+          // the light theme's primary was too pale to read white on. The name
+          // and student id moved below the banner, so nothing sits on it any
+          // more and that reason is gone.
+          //
+          // It had also started lying. themePack overrides the palette
+          // completely while themeId stays underneath it, so a student on the
+          // Spider pack over a light base saw a red app with a navy banner, and
+          // "Theme colour" named a colour that appeared nowhere else on screen.
+          themeColor={theme.primary}
           height={HERO_BANNER_H}
         />
         <View style={styles.heroContent}>
