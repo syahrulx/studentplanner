@@ -86,6 +86,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Avatar } from '@/components/Avatar';
 import { FriendPeek, type FriendPeekPerson } from '@/components/FriendPeek';
+import { getSeenSnapIds } from '@/src/lib/snapSeen';
 import { CatLottie } from '@/components/CatLottie';
 import { SpiderLottie } from '@/components/SpiderLottie';
 
@@ -123,17 +124,18 @@ function useCommunityLayout() {
     /**
      * The Friends sheet, as a fraction of the screen.
      *
-     * Was 0.4, which was right before the snap row went in above the list.
-     * That row takes about 88pt, and on a 40% sheet it left roughly one friend
-     * visible — the list the panel is named after had been squeezed down to
-     * almost nothing. 0.48 puts three back without the map losing anything it
-     * was using: by the time a student is reading this list they have already
-     * found their friends on the map.
+     * 0.48 was chosen to fit three friends under the snap strip, and it did —
+     * by taking almost half the screen for a list, on a screen whose point is
+     * a map. The map was the thing that felt broken.
+     *
+     * 0.40 gives that back. The list keeps roughly the same number of friends
+     * because the rows are tighter now (see personRow), so the height came out
+     * of padding rather than out of content.
      *
      * The three offsets below hang off the same number, so they are derived
      * rather than written out again and cannot drift from it.
      */
-    const sheet = height * 0.48;
+    const sheet = height * 0.4;
     return {
       statusCardWidth: (width - 50) / 2,
       snapPreviewWidth,
@@ -597,6 +599,22 @@ export default function CommunityMap() {
   const [friendsListTop, setFriendsListTop] = useState(0);
   /** The student whose peek card is open, if any. */
   const [peekPerson, setPeekPerson] = useState<FriendPeekPerson | null>(null);
+  /** Snaps this phone has already opened — see src/lib/snapSeen.ts. */
+  const [seenSnaps, setSeenSnaps] = useState<Set<string>>(new Set());
+
+  // Re-read on focus, so a snap opened in the viewer is already dimmed and
+  // moved by the time the student lands back on this screen.
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      void getSeenSnapIds().then((s) => {
+        if (alive) setSeenSnaps(s);
+      });
+      return () => {
+        alive = false;
+      };
+    }, []),
+  );
   const cameraRef = useRef<any>(null);
 
   const selectedCircle = circles.find((c) => c.id === selectedCircleId) || null;
@@ -648,10 +666,42 @@ export default function CommunityMap() {
       const snap = friendSnaps.get(friend.id);
       if (snap) withSnaps.push({ friend, snap });
     }
-    // Newest first, so a snap posted minutes ago is the one in reach of a thumb.
-    withSnaps.sort((a, b) => Date.parse(b.snap.createdAt) - Date.parse(a.snap.createdAt));
+    /**
+     * Unopened first, then newest.
+     *
+     * Sorting purely by time meant a snap you had already watched kept the
+     * front of the row, and the one you had not seen slid further right every
+     * time somebody else posted. Unread belongs under the thumb; read belongs
+     * out of the way, which is the order every story row works in.
+     */
+    withSnaps.sort((a, b) => {
+      const aSeen = seenSnaps.has(a.snap.id) ? 1 : 0;
+      const bSeen = seenSnaps.has(b.snap.id) ? 1 : 0;
+      if (aSeen !== bSeen) return aSeen - bSeen;
+      return Date.parse(b.snap.createdAt) - Date.parse(a.snap.createdAt);
+    });
     return withSnaps;
-  }, [visibleFriends, friendSnaps]);
+  }, [visibleFriends, friendSnaps, seenSnaps]);
+
+  /**
+   * Shared snaps ordered the same way as friends' — unopened first, then
+   * newest. They are the same row to a student; only the ring colour says one
+   * is from a stranger.
+   */
+  const orderedSharedSnaps = useMemo(() => {
+    return [...sharedSnaps].sort((a, b) => {
+      const aSeen = seenSnaps.has(a.id) ? 1 : 0;
+      const bSeen = seenSnaps.has(b.id) ? 1 : 0;
+      if (aSeen !== bSeen) return aSeen - bSeen;
+      return Date.parse(b.createdAt) - Date.parse(a.createdAt);
+    });
+  }, [sharedSnaps, seenSnaps]);
+
+  /** The whole row, in the order it is drawn — what a tap walks through. */
+  const snapQueue = useMemo(
+    () => [...snapRowFriends.map((x) => x.snap.id), ...orderedSharedSnaps.map((x) => x.id)],
+    [snapRowFriends, orderedSharedSnaps],
+  );
 
   const mySnap = user?.id ? friendSnaps.get(user.id) : undefined;
 
@@ -682,8 +732,15 @@ export default function CommunityMap() {
     });
   }, []);
 
-  const openSnap = useCallback((snapId: string) => {
-    router.push({ pathname: '/snap-viewer', params: { snapId } } as any);
+  /**
+   * `queue` is the row in the order it is drawn, so the viewer can move on to
+   * the next one without having to know how the row was built or sorted.
+   */
+  const openSnap = useCallback((snapId: string, queue?: string[]) => {
+    router.push({
+      pathname: '/snap-viewer',
+      params: queue && queue.length > 1 ? { snapId, queue: queue.join(',') } : { snapId },
+    } as any);
   }, []);
 
   useEffect(() => {
@@ -1598,15 +1655,27 @@ export default function CommunityMap() {
 
               {snapRowFriends.map(({ friend, snap }) => {
                 const streak = friendStreaks.get(friend.id)?.currentStreak ?? 0;
+                // A read snap keeps its place in the row but stops shouting:
+                // the ring drops to the ordinary border colour, the way a read
+                // story does everywhere else.
+                const seen = seenSnaps.has(snap.id);
                 return (
                   <Pressable
                     key={friend.id}
                     accessibilityRole="button"
-                    accessibilityLabel={`Open ${friend.name}'s snap`}
+                    accessibilityLabel={
+                      seen ? `${friend.name}'s snap, already opened` : `Open ${friend.name}'s snap`
+                    }
                     style={({ pressed }) => [styles.snapBubbleWrap, pressed && { opacity: 0.75 }]}
-                    onPress={() => openSnap(snap.id)}
+                    onPress={() => openSnap(snap.id, snapQueue)}
                   >
-                    <View style={[styles.snapBubbleRing, { borderColor: SNAP_RING }]}>
+                    <View
+                      style={[
+                        styles.snapBubbleRing,
+                        { borderColor: seen ? theme.border : SNAP_RING },
+                        seen && { opacity: 0.6 },
+                      ]}
+                    >
                       <Image source={{ uri: snap.imageUrl }} style={styles.snapBubbleImage} contentFit="cover" transition={160} />
                       {streak > 0 && (
                         <View style={[styles.snapBubbleStreak, { borderColor: theme.background }]}>
@@ -1621,30 +1690,44 @@ export default function CommunityMap() {
                 );
               })}
 
-              {sharedSnaps.length > 0 && (
+              {orderedSharedSnaps.length > 0 && (
                 <View style={[styles.snapRowDivider, { backgroundColor: theme.border }]} />
               )}
 
-              {sharedSnaps.map((snap) => (
+              {orderedSharedSnaps.map((snap) => {
+                const seen = seenSnaps.has(snap.id);
+                return (
                 <Pressable
                   key={snap.id}
                   accessibilityRole="button"
-                  accessibilityLabel={`Open a snap from ${snap.authorName || 'a student'}`}
+                  accessibilityLabel={
+                    seen
+                      ? `Snap from ${snap.authorName || 'a student'}, already opened`
+                      : `Open a snap from ${snap.authorName || 'a student'}`
+                  }
                   style={({ pressed }) => [styles.snapBubbleWrap, pressed && { opacity: 0.75 }]}
-                  onPress={() => openSnap(snap.id)}
+                  onPress={() => openSnap(snap.id, snapQueue)}
                 >
                   {/* A different ring on purpose: this is not a friend, and a
-                      student should be able to see that before they tap. */}
-                  <View style={[styles.snapBubbleRing, { borderColor: theme.primary }]}>
+                      student should be able to see that before they tap. Once
+                      read it dims like any other. */}
+                  <View
+                    style={[
+                      styles.snapBubbleRing,
+                      { borderColor: seen ? theme.border : theme.primary },
+                      seen && { opacity: 0.6 },
+                    ]}
+                  >
                     <Image source={{ uri: snap.imageUrl }} style={styles.snapBubbleImage} contentFit="cover" transition={160} />
                   </View>
                   <Text style={[styles.snapBubbleName, { color: theme.textSecondary }]} numberOfLines={1}>
                     {snap.authorName || 'Student'}
                   </Text>
                 </Pressable>
-              ))}
+                );
+              })}
 
-              {snapRowFriends.length === 0 && sharedSnaps.length === 0 && (
+              {snapRowFriends.length === 0 && orderedSharedSnaps.length === 0 && (
                 <View style={styles.snapRowEmpty}>
                   <Text style={[styles.snapRowEmptyText, { color: theme.textSecondary }]} numberOfLines={2}>
                     No snaps from friends yet today.
@@ -3451,10 +3534,14 @@ const styles = StyleSheet.create({
     width: 124,
     height: 94,
   },
+  // 12pt of padding above and below each row added up to more than a whole
+  // extra friend's worth of empty space down the list. 8 keeps the row
+  // comfortably tappable — the avatar alone is 44pt, well past the 44pt
+  // minimum — while giving the map back the difference.
   personRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 8,
     paddingHorizontal: 4,
     gap: 8,
     borderRadius: 12,

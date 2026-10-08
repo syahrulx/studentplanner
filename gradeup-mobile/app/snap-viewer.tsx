@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -28,6 +28,7 @@ import {
   reportSnap,
 } from '@/src/lib/snapApi';
 import { Avatar } from '@/components/Avatar';
+import { markSnapSeen } from '@/src/lib/snapSeen';
 import type { StudySnap, SnapReaction } from '@/src/types';
 
 const REACTION_EMOJIS = ['🔥', '💪', '📚', '❤️', '👍', '🎉'];
@@ -43,8 +44,45 @@ function timeAgo(dateStr: string): string {
 }
 
 export default function SnapViewer() {
-  const { snapId: snapIdParam } = useLocalSearchParams<{ snapId: string }>();
+  const { snapId: snapIdParam, queue: queueParam } = useLocalSearchParams<{
+    snapId: string;
+    queue?: string;
+  }>();
   const snapId = typeof snapIdParam === 'string' ? snapIdParam : '';
+
+  /**
+   * The rest of the row, in the order it was drawn.
+   *
+   * Held in state rather than read from params on every render, because
+   * advancing replaces the route and the next screen has to carry the same
+   * queue forward — reading it fresh each time would work, but keeping it
+   * local means the row cannot change under a student mid-watch.
+   */
+  const queue = useMemo(
+    () => (typeof queueParam === 'string' ? queueParam.split(',').filter(Boolean) : []),
+    [queueParam],
+  );
+  const nextSnapId = useMemo(() => {
+    const i = queue.indexOf(snapId);
+    return i >= 0 && i < queue.length - 1 ? queue[i + 1] : null;
+  }, [queue, snapId]);
+
+  /**
+   * Tap: on to the next snap, or out if this was the last.
+   *
+   * `replace` rather than `push`, so watching six snaps does not build six
+   * screens of history that all have to be backed out of one at a time.
+   */
+  const goNext = useCallback(() => {
+    if (nextSnapId) {
+      router.replace({
+        pathname: '/snap-viewer',
+        params: { snapId: nextSnapId, queue: queue.join(',') },
+      } as any);
+    } else {
+      router.back();
+    }
+  }, [nextSnapId, queue]);
 
   const { user } = useApp();
   const theme = useTheme();
@@ -101,6 +139,11 @@ export default function SnapViewer() {
       }
 
       setSnap(data);
+      // Outside the free-tier branch above on purpose: that branch exists to
+      // meter daily views, and metering has nothing to do with whether this
+      // phone has read the snap. Inside it, a Plus or Pro student would never
+      // have a snap marked as seen and their row would never dim.
+      void markSnapSeen(data.id);
 
       const rx = await getSnapReactions(data.id);
       setReactions(rx);
@@ -275,6 +318,17 @@ export default function SnapViewer() {
       {/* Full-screen snap image */}
       <Image source={{ uri: snap.imageUrl }} style={s.fullImage} resizeMode="cover" />
 
+      {/* Tap the picture for the next snap, or out if this is the last.
+          It sits directly on the image and under every control, so the close
+          button, the reaction bar and the likes row all still take their own
+          taps — only the bare photograph advances. */}
+      <Pressable
+        style={s.advanceLayer}
+        onPress={goNext}
+        accessibilityRole="button"
+        accessibilityLabel={nextSnapId ? 'Next snap' : 'Close'}
+      />
+
       {/* Top overlay: author info + close */}
       <View style={s.topOverlay}>
         <Pressable onPress={() => router.back()} style={s.closeBtn}>
@@ -411,6 +465,9 @@ export default function SnapViewer() {
 
 const s = StyleSheet.create({
   container: { flex: 1 },
+  // Above the image, below everything else — the overlays are later in the
+  // tree, so they sit on top of this and keep their own taps.
+  advanceLayer: { ...StyleSheet.absoluteFillObject },
   fullImage: {
     ...StyleSheet.absoluteFillObject,
     width: '100%',
