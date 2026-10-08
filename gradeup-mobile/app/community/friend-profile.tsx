@@ -209,6 +209,8 @@ function ProfileAvatar({ name, avatarUrl, size = 96 }: { name?: string; avatarUr
 
 /** The banner strip above their name. */
 const BANNER_H = 112;
+/** Status bar + a little air — what the old header strip used to occupy. */
+const HEADER_INSET = Platform.OS === 'ios' ? 56 : 40;
 /** The ring that separates the photo from the banner behind it. */
 const AVATAR_RING = 4;
 export default function FriendProfileScreen() {
@@ -371,14 +373,35 @@ export default function FriendProfileScreen() {
 
   return (
     <ScrollView style={[s.root, { backgroundColor: theme.background }]} contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-      <SafeHeader theme={theme} />
-
       {/* ── their banner, then who they are ──
           The banner is theirs, not ours: the same strip their profile card
-          shows. The avatar clears its bottom edge by the ring's width, so the
-          join touches the ring and never crosses their face. */}
+          shows.
+
+          It runs to the very top of the screen, behind the status bar, rather
+          than starting below a header. A back button on its own strip left a
+          band of page colour above the banner, so the thing meant to be the
+          top of the profile had something above it. The button now floats on
+          the banner instead, and the banner is taller by exactly the inset it
+          took over. */}
       <View style={[s.bannerWrap, { backgroundColor: theme.card }]}>
-        <ProfileBannerView banner={friendBanner} themeColor={UNSET_BANNER_COLOR} height={BANNER_H} />
+        <ProfileBannerView
+          banner={friendBanner}
+          themeColor={UNSET_BANNER_COLOR}
+          height={BANNER_H + HEADER_INSET}
+        />
+        <Pressable
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          style={({ pressed }) => [
+            s.backBtn,
+            s.backOnBanner,
+            { backgroundColor: theme.card, borderColor: theme.border },
+            pressed && { opacity: 0.75 },
+          ]}
+        >
+          <Feather name="chevron-left" size={22} color={theme.text} />
+        </Pressable>
       </View>
 
       <View style={s.identity}>
@@ -696,7 +719,9 @@ const s = StyleSheet.create({
   backBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
 
   /* identity */
+  // Pulled up out of the scroll's own top so the banner starts at pixel zero.
   bannerWrap: { marginHorizontal: -20, overflow: 'hidden' },
+  backOnBanner: { position: 'absolute', left: 20, top: HEADER_INSET - 8 },
   /**
    * Straddles the banner's bottom edge, the same as the profile card.
    *

@@ -230,7 +230,15 @@ export default function ProfileCardScreen() {
           />
           <View style={s.previewBody}>
             <View style={[s.previewAvatar, { borderColor: theme.card, backgroundColor: theme.card }]}>
-              <Avatar name={user.name} avatarUrl={user.avatar} size={56} />
+              {/* Honours the photo switch like the real card does. It did
+                  not, so the one preview meant to show what others see was
+                  the only place still showing a picture the student had just
+                  hidden. */}
+              <Avatar
+                name={user.name}
+                avatarUrl={isFieldVisible('photo', hidden) ? user.avatar : undefined}
+                size={56}
+              />
             </View>
             <Text style={[s.previewName, { color: theme.text }]} numberOfLines={1}>
               {user.name}
