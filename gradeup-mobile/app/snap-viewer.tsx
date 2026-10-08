@@ -33,6 +33,21 @@ import type { StudySnap, SnapReaction } from '@/src/types';
 
 const REACTION_EMOJIS = ['🔥', '💪', '📚', '❤️', '👍', '🎉'];
 
+/**
+ * The rest, behind the "+".
+ *
+ * Six on the bar is as many as fit without the buttons getting too small to
+ * hit. These are the ones people actually reach for when six is not enough —
+ * laughing, crying, shock, agreement — rather than a full keyboard, which
+ * would turn a one-tap reaction into a search.
+ */
+const MORE_REACTION_EMOJIS = [
+  '😂', '😭', '💀', '😮', '🥹', '🫡',
+  '🙌', '👏', '🤝', '🫶', '✨', '⭐',
+  '😎', '🤓', '🧠', '☕', '🍜', '😴',
+  '😤', '🙃', '🤯', '🥳', '💯', '🫠',
+];
+
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -96,6 +111,7 @@ export default function SnapViewer() {
   const [loading, setLoading] = useState(true);
   const [viewBlocked, setViewBlocked] = useState(false);
   const [showReactors, setShowReactors] = useState(false);
+  const [showMoreEmoji, setShowMoreEmoji] = useState(false);
 
   /**
    * Who liked a snap is shown to the person who posted it, and to nobody else.
@@ -414,6 +430,26 @@ export default function SnapViewer() {
               <Text style={s.reactionBtnEmoji}>{emoji}</Text>
             </Pressable>
           ))}
+          {canReact && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="More reactions"
+              style={({ pressed }) => [
+                s.reactionBtn,
+                // Marked when the current reaction is not on the bar, so a
+                // student who picked 😂 can see where it came from.
+                myReaction && !REACTION_EMOJIS.includes(myReaction) && s.reactionBtnActive,
+                pressed && { transform: [{ scale: 0.9 }] },
+              ]}
+              onPress={() => setShowMoreEmoji(true)}
+            >
+              {myReaction && !REACTION_EMOJIS.includes(myReaction) ? (
+                <Text style={s.reactionBtnEmoji}>{myReaction}</Text>
+              ) : (
+                <Feather name="plus" size={20} color="rgba(255,255,255,0.85)" />
+              )}
+            </Pressable>
+          )}
           {!canReact && (
             <Pressable
               style={s.lockHint}
@@ -430,6 +466,42 @@ export default function SnapViewer() {
           )}
         </View>
       </View>
+
+      {/* The rest of the emoji. */}
+      <Modal
+        visible={showMoreEmoji}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowMoreEmoji(false)}
+      >
+        <Pressable style={s.reactorsBackdrop} onPress={() => setShowMoreEmoji(false)}>
+          <Pressable style={[s.reactorsSheet, { backgroundColor: theme.card }]} onPress={() => {}}>
+            <View style={[s.reactorsHandle, { backgroundColor: theme.textSecondary + '40' }]} />
+            <Text style={[s.reactorsTitle, { color: theme.text }]}>React</Text>
+            <View style={s.emojiGrid}>
+              {MORE_REACTION_EMOJIS.map((emoji) => (
+                <Pressable
+                  key={emoji}
+                  accessibilityRole="button"
+                  accessibilityLabel={`React with ${emoji}`}
+                  onPress={() => {
+                    setShowMoreEmoji(false);
+                    void handleReact(emoji);
+                  }}
+                  style={({ pressed }) => [
+                    s.emojiCell,
+                    myReaction === emoji && { backgroundColor: theme.primary + '33' },
+                    pressed && { opacity: 0.6 },
+                  ]}
+                >
+                  <Text style={s.emojiCellText}>{emoji}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={{ height: 16 }} />
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* Who liked it — author only. */}
       <Modal
@@ -541,6 +613,15 @@ const s = StyleSheet.create({
   reactorsHandle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
   reactorsTitle: { fontSize: 17, fontWeight: '800', marginBottom: 10 },
   reactorsList: { flexGrow: 0 },
+  emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  emojiCell: {
+    width: '14.5%',
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+  },
+  emojiCellText: { fontSize: 26 },
   reactorRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 9 },
   reactorName: { flex: 1, fontSize: 15, fontWeight: '600' },
   reactorEmoji: { fontSize: 19 },

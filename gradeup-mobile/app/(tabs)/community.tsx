@@ -1600,7 +1600,34 @@ export default function CommunityMap() {
               </Text>
             </View>
           )}
+          </View>
 
+          {/* Friends list */}
+          <ScrollView
+            style={styles.peopleList}
+            onLayout={(e) => setFriendsListTop(e.nativeEvent.layout.y)}
+            contentContainerStyle={styles.peopleListContent}
+            showsVerticalScrollIndicator={false}
+            alwaysBounceVertical
+            overScrollMode="always"
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshingCommunity}
+                onRefresh={handleRefreshCommunity}
+                tintColor="transparent"
+                colors={['transparent']}
+                progressBackgroundColor={Platform.OS === 'android' ? 'transparent' : undefined}
+              />
+            }
+          >
+            {/* The snap strip scrolls with the friends rather than sitting
+                above them in a fixed band.
+                
+                As a fixed band it cost about 100pt of a sheet that is only
+                40% of the screen, whether or not the student was looking at
+                it — so the list the panel is named after started a third of
+                the way down its own panel. Inside the scroll it is there when
+                you are at the top and out of the way the moment you are not. */}
           {/* Snap row — the map-free way to see today's snaps. See snapRowFriends.
               It sits on theme.background, not theme.card: on a sheet painted one
               flat colour the strip and the friends list below it read as one
@@ -1736,26 +1763,7 @@ export default function CommunityMap() {
               )}
             </ScrollView>
           </View>
-          </View>
 
-          {/* Friends list */}
-          <ScrollView
-            style={styles.peopleList}
-            onLayout={(e) => setFriendsListTop(e.nativeEvent.layout.y)}
-            contentContainerStyle={styles.peopleListContent}
-            showsVerticalScrollIndicator={false}
-            alwaysBounceVertical
-            overScrollMode="always"
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshingCommunity}
-                onRefresh={handleRefreshCommunity}
-                tintColor="transparent"
-                colors={['transparent']}
-                progressBackgroundColor={Platform.OS === 'android' ? 'transparent' : undefined}
-              />
-            }
-          >
             {/* Me row — left: zoom to me on map; right: Set Status (opens popup; was unreachable inside one big Pressable) */}
             <View
               style={[
@@ -3424,6 +3432,11 @@ const styles = StyleSheet.create({
   snapRow: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
+    // Cancels peopleListContent's side padding. The strip lives inside the
+    // friends list now, and a band of snaps indented to match a text column
+    // reads as part of the list rather than as its own thing.
+    marginHorizontal: -16,
+    marginBottom: 8,
   },
   sheetHeaderBlock: {
     marginBottom: 4,
