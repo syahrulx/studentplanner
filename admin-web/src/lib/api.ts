@@ -2818,6 +2818,8 @@ export type AdminConfessionComment = {
   status: 'active' | 'flagged' | 'removed';
   suspect_terms: string[];
   created_at: string;
+  /** "OP" / "Anon 3" — the per-thread label the app shows as a nickname. */
+  alias: string | null;
 };
 
 /** Replies under one confession — fetched only when a post is opened. */
