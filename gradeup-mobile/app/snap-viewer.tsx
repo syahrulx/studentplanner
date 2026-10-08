@@ -29,9 +29,26 @@ import {
 } from '@/src/lib/snapApi';
 import { Avatar } from '@/components/Avatar';
 import { markSnapSeen } from '@/src/lib/snapSeen';
-import type { StudySnap, SnapReaction } from '@/src/types';
+import type { StudySnap, SnapReaction, SnapAudience } from '@/src/types';
 
 const REACTION_EMOJIS = ['🔥', '💪', '📚', '❤️', '👍', '🎉'];
+
+/**
+ * Who a snap went to, said plainly on the snap itself.
+ *
+ * The audience is chosen when posting and was then never shown again, so
+ * neither the author nor anyone looking could tell whether a photo had gone to
+ * a handful of friends or to a whole university. That is worth knowing before
+ * you react to it, and worth remembering before you post the next one.
+ *
+ * Same words and icons as the camera's own picker, so the label you chose is
+ * the label you see back.
+ */
+const AUDIENCE_LABEL: Record<SnapAudience, { label: string; icon: 'users' | 'map-pin' | 'home' }> = {
+  friends: { label: 'Friends', icon: 'users' },
+  campus: { label: 'My campus', icon: 'map-pin' },
+  university: { label: 'My uni', icon: 'home' },
+};
 
 /**
  * The rest, behind the "+".
@@ -352,9 +369,17 @@ export default function SnapViewer() {
         </Pressable>
         <View style={s.authorRow}>
           <Avatar name={snap.authorName} avatarUrl={snap.authorAvatar} size={36} />
-          <View>
+          <View style={{ flexShrink: 1 }}>
             <Text style={s.authorName}>{snap.authorName || 'Friend'}</Text>
-            <Text style={s.timestamp}>{timeAgo(snap.createdAt)}</Text>
+            <View style={s.metaRow}>
+              <Text style={s.timestamp}>{timeAgo(snap.createdAt)}</Text>
+              {AUDIENCE_LABEL[snap.audience] && (
+                <View style={s.audiencePill}>
+                  <Feather name={AUDIENCE_LABEL[snap.audience].icon} size={10} color="rgba(255,255,255,0.9)" />
+                  <Text style={s.audienceText}>{AUDIENCE_LABEL[snap.audience].label}</Text>
+                </View>
+              )}
+            </View>
           </View>
         </View>
         {snap.userId === user.id ? (
@@ -612,6 +637,19 @@ const s = StyleSheet.create({
   },
   reactorsHandle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
   reactorsTitle: { fontSize: 17, fontWeight: '800', marginBottom: 10 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 1 },
+  audiencePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 9,
+    // Its own backing, because it sits on a photograph that could be any
+    // colour at all.
+    backgroundColor: 'rgba(0,0,0,0.42)',
+  },
+  audienceText: { color: 'rgba(255,255,255,0.9)', fontSize: 10, fontWeight: '700' },
   reactorsList: { flexGrow: 0 },
   emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   emojiCell: {
