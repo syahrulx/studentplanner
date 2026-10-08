@@ -223,7 +223,7 @@ export default function FriendProfileScreen() {
   const friendCard = useProfileCard(friendId);
   // `undefined` plan on purpose — their subscription is not ours to read, so
   // we draw the banner they chose. See resolveProfileBanner.
-  const friendBanner = resolveProfileBanner(friendCard?.banner, undefined);
+  const friendBanner = resolveProfileBanner(friendCard?.banner, undefined, friendId);
   const [sentFeedback, setSentFeedback] = useState<string | null>(null);
   const [sharedTasks, setSharedTasks] = useState<SharedTask[]>([]);
 

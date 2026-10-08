@@ -168,6 +168,22 @@ export function resolveProfileBanner(
 ): ProfileBanner {
   const known = id ? PROFILE_BANNERS[id] : undefined;
   if (!known) return PROFILE_BANNERS.theme;
+
+  /**
+   * The owner banner is checked on every card, including other people's.
+   *
+   * Everything else falls through to "draw what they chose" when we do not
+   * know their plan, because we cannot read another student's subscription.
+   * That reasoning does not extend to this one: profiles.profile_banner is a
+   * plain text column and RLS lets a student write their own row, so anyone
+   * who guessed the id could have set it through the API and had every other
+   * phone draw it for them. Ownership is a user id, which we always have, so
+   * there is no reason to take it on trust.
+   */
+  if (known.tier === 'owner') {
+    return userId === OWNER_USER_ID ? known : PROFILE_BANNERS.theme;
+  }
+
   if (plan === undefined) return known;
   return canUseProfileBanner(known.id, plan, userId) ? known : PROFILE_BANNERS.theme;
 }
