@@ -22,6 +22,7 @@ import type { LocationVisibility } from '@/src/lib/communityApi';
 import { useTheme } from '@/hooks/useTheme';
 import { useProfileCard } from '@/hooks/useProfileCard';
 import { ProfileBannerView } from '@/components/ProfileBannerView';
+import { AttendanceStatsSection } from '@/components/AttendanceStatsSection';
 import { resolveProfileBanner } from '@/src/lib/profileBanners';
 import Feather from '@expo/vector-icons/Feather';
 import { useTranslations } from '@/src/i18n';
@@ -662,6 +663,8 @@ export default function Profile() {
           </View>
         </View>
       </View>
+
+      <AttendanceStatsSection sectionTitleStyle={styles.sectionTitle} cardStyle={styles.cardGroup} />
 
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>PROFILE CARD</Text>
       <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
