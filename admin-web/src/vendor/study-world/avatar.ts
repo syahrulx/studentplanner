@@ -7,7 +7,24 @@
  * tiers and look shape can stay the same.
  */
 
-export type ItemTier = "free" | "coins" | "premium";
+import { EXTRA_ITEMS, type ExtraItem, type FxKit, type Painter } from "./avatar-items";
+
+/**
+ * free: everyone. coins: bought once with coins. plus / pro: included with a
+ * Rencana Plus or Pro membership (Pro gets every Plus item too). "premium" is
+ * the old one-off tier; it's treated like plus.
+ */
+export type ItemTier = "free" | "coins" | "plus" | "pro" | "premium";
+export type Plan = "free" | "plus" | "pro";
+/** Is this tier open to this membership plan? (Coin items also need buying.) */
+export const tierOpen = (tier: ItemTier, plan: Plan) =>
+  tier === "free" || tier === "coins"
+    ? true
+    : tier === "pro"
+      ? plan === "pro"
+      : plan === "plus" || plan === "pro";
+export const isMemberTier = (tier: ItemTier) =>
+  tier === "plus" || tier === "pro" || tier === "premium";
 
 export type AvatarLook = {
   skin: string;
@@ -50,6 +67,8 @@ export type CatalogItem = {
   releaseAt?: string | null;
   featured?: boolean;
   order?: number;
+  /** Moving parts (redrawn every few frames). */
+  animated?: boolean;
 };
 
 /** Can be picked in the shop right now (not coming soon or hidden by an admin). */
@@ -71,31 +90,31 @@ export const CATALOG: Record<ItemCategory, CatalogItem[]> = {
     { id: "happy", name: "Happy", tier: "free" },
     { id: "sleepy", name: "Sleepy", tier: "free" },
     { id: "wink", name: "Wink", tier: "coins", price: 30 },
-    { id: "sparkle", name: "Star eyes", tier: "premium" },
-    { id: "cat", name: "Cat eyes", tier: "premium" },
+    { id: "sparkle", name: "Star eyes", tier: "plus" },
+    { id: "cat", name: "Cat eyes", tier: "plus" },
   ],
   top: [
     { id: "tee", name: "T-shirt", tier: "free" },
     { id: "hoodie", name: "Hoodie", tier: "free" },
     { id: "uniform", name: "Uniform", tier: "free" },
     { id: "varsity", name: "Varsity", tier: "coins", price: 80 },
-    { id: "kimono", name: "Kimono", tier: "premium" },
-    { id: "royal", name: "Royal coat", tier: "premium" },
-    { id: "neon", name: "Neon jacket", tier: "premium" },
-    { id: "astro", name: "Astronaut", tier: "premium" },
+    { id: "kimono", name: "Kimono", tier: "plus" },
+    { id: "royal", name: "Royal coat", tier: "pro" },
+    { id: "neon", name: "Neon jacket", tier: "plus" },
+    { id: "astro", name: "Astronaut", tier: "pro" },
   ],
   bottom: [
     { id: "pants", name: "Pants", tier: "free" },
     { id: "shorts", name: "Shorts", tier: "free" },
     { id: "skirt", name: "Skirt", tier: "free" },
     { id: "cargo", name: "Cargo", tier: "coins", price: 50 },
-    { id: "starry", name: "Starry", tier: "premium" },
+    { id: "starry", name: "Starry", tier: "plus" },
   ],
   shoes: [
     { id: "sneakers", name: "Sneakers", tier: "free" },
     { id: "boots", name: "Boots", tier: "free" },
     { id: "slippers", name: "Slippers", tier: "coins", price: 30 },
-    { id: "rocket", name: "Rocket boots", tier: "premium" },
+    { id: "rocket", name: "Rocket boots", tier: "pro" },
   ],
   head: [
     { id: "none", name: "None", tier: "free" },
@@ -104,48 +123,62 @@ export const CATALOG: Record<ItemCategory, CatalogItem[]> = {
     { id: "beanie", name: "Beanie", tier: "coins", price: 50 },
     { id: "phones", name: "Headphones", tier: "coins", price: 60 },
     { id: "catears", name: "Cat ears", tier: "coins", price: 80 },
-    { id: "crown", name: "Gold crown", tier: "premium" },
-    { id: "halo", name: "Halo", tier: "premium" },
-    { id: "wizard", name: "Wizard hat", tier: "premium" },
+    { id: "crown", name: "Gold crown", tier: "pro" },
+    { id: "halo", name: "Halo", tier: "plus" },
+    { id: "wizard", name: "Wizard hat", tier: "plus" },
   ],
   face: [
     { id: "none", name: "None", tier: "free" },
     { id: "glasses", name: "Glasses", tier: "free" },
     { id: "shades", name: "Shades", tier: "coins", price: 40 },
-    { id: "hearts", name: "Heart specs", tier: "premium" },
-    { id: "visor", name: "Cyber visor", tier: "premium" },
+    { id: "hearts", name: "Heart specs", tier: "plus" },
+    { id: "visor", name: "Cyber visor", tier: "pro" },
   ],
   back: [
     { id: "none", name: "None", tier: "free" },
     { id: "backpack", name: "Backpack", tier: "free" },
     { id: "guitar", name: "Guitar", tier: "coins", price: 90 },
-    { id: "cape", name: "Hero cape", tier: "premium" },
-    { id: "wings", name: "Angel wings", tier: "premium" },
-    { id: "bat", name: "Bat wings", tier: "premium" },
+    { id: "cape", name: "Hero cape", tier: "plus" },
+    { id: "wings", name: "Angel wings", tier: "pro" },
+    { id: "bat", name: "Bat wings", tier: "plus" },
   ],
   pet: [
     { id: "none", name: "None", tier: "free" },
     { id: "chick", name: "Chick", tier: "free" },
     { id: "cat", name: "Cat", tier: "coins", price: 150 },
-    { id: "dragon", name: "Baby dragon", tier: "premium" },
-    { id: "ghost", name: "Ghosty", tier: "premium" },
+    { id: "dragon", name: "Baby dragon", tier: "pro" },
+    { id: "ghost", name: "Ghosty", tier: "plus" },
   ],
   effect: [
     { id: "none", name: "None", tier: "free" },
-    { id: "sparkle", name: "Gold sparkle", tier: "premium" },
-    { id: "hearts", name: "Hearts", tier: "premium" },
-    { id: "sakura", name: "Sakura", tier: "premium" },
-    { id: "snow", name: "Snowfall", tier: "premium" },
+    { id: "sparkle", name: "Gold sparkle", tier: "plus" },
+    { id: "hearts", name: "Hearts", tier: "plus" },
+    { id: "sakura", name: "Sakura", tier: "plus" },
+    { id: "snow", name: "Snowfall", tier: "pro" },
   ],
 };
+
+// New items from avatar-items/ (drawn there, listed here so the shop sees them).
+(Object.keys(CATALOG) as ItemCategory[]).forEach((category) => {
+  EXTRA_ITEMS[category]?.items.forEach((item) => {
+    if (CATALOG[category].some((existing) => existing.id === item.id)) return;
+    CATALOG[category].push({
+      ...item,
+      animated: EXTRA_ITEMS[category].draw[item.id]?.animated,
+    });
+  });
+});
+/** The plug-in drawing for an item, if it's one of the new ones. */
+const extra = (category: ItemCategory, id: string): ExtraItem | undefined =>
+  EXTRA_ITEMS[category]?.draw[id];
 
 export const COLORS = {
   skin: ["#fbe0c8", "#f1c8a4", "#dda57e", "#b97a55", "#8d5a3b", "#5e3a26"],
   hair: ["#2a1b18", "#5a3824", "#a8642f", "#e0b04a", "#e8e0d0", "#c45a8a", "#3d4f8f", "#3fae8f"],
   premiumHair: [
-    { id: "galaxy", name: "Galaxy dye" },
-    { id: "rainbow", name: "Rainbow dye" },
-  ] as { id: string; name: string; status?: CatalogItem["status"] }[],
+    { id: "galaxy", name: "Galaxy dye", tier: "plus" },
+    { id: "rainbow", name: "Rainbow dye", tier: "pro" },
+  ] as { id: string; name: string; tier: ItemTier; status?: CatalogItem["status"] }[],
   eyes: ["#3b2a24", "#2f5fa8", "#3a8a4a", "#7a4bb0", "#8a5a2a"],
   top: ["#5b7cfa", "#3fae8f", "#e2574c", "#f2c14e", "#a77de0", "#f08aa8", "#f4f1ea", "#2f3a4a"],
   bottom: ["#2f3a4a", "#3d5a80", "#5a4636", "#26262b", "#8a9aa8", "#c0504d"],
@@ -277,7 +310,7 @@ export function premiumItemsWorn(look: AvatarLook): string[] {
   const names: string[] = [];
   (Object.keys(CATALOG) as ItemCategory[]).forEach((category) => {
     const item = itemOf(category, look[category]);
-    if (item?.tier === "premium") names.push(item.name);
+    if (item && isMemberTier(item.tier)) names.push(item.name);
   });
   const dye = COLORS.premiumHair.find((d) => d.id === look.hairColor);
   if (dye) names.push(dye.name);
@@ -285,6 +318,42 @@ export function premiumItemsWorn(look: AvatarLook): string[] {
 }
 
 export const isPremiumLook = (look: AvatarLook) => premiumItemsWorn(look).length > 0;
+
+/** Who's dressing: their membership plan, what they've bought, and whether they're an admin. */
+export type Wardrobe = { plan: Plan; owned: Set<string>; admin?: boolean };
+/** Can this person wear this item in the world (not just try it on)? */
+export function canWear(category: ItemCategory, id: string, w: Wardrobe): boolean {
+  if (w.admin) return true;
+  const item = itemOf(category, id);
+  if (!item) return isAdminItem(category, id) ? false : true;
+  if (item.tier === "free") return true;
+  if (item.tier === "coins") return w.owned.has(`${category}:${id}`);
+  return tierOpen(item.tier, w.plan) || w.owned.has(`${category}:${id}`);
+}
+export function canWearDye(id: string, w: Wardrobe): boolean {
+  const dye = COLORS.premiumHair.find((d) => d.id === id);
+  if (!dye || w.admin) return true;
+  return tierOpen(dye.tier, w.plan) || w.owned.has(`hair_dye:${id}`);
+}
+/** Items being tried on that this person can't wear in the world yet. */
+export function lockedItemsWorn(look: AvatarLook, w: Wardrobe): CatalogItem[] {
+  const locked = (Object.keys(CATALOG) as ItemCategory[])
+    .filter((cat) => !canWear(cat, look[cat], w))
+    .map((cat) => itemOf(cat, look[cat]))
+    .filter((item): item is CatalogItem => Boolean(item));
+  const dye = COLORS.premiumHair.find((d) => d.id === look.hairColor);
+  if (dye && !canWearDye(dye.id, w)) locked.push({ id: dye.id, name: dye.name, tier: dye.tier });
+  return locked;
+}
+/** The look with anything not wearable swapped for the default. */
+export function wearableLook(look: AvatarLook, w: Wardrobe): AvatarLook {
+  const next = { ...look };
+  (Object.keys(CATALOG) as ItemCategory[]).forEach((cat) => {
+    if (!canWear(cat, next[cat], w) && !isAdminItem(cat, next[cat])) next[cat] = DEFAULT_LOOK[cat];
+  });
+  if (!canWearDye(next.hairColor, w)) next.hairColor = DEFAULT_LOOK.hairColor;
+  return next;
+}
 
 /** Looks with moving parts need redrawing every few frames; others are cached. */
 export const isAnimatedLook = (look: AvatarLook) =>
@@ -295,13 +364,14 @@ export const isAnimatedLook = (look: AvatarLook) =>
   look.face === "visor" ||
   look.eyes === "sparkle" ||
   ["cape", "wings", "bat"].includes(look.back) ||
+  (Object.keys(CATALOG) as ItemCategory[]).some((cat) => extra(cat, look[cat])?.animated) ||
   isAdminLook(look);
 
 export function randomLook(allowPremium: boolean, random: () => number = Math.random): AvatarLook {
   const pick = <T>(list: T[]) => list[Math.floor(random() * list.length)];
   const fromCategory = (category: ItemCategory, noneWeight = 0) => {
     const pool = CATALOG[category].filter(
-      (item) => isOnSale(item) && (allowPremium || item.tier !== "premium"),
+      (item) => isOnSale(item) && (allowPremium || !isMemberTier(item.tier)),
     );
     if (noneWeight && pool.some((item) => item.id === "none") && random() < noneWeight)
       return "none";
@@ -399,6 +469,80 @@ export function buildAvatar(
   const sc = L.shoesColor;
   const lUp = frame === 0 ? 1 : 0;
   const rUp = frame === 2 ? 1 : 0;
+
+  const legs = (c: Fill, cS: Fill) => {
+    R(8, 24, 8, 2, c);
+    R(8, 26 - lUp, 3, 3, c);
+    R(13, 26 - rUp, 3, 3, c);
+    R(15, 24, 1, 2, cS);
+    R(10, 26 - lUp, 1, 3, cS);
+    R(15, 26 - rUp, 1, 3, cS);
+  };
+  const torso = (c: string) => {
+    R(7, 16, 10, 8, c);
+    R(16, 16, 1, 8, shade(c, -0.22));
+    R(7, 23, 10, 1, shade(c, -0.22));
+  };
+  const armsShort = (c: string) => {
+    R(5, 16, 2, 4, c);
+    R(17, 16, 2, 4, c);
+    R(5, 20, 2, 3, sk);
+    R(17, 20, 2, 3, sk);
+    R(5, 23, 2, 1, skS);
+    R(17, 23, 2, 1, skS);
+  };
+  const armsLong = (c: string, hand?: string) => {
+    R(5, 16, 2, 7, c);
+    R(17, 16, 2, 7, c);
+    R(18, 16, 1, 7, shade(c, -0.2));
+    R(5, 23, 2, 1, hand ?? sk);
+    R(17, 23, 2, 1, hand ?? sk);
+  };
+  const cap = () => {
+    R(7, 1, 10, 1, hc);
+    R(6, 2, 12, 1, hc);
+    R(5, 3, 14, 3, hc);
+    R(8, 2, 3, 1, hH);
+    R(7, 3, 2, 1, hH);
+    R(18, 4, 1, 3, hS);
+  };
+  const gold = "#f2c14e";
+  const P: Painter = {
+    R,
+    px,
+    back,
+    fx,
+    t,
+    frame,
+    lUp,
+    rUp,
+    sk,
+    skS,
+    hc,
+    hS,
+    hH,
+    tc,
+    tS,
+    bc,
+    bS,
+    sc,
+    scD: shade(sc, -0.3),
+    scL: shade(sc, 0.3),
+    ec: L.eyeColor,
+    gold,
+    ink: "#2a1b18",
+    shade,
+    hsl,
+    torso,
+    armsShort,
+    armsLong,
+    legs,
+    cap,
+  };
+  const xHair = extra("hair", L.hair);
+  const xBack = extra("back", L.back);
+  const xHead = extra("head", L.head);
+  const hairHidden = Boolean(xHead?.hidesHair);
 
   const backItems = () => {
     if (L.back === "cape") {
@@ -558,17 +702,13 @@ export function buildAvatar(
   };
   if (!back) {
     backItems();
-    backHair();
+    xBack?.behind?.(P);
+    if (!hairHidden) {
+      backHair();
+      xHair?.behind?.(P);
+    }
   }
 
-  const legs = (c: Fill, cS: Fill) => {
-    R(8, 24, 8, 2, c);
-    R(8, 26 - lUp, 3, 3, c);
-    R(13, 26 - rUp, 3, 3, c);
-    R(15, 24, 1, 2, cS);
-    R(10, 26 - lUp, 1, 3, cS);
-    R(15, 26 - rUp, 1, 3, cS);
-  };
   if (L.bottom === "pants") legs(bc, bS);
   if (L.bottom === "cargo") {
     legs(bc, bS);
@@ -589,6 +729,7 @@ export function buildAvatar(
     R(10, 27 - lUp, 1, 2, skS);
     R(15, 27 - rUp, 1, 2, skS);
   }
+  extra("bottom", L.bottom)?.draw?.(P);
   if (L.bottom === "skirt") {
     R(7, 23, 10, 2, bc);
     R(6, 25, 12, 2, bc);
@@ -623,31 +764,12 @@ export function buildAvatar(
       R(x, y + 1, 4, 1, "#8a94a0");
     },
   };
-  const shoe = shoes[L.shoes] ?? shoes.sneakers;
+  const xShoe = extra("shoes", L.shoes)?.shoe;
+  const shoe =
+    shoes[L.shoes] ?? (xShoe ? (x: number, y: number) => xShoe(P, x, y) : shoes.sneakers);
   shoe(7, 29 - lUp);
   shoe(13, 29 - rUp);
 
-  const torso = (c: string) => {
-    R(7, 16, 10, 8, c);
-    R(16, 16, 1, 8, shade(c, -0.22));
-    R(7, 23, 10, 1, shade(c, -0.22));
-  };
-  const armsShort = (c: string) => {
-    R(5, 16, 2, 4, c);
-    R(17, 16, 2, 4, c);
-    R(5, 20, 2, 3, sk);
-    R(17, 20, 2, 3, sk);
-    R(5, 23, 2, 1, skS);
-    R(17, 23, 2, 1, skS);
-  };
-  const armsLong = (c: string, hand?: string) => {
-    R(5, 16, 2, 7, c);
-    R(17, 16, 2, 7, c);
-    R(18, 16, 1, 7, shade(c, -0.2));
-    R(5, 23, 2, 1, hand ?? sk);
-    R(17, 23, 2, 1, hand ?? sk);
-  };
-  const gold = "#f2c14e";
   switch (L.top) {
     case "tee":
       torso(tc);
@@ -842,9 +964,14 @@ export function buildAvatar(
         R(13, 17, 2, 4, "#8a94a0");
       }
       break;
+    default:
+      extra("top", L.top)?.draw?.(P);
   }
-  if (back) backItems();
-  else {
+  if (back) {
+    backItems();
+    xBack?.behind?.(P);
+  } else {
+    xBack?.front?.(P);
     if (L.back === "backpack") {
       R(8, 16, 1, 7, "#9a5228");
       R(15, 16, 1, 7, "#9a5228");
@@ -883,7 +1010,8 @@ export function buildAvatar(
     };
     const a = 7 + fx;
     const b = 15 + fx;
-    if (blink && L.eyes !== "happy") {
+    const xEyes = extra("eyes", L.eyes);
+    if (blink && L.eyes !== "happy" && !xEyes?.noBlink) {
       R(a, 10, 2, 1, d);
       R(b, 10, 2, 1, d);
     } else if (L.eyes === "round") {
@@ -907,6 +1035,8 @@ export function buildAvatar(
         px(x + 1, 11, shade(ec, 0.4));
         if (Math.sin(t / 200 + x) > 0.3) px(x + 3, 8, "#fff6c8");
       });
+    } else if (xEyes?.draw) {
+      xEyes.draw(P);
     } else if (L.eyes === "cat") {
       [a, b].forEach((x) => {
         R(x - 1, 9, 4, 3, gold);
@@ -921,14 +1051,6 @@ export function buildAvatar(
     R(11 + fx, 13, 2, 1, "#8a3b33");
   }
 
-  const cap = () => {
-    R(7, 1, 10, 1, hc);
-    R(6, 2, 12, 1, hc);
-    R(5, 3, 14, 3, hc);
-    R(8, 2, 3, 1, hH);
-    R(7, 3, 2, 1, hH);
-    R(18, 4, 1, 3, hS);
-  };
   const hs = L.hair;
   const hairTops = () => {
     if (hs === "spiky") {
@@ -957,7 +1079,9 @@ export function buildAvatar(
       R(8, 0, 8, 1, "#e24b4a");
     }
   };
-  if (back) {
+  if (hairHidden) {
+    // A head item (e.g. a hijab) covers all the hair.
+  } else if (back) {
     if (hs === "mohawk") {
       R(5, 3, 14, 11, hS);
       hairTops();
@@ -970,7 +1094,10 @@ export function buildAvatar(
       if (hs !== "bun") R(11, 4, 1, 8, hS);
     }
     backHair();
+    xHair?.behind?.(P);
+    xHair?.draw?.(P);
   } else {
+    xHair?.draw?.(P);
     if (hs === "short" || hs === "bun" || hs === "twintails") {
       cap();
       R(5, 6, 4, 2, hc);
@@ -1018,7 +1145,8 @@ export function buildAvatar(
       R(17, 6, 2, 3, hS);
     }
     hairTops();
-    if (fx) R(5, 4, 3, 9, hc);
+    // Side-view patch for the built-in styles (new styles draw their own side).
+    if (fx && !xHair) R(5, 4, 3, 9, hc);
   }
 
   const H = L.head;
@@ -1151,6 +1279,8 @@ export function buildAvatar(
     px(13, -2, "#fff6c8");
   }
 
+  xHead?.draw?.(P);
+
   const F = L.face;
   if (!back) {
     if (F === "glasses") {
@@ -1206,6 +1336,7 @@ export function buildAvatar(
       R(5, 8, 14, 1, "#0f6f86");
       R(5, 9 + (Math.floor(t / 140) % 3), 14, 1, "#c8fbff");
     }
+    extra("face", F)?.draw?.(P);
   } else if (F === "visor") R(5, 9, 14, 2, "#0f6f86");
   else if (F === "cyber") R(5, 9, 14, 1, "#20232b");
 
@@ -1244,6 +1375,7 @@ export function buildPet(type: string, t: number): Grid {
       for (let i = 0; i < w; i++)
         if (y + j >= 0 && y + j < 14 && x + i >= 0 && x + i < 14) grid[y + j][x + i] = c;
   };
+  extra("pet", type)?.pet?.(Q, t);
   if (type === "chick") {
     Q(3, 6, 7, 5, "#ffd84d");
     Q(4, 3, 5, 4, "#ffd84d");
@@ -1552,6 +1684,55 @@ function adminAura(
   }
 }
 
+const WORN: ItemCategory[] = [
+  "hair",
+  "eyes",
+  "top",
+  "bottom",
+  "shoes",
+  "head",
+  "face",
+  "back",
+  "effect",
+];
+/** Runs the screen effects of every new item being worn. */
+function extraFx(
+  c: CanvasRenderingContext2D,
+  look: AvatarLook,
+  ox: number,
+  oy: number,
+  s: number,
+  t: number,
+  front: boolean,
+  seated: boolean,
+) {
+  // Hair effects (flames, sparkles) don't show when a hijab covers the hair.
+  const hairHidden = Boolean(extra("head", look.head)?.hidesHair);
+  const items = WORN.filter((cat) => !(cat === "hair" && hairHidden))
+    .map((cat) => extra(cat, look[cat]))
+    .filter((item): item is ExtraItem => Boolean(front ? item?.fxFront : item?.fxBehind));
+  if (!items.length) return;
+  const k: FxKit = {
+    X: (gx) => ox + (gx + OX) * s,
+    Y: (gy) => oy + (gy + OY) * s,
+    s,
+    t,
+    seated,
+    star: (x, y, size, col, a) => star(c, x, y, size, col, a),
+    heart: (x, y, size, col, a) => heart(c, x, y, size, col, a),
+    glow: (x, y, r, rgb, a) => glow(c, x, y, r, rgb, a),
+    orbit: (n, speed, draw, cx, cy, rx, ry) => orbit(n, t, speed, front, draw, cx, cy, rx, ry),
+    particles: (n, ms, draw) => {
+      for (let i = 0; i < n; i++) draw(i, (t / ms + i / n) % 1);
+    },
+  };
+  items.forEach((item) => {
+    c.save();
+    (front ? item.fxFront : item.fxBehind)?.(c, k);
+    c.restore();
+  });
+}
+
 /** Glows drawn behind the avatar. (ox, oy) is the sprite's top-left on screen. */
 export function drawEffectsBehind(
   c: CanvasRenderingContext2D,
@@ -1570,6 +1751,7 @@ export function drawEffectsBehind(
     c.globalAlpha = 1;
   }
   adminAura(c, look, ox, oy, s, t, false);
+  extraFx(c, look, ox, oy, s, t, false, false);
   if (look.effect === "sparkle") {
     c.globalAlpha = 0.2;
     c.fillStyle = "#f2c14e";
@@ -1645,6 +1827,7 @@ export function drawEffectsFront(
       c.fillRect(x, y, s, s);
     });
   adminAura(c, look, ox, oy, s, t, true);
+  extraFx(c, look, ox, oy, s, t, true, seated);
   if (look.effect === "snow")
     particles(9, (i, ph) => {
       c.fillStyle = "#ffffff";

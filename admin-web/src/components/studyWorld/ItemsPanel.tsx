@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSafeActionDialog } from '../SafeActionDialog';
 import {
   CATEGORY_LABEL,
+  TIER_LABEL,
   ITEM_CATEGORIES,
   deleteWorldItem,
   hasDrawing,
@@ -32,10 +33,19 @@ const EMPTY: WorldItemInput = {
   sort_order: 100,
 };
 
+const TIER_BADGE: Record<WorldItem['tier'], string> = {
+  free: 'bg-white/80 text-slate-600 dark:bg-slate-700 dark:text-slate-200',
+  coins: 'bg-amber-400 text-amber-950',
+  plus: 'bg-sky-500 text-white',
+  premium: 'bg-sky-500 text-white',
+  pro: 'bg-violet-600 text-white',
+};
+
 function priceLabel(item: WorldItem): string {
   if (item.tier === 'free') return 'Free';
-  if (item.tier === 'premium') return item.price_myr != null ? `Premium · RM ${Number(item.price_myr).toFixed(2)}` : 'Premium';
-  return `${item.price_coins ?? 0} coins`;
+  if (item.tier === 'coins') return `${item.price_coins ?? 0} coins`;
+  if (item.tier === 'pro') return 'Pro';
+  return 'Plus';
 }
 
 /** Every purchasable thing in Study World, grouped by category. */
@@ -180,7 +190,7 @@ export function ItemsPanel() {
                     className="relative grid place-items-center bg-gradient-to-b from-sky-50 to-emerald-50 py-3 dark:from-slate-800 dark:to-slate-900" title="Edit">
                     <ItemPicture category={item.category} itemKey={item.item_key} emoji={item.emoji} drawn={drawn} size={120} />
                     {item.featured ? <span className="absolute left-2 top-2 rounded-full bg-violet-600 px-2 py-0.5 text-[9px] font-black uppercase text-white">Featured</span> : null}
-                    <span className={`absolute right-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-black ${item.tier === 'premium' ? 'bg-violet-500 text-white' : item.tier === 'coins' ? 'bg-amber-400 text-amber-950' : 'bg-white/80 text-slate-600 dark:bg-slate-700 dark:text-slate-200'}`}>
+                    <span className={`absolute right-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-black ${TIER_BADGE[item.tier]}`}>
                       {priceLabel(item)}
                     </span>
                   </button>
@@ -275,7 +285,7 @@ function ItemEditor({ id, initial, onClose, onSaved }: { id: string | null; init
         ) : null}
         <div className="min-w-0 space-y-1">
           <div className="text-lg font-black text-slate-950 dark:text-white">{v.emoji && isCafe ? `${v.emoji} ` : ''}{v.name || 'New item'}</div>
-          <div className="text-xs font-semibold text-slate-500">{CATEGORY_LABEL[v.category]} · {v.tier === 'free' ? 'Free' : v.tier === 'coins' ? `${v.price_coins ?? 0} coins` : 'Premium'}</div>
+          <div className="text-xs font-semibold text-slate-500">{CATEGORY_LABEL[v.category]} · {v.tier === 'coins' ? `${v.price_coins ?? 0} coins` : TIER_LABEL[v.tier]}</div>
           <div className="text-[11px] font-semibold text-slate-400">{isCafe ? 'How it shows on the website café menu.' : 'Close-up, and worn by the default avatar — drawn by the website’s own code.'}</div>
         </div>
       </div>
@@ -304,21 +314,23 @@ function ItemEditor({ id, initial, onClose, onSaved }: { id: string | null; init
       <div className="grid grid-cols-3 gap-3">
         <Field label="Tier">
           <select value={v.tier} onChange={(e) => set('tier', e.target.value as WorldItemInput['tier'])} className={FIELD}>
-            <option value="free">Free</option>
-            <option value="coins">Coins</option>
-            <option value="premium">Premium</option>
+            <option value="free">Free (everyone)</option>
+            <option value="coins">Coins (buy in the shop)</option>
+            <option value="plus">Plus members (free with Plus or Pro)</option>
+            <option value="pro">Pro members only</option>
+            {v.tier === 'premium' ? <option value="premium">{TIER_LABEL.premium}</option> : null}
           </select>
         </Field>
         <Field label="Coin price">
           <input type="number" min={0} disabled={v.tier !== 'coins'} value={v.price_coins ?? ''} onChange={(e) => set('price_coins', e.target.value === '' ? null : Math.max(0, Math.floor(Number(e.target.value))))} className={FIELD} />
         </Field>
-        <Field label="RM price (demo)" hint="Not charged. Syahrul sets real prices.">
-          <input type="number" min={0} step="0.10" disabled={v.tier !== 'premium'} value={v.price_myr ?? ''} onChange={(e) => set('price_myr', e.target.value === '' ? null : Number(e.target.value))} className={FIELD} />
+        <Field label="RM price (demo)" hint="Not used yet. Plus/Pro items come with the membership.">
+          <input type="number" min={0} step="0.10" disabled value={v.price_myr ?? ''} className={FIELD} />
         </Field>
       </div>
       {id && !isCafe && initial.tier === 'free' && v.tier !== 'free' ? (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-100">
-          This item is free today. Once it is {v.tier === 'coins' ? 'a coins item' : 'premium'}, the world only lets people wear it if they own it, so players already wearing it for free will lose it from their look. Their owned items and coins are not touched.
+          This item is free today. Once it is {v.tier === 'coins' ? 'a coins item, only players who buy it can wear it' : v.tier === 'pro' ? 'Pro-only, only Pro members can wear it' : 'a Plus item, only Plus and Pro members can wear it'}. Players already wearing it without that will lose it from their look. Their owned items and coins are not touched.
         </div>
       ) : null}
       <div className="grid grid-cols-3 gap-3">

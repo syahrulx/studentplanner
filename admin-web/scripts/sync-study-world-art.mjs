@@ -6,7 +6,7 @@
 //
 // Only plain code is copied (no React, no Supabase, no user data).
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 
 const web = process.argv[2];
 if (!web || !existsSync(join(web, 'src/lib/study-world/avatar.ts'))) {
@@ -21,6 +21,13 @@ mkdirSync(join(to, 'maps'), { recursive: true });
 // admin's word preview identical to what players get; fish-art.ts draws fish.
 for (const file of ['avatar.ts', 'chat-filter.ts', 'fish-art.ts']) {
   if (existsSync(join(from, file))) cpSync(join(from, file), join(to, file));
+}
+// avatar.ts draws the newer items from this folder (plain code too).
+if (existsSync(join(from, 'avatar-items'))) {
+  cpSync(join(from, 'avatar-items'), join(to, 'avatar-items'), {
+    recursive: true,
+    filter: (src) => !basename(src).includes('.') || src.endsWith('.ts'),
+  });
 }
 for (const file of readdirSync(join(from, 'maps'))) {
   if (file.endsWith('.ts')) cpSync(join(from, 'maps', file), join(to, 'maps', file));

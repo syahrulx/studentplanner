@@ -13,7 +13,20 @@ import { isMapId } from '../vendor/study-world/maps';
  */
 
 export type ItemStatus = 'available' | 'coming_soon' | 'hidden';
-export type ItemTier = 'free' | 'coins' | 'premium';
+/**
+ * free = everyone; coins = bought with coins; plus / pro = free with a Rencana
+ * Plus / Pro membership (Pro also gets every Plus item); premium = old value,
+ * treated like plus by the website.
+ */
+export type ItemTier = 'free' | 'coins' | 'plus' | 'pro' | 'premium';
+
+export const TIER_LABEL: Record<ItemTier, string> = {
+  free: 'Free',
+  coins: 'Coins',
+  plus: 'Plus members',
+  pro: 'Pro members',
+  premium: 'Premium (old, same as Plus)',
+};
 
 export const AVATAR_CATEGORIES = ['hair', 'eyes', 'top', 'bottom', 'shoes', 'head', 'face', 'back', 'pet', 'effect'] as const;
 export const ITEM_CATEGORIES = [...AVATAR_CATEGORIES, 'hair_dye', 'drink', 'snack'] as const;
