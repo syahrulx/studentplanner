@@ -55,6 +55,9 @@ export function createLibraryMap(): WorldMap {
     seat(x + 1, y + 1, "lib");
   });
   thing("bin", 30, 22);
+  // Weekly leaderboards (press E to open).
+  thing("ranks", 20, 20, 3, 2);
+  label("LEADERBOARD", 21.5 * TILE, 19 * TILE + 6, "small");
   thing("pot", 1, 22);
   thing("pot", 32, 22);
 

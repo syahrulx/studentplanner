@@ -108,7 +108,7 @@ const STYLES: Record<FishArtKey, Style> = {
     body: "#f2c14e",
     belly: "#ffe9a8",
     fin: "#e24b4a",
-    glow: "242,193,78",
+    glow: "255,110,40",
     pattern: (x, y, t) =>
       (x + y) % 2 === 0 ? (Math.sin(t / 260 + x * 0.6) > 0.6 ? "#fff6c8" : "#d9a22a") : null,
   },
@@ -179,3 +179,53 @@ export function drawFishGlow(
 }
 
 export const hasGlow = (key: FishArtKey) => Boolean(STYLES[key].glow);
+
+/**
+ * Ultra rare aura: a pulsing outline glow that follows the fish's shape. Call
+ * it, draw the fish (twice for a stronger glow), then call `c.restore()`.
+ * Returns false (and changes nothing) for fish without a glow.
+ */
+export function beginFishAura(
+  c: CanvasRenderingContext2D,
+  key: FishArtKey,
+  t: number,
+  blur: number,
+) {
+  const rgb = STYLES[key].glow;
+  if (!rgb) return false;
+  c.save();
+  c.shadowColor = `rgba(${rgb},0.95)`;
+  c.shadowBlur = blur * (0.85 + Math.sin(t / 280) * 0.25);
+  return true;
+}
+
+/** Little twinkling stars around an ultra rare fish. `px` is one art pixel on screen. */
+export function drawFishSparkles(
+  c: CanvasRenderingContext2D,
+  key: FishArtKey,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  t: number,
+  px: number,
+) {
+  const rgb = STYLES[key].glow;
+  if (!rgb) return;
+  const p = Math.max(1, Math.round(px));
+  for (let i = 0; i < 5; i++) {
+    const phase = (t / 900 + i / 5) % 1;
+    const a = i * 2.4 + t / 2600;
+    const x = Math.round(cx + Math.cos(a) * rx * (0.75 + 0.25 * Math.sin(i * 3.1)));
+    const y = Math.round(cy + Math.sin(a) * ry - phase * ry * 0.4);
+    const alpha = Math.sin(phase * Math.PI);
+    if (alpha < 0.05) continue;
+    c.globalAlpha = alpha;
+    c.fillStyle = `rgb(${rgb})`;
+    c.fillRect(x - p, y, p * 3, p);
+    c.fillRect(x, y - p, p, p * 3);
+    c.fillStyle = "#fff";
+    c.fillRect(x, y, p, p);
+  }
+  c.globalAlpha = 1;
+}

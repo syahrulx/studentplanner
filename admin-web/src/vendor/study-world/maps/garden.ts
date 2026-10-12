@@ -22,7 +22,7 @@ export function createGardenMap(): WorldMap {
   // Crop plots: water them to grow, harvest when ripe.
   [4, 6, 8].forEach((y) => k.cropRow(3, 16, y));
   [20, 22, 24].forEach((y) => k.cropRow(27, 40, y));
-  label("WATER PLANTS · HARVEST FOR COINS", 9.5 * TILE + 8, 3 * TILE + 8, "small");
+  label("WATER PLANTS · HARVEST", 9.5 * TILE + 8, 3 * TILE + 8, "small");
   k.flowerBed(3, 11, 15, 11);
   k.flowerBed(33, 18, 40, 18);
   k.flowerBed(3, 18, 4, 19);
@@ -51,6 +51,9 @@ export function createGardenMap(): WorldMap {
   thing("notice", 23, 2, 3, 2);
   thing("bin", 17, 24);
   thing("bin", 19, 11);
+  // Weekly leaderboards (press E to open).
+  thing("ranks", 30, 12, 3, 2);
+  label("LEADERBOARD", 31.5 * TILE, 11 * TILE + 6, "small");
   k.bush([2, 9], [17, 3], [26, 3], [19, 26], [41, 12], [26, 26]);
   k.tree([24, 8], [19, 21], [39, 27], [2, 16]);
 

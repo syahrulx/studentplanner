@@ -33,7 +33,9 @@ export type ThingType =
   | "fountain"
   | "vending"
   | "returns"
-  | "bin";
+  | "bin"
+  | "market"
+  | "ranks";
 export type Crop = {
   x: number;
   y: number;
@@ -951,6 +953,178 @@ export function createKit(W: number, H: number, seed: number) {
       P(bx, "#4fa56c", X + 2, Y, 12, 1);
       P(bx, "#e8f5ec", X + 6, Y + 6, 4, 4);
       P(bx, "#2f6b45", X + 7, Y + 7, 2, 2);
+    }
+    if (o.t === "market") {
+      // Seaside fish shop: blue roof with a fish sign, an anchor and a hanging
+      // scale, fish on ice, a blue counter with a lifebuoy. Every fish is drawn
+      // side-on with a wide body and forked tail so it clearly reads as a fish.
+      // Roof and sign go on the top layer so people walking behind pass under.
+      const cx = X + WW / 2;
+      /** Pixel art from rows of characters; "." is see-through. */
+      const sprite = (
+        c: CanvasRenderingContext2D,
+        sx: number,
+        sy: number,
+        rows: string[],
+        pal: Record<string, string>,
+      ) =>
+        rows.forEach((row, ry) =>
+          [...row].forEach((ch, rx) => {
+            if (pal[ch]) P(c, pal[ch], sx + rx, sy + ry);
+          }),
+        );
+      P(bx, "rgba(0,0,0,.22)", X + 1, Y + 15, WW - 2, 2);
+      // Back wall with a fishing net in the middle.
+      P(bx, "#7a4e2c", X + 2, Y - 17, WW - 4, 17);
+      for (let i = 0; i < WW - 4; i += 6) P(bx, "#68411f", X + 2 + i, Y - 17, 1, 17);
+      for (let i = 13; i < WW - 13; i += 3) P(bx, "#cdbb8c", X + i, Y - 15, 1, 9);
+      for (let j = 0; j < 9; j += 3) P(bx, "#cdbb8c", X + 13, Y - 15 + j, WW - 26, 1);
+      P(bx, "#e8d9a8", X + 12, Y - 16, WW - 24, 1);
+      // Anchor (left) and a hanging fish scale (right).
+      sprite(
+        bx,
+        X + 4,
+        Y - 16,
+        [
+          "...a...",
+          "..a.a..",
+          "...a...",
+          ".aaaaa.",
+          "...a...",
+          "...a...",
+          "a..a..a",
+          ".a.a.a.",
+          "..aaa..",
+        ],
+        { a: "#2a3550" },
+      );
+      sprite(
+        bx,
+        X + WW - 11,
+        Y - 17,
+        [
+          "...s...",
+          "..fff..",
+          ".fwwwf.",
+          ".fwrwf.",
+          ".fwwwf.",
+          "..fff..",
+          "...s...",
+          "s..s..s",
+          ".ppppp.",
+        ],
+        { s: "#d8d2c4", f: "#8a8a96", w: "#fdfaf2", r: "#e24b4a", p: "#b8bcc2" },
+      );
+      // Corner posts.
+      P(bx, "#4e3019", X, Y - 18, 3, 33);
+      P(bx, "#6e4425", X + 1, Y - 18, 1, 33);
+      P(bx, "#4e3019", X + WW - 3, Y - 18, 3, 33);
+      P(bx, "#6e4425", X + WW - 2, Y - 18, 1, 33);
+      // Counter top and ice with fish lying side-on.
+      P(bx, "#c48d5d", X - 1, Y - 2, WW + 2, 4);
+      P(bx, "#e0ad7c", X - 1, Y - 2, WW + 2, 1);
+      P(bx, "#dff3fa", X + 3, Y - 7, WW - 6, 5);
+      for (let i = 0; i < WW - 6; i += 3) P(bx, "#ffffff", X + 4 + i, Y - 7 + (i % 2), 1, 1);
+      const ICE_FISH = ["..bbb....", ".bbbbb..t", "beb#bbbt.", ".lllll..t", "..lll...."];
+      const ON_ICE = [
+        ["#e2874c", "#f6b27a", "#c0504d"],
+        ["#7fa2c8", "#c8dcef", "#3d7fd6"],
+        ["#3fae8f", "#9fe0c8", "#2a7a63"],
+        ["#c8a24a", "#ecd492", "#9c7a2c"],
+      ];
+      const count = Math.floor((WW - 8) / 10);
+      for (let i = 0; i < count; i++) {
+        const [body, belly, tail] = ON_ICE[i % ON_ICE.length];
+        sprite(bx, X + 5 + i * 10, Y - 7, ICE_FISH, {
+          b: body,
+          l: belly,
+          t: tail,
+          e: "#1a1a1a",
+          "#": shade(body, -0.25),
+        });
+      }
+      // Blue painted counter with planks, price tags and a lifebuoy.
+      P(bx, "#2f63a8", X, Y + 2, WW, 13);
+      P(bx, "#3d7fd6", X, Y + 2, WW, 2);
+      for (let i = 6; i < WW; i += 7) P(bx, "#27528c", X + i, Y + 4, 1, 11);
+      P(bx, "#f4f1ea", X + 4, Y + 4, 6, 4);
+      P(bx, "#e24b4a", X + 5, Y + 5, 2, 1);
+      P(bx, "#f4f1ea", X + WW - 10, Y + 4, 6, 4);
+      P(bx, "#e24b4a", X + WW - 9, Y + 5, 2, 1);
+      circ(bx, cx, Y + 9, 5, "#f4f1ea");
+      P(bx, "#e24b4a", cx - 5, Y + 8, 3, 3);
+      P(bx, "#e24b4a", cx + 3, Y + 8, 3, 3);
+      P(bx, "#e24b4a", cx - 1, Y + 4, 3, 3);
+      P(bx, "#e24b4a", cx - 1, Y + 12, 3, 3);
+      circ(bx, cx, Y + 9, 2, "#2f63a8");
+      // Roof with a scalloped edge.
+      P(ox, "#173c6b", X - 3, Y - 27, WW + 6, 9);
+      for (let i = 0; i < WW + 6; i += 4) P(ox, "#1f4e8c", X - 3 + i, Y - 26, 3, 8);
+      P(ox, "#2f63a8", X - 3, Y - 27, WW + 6, 1);
+      for (let i = 0, n = 0; i < WW + 6; i += 6, n++) {
+        const col = n % 2 ? "#f4f1ea" : "#3d7fd6";
+        P(ox, col, X - 3 + i, Y - 18, 6, 2);
+        P(ox, col, X - 2 + i, Y - 16, 4, 1);
+      }
+      // Fish sign on the roof: tall diamond body, fins, forked tail, outlined.
+      sprite(
+        ox,
+        cx - 9,
+        Y - 39,
+        [
+          "......ooo.........",
+          ".....offfo........",
+          "....oobbbboo....oo",
+          "...obbbbbbbbo..otf",
+          "..obbbbbbgbbbo.otf",
+          ".obwkbbbbgbsbbootfo",
+          "obbbbbbbbgbbbbbtto.",
+          ".obllllllllbbbootfo",
+          "..olllllllllbo.otf",
+          "...ollllllllo..otf",
+          "....oolllloo....oo",
+          "......ofo.........",
+          ".......o..........",
+        ],
+        {
+          o: "#7a3414",
+          b: "#e2874c",
+          l: "#f6b27a",
+          f: "#c0504d",
+          t: "#c0504d",
+          g: "#b8622c",
+          s: "#f6b27a",
+          w: "#ffffff",
+          k: "#1a1a1a",
+        },
+      );
+      P(ox, "#4e3019", cx - 1, Y - 27, 2, 1);
+    }
+    if (o.t === "ranks") {
+      // Leaderboard: a dark board on two legs with a trophy and a podium.
+      P(bx, "rgba(0,0,0,.2)", X + 2, Y + 29, WW - 4, 2);
+      P(bx, "#5a3d2a", X + 4, Y + 10, 3, 20);
+      P(bx, "#5a3d2a", X + WW - 7, Y + 10, 3, 20);
+      P(bx, "#6e4425", X, Y - 4, WW, 20);
+      P(bx, "#22293a", X + 2, Y - 2, WW - 4, 16);
+      P(bx, "#8a5a33", X, Y - 4, WW, 1);
+      const cx = X + WW / 2;
+      // Trophy
+      P(bx, "#f2c14e", cx - 4, Y, 9, 4);
+      P(bx, "#ffe08a", cx - 3, Y, 2, 3);
+      P(bx, "#f2c14e", cx - 6, Y + 1, 2, 2);
+      P(bx, "#f2c14e", cx + 5, Y + 1, 2, 2);
+      P(bx, "#d9a22a", cx - 1, Y + 4, 3, 2);
+      P(bx, "#d9a22a", cx - 3, Y + 6, 7, 1);
+      // Podium bars: silver, gold, bronze
+      P(bx, "#c9cdd2", cx - 16, Y + 8, 8, 5);
+      P(bx, "#f2c14e", cx - 4, Y + 7, 9, 6);
+      P(bx, "#d0844a", cx + 9, Y + 9, 8, 4);
+      // Name lines
+      for (let i = 0; i < 2; i++) {
+        P(bx, "#5b6b8a", X + 5, Y + 1 + i * 4, 9, 1);
+        P(bx, "#5b6b8a", X + WW - 14, Y + 1 + i * 4, 9, 1);
+      }
     }
     if (o.t === "fountain") {
       const cx = X + WW / 2;

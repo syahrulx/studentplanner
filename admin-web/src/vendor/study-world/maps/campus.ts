@@ -130,6 +130,10 @@ export function createCampusMap(): WorldMap {
   });
 
   thing("bin", 15, 9);
+  // Fish market by the pond: sells ultra rare fish (see BagPanel market mode).
+  thing("market", 16, 4, 3, 1);
+  // Weekly leaderboards, next to the event notice board.
+  thing("ranks", 38, 3, 3, 2);
   thing("bin", 32, 10);
   k.rug(6, 22, 11, 23, ["#9c3d3d", "#c8a24a", "#8a3232"]);
   // Quiz deck O and X
@@ -154,6 +158,8 @@ export function createCampusMap(): WorldMap {
   label("CAFÉ", 39 * TILE, 13 * TILE + 11, "wall");
   label("QUIET ZONE", 9 * TILE, 16 * TILE + 2, "small");
   label("GARDEN", 24 * TILE, 30 * TILE + 10, "small");
+  label("FISH MARKET", 17.5 * TILE, 5 * TILE + 10, "small");
+  label("LEADERBOARD", 39.5 * TILE, 2 * TILE + 6, "small");
 
   return k.finish({
     id: "campus",

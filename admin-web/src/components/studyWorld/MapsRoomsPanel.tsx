@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { hasMapArt, listWorldMaps, saveWorldMap, useLiveCounts, type ItemStatus, type WorldMap } from '../../lib/studyWorld';
 import { MapPreview } from './WorldArt';
-import { CARD, FIELD } from './format';
-import { ErrorBox, StatusBadge } from './ui';
+import { BTN_DARK, BTN_LIGHT, CARD, FIELD } from './format';
+import { ErrorBox, Field, Modal, StatusBadge } from './ui';
 
 /**
  * Rooms are made by the website as people arrive ("Campus 1", "Campus 2"…,
@@ -31,6 +31,7 @@ export function MapsRoomsPanel() {
   const [maps, setMaps] = useState<WorldMap[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [editing, setEditing] = useState<WorldMap | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -100,7 +101,10 @@ export function MapsRoomsPanel() {
                   </label>
                 </div>
               </div>
-              {m.description ? <div className="-mt-2 text-xs font-semibold text-slate-500">{m.description}</div> : null}
+              <div className="-mt-2 flex items-center gap-2 text-xs font-semibold text-slate-500">
+                <span>{m.description || 'No description'}</span>
+                <button type="button" className="text-brand-600 underline" onClick={() => setEditing(m)}>Rename / describe</button>
+              </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
@@ -116,6 +120,40 @@ export function MapsRoomsPanel() {
           </section>
         );
       })}
+      {editing ? (
+        <MapTextEditor
+          map={editing}
+          onClose={() => setEditing(null)}
+          onSave={async (name, description) => {
+            await patch(editing, { name, description });
+            setEditing(null);
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+/** Change the name and short description players see in the lobby and map switcher. */
+function MapTextEditor({ map, onClose, onSave }: { map: WorldMap; onClose: () => void; onSave: (name: string, description: string | null) => Promise<void> }) {
+  const [name, setName] = useState(map.name);
+  const [description, setDescription] = useState(map.description ?? '');
+  const [busy, setBusy] = useState(false);
+  const ok = name.trim().length >= 1 && name.trim().length <= 40 && description.length <= 200;
+  return (
+    <Modal title={`Edit ${map.name}`} onClose={onClose} footer={<>
+      <button type="button" className={BTN_LIGHT} onClick={onClose} disabled={busy}>Cancel</button>
+      <button type="button" className={BTN_DARK} disabled={!ok || busy} onClick={async () => {
+        setBusy(true);
+        try { await onSave(name.trim(), description.trim() || null); } finally { setBusy(false); }
+      }}>{busy ? 'Saving…' : 'Save'}</button>
+    </>}>
+      <Field label="Name" hint="Rooms are named after the map (e.g. “Garden 1”). Renaming changes the room names for people who join after this.">
+        <input value={name} maxLength={40} onChange={(e) => setName(e.target.value)} className={FIELD} />
+      </Field>
+      <Field label={`Description (${description.length}/200)`} hint="Shown under the map in the lobby.">
+        <input value={description} maxLength={200} onChange={(e) => setDescription(e.target.value)} className={FIELD} />
+      </Field>
+    </Modal>
   );
 }

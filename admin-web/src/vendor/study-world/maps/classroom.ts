@@ -69,6 +69,9 @@ export function createClassroomMap(): WorldMap {
   thing("vending", 26, 20);
   thing("notice", 21, 20, 3, 1);
   thing("bin", 27, 20);
+  // Weekly leaderboards (press E to open).
+  thing("ranks", 25, 5, 3, 2);
+  label("LEADERBOARD", 26.5 * TILE, 4 * TILE + 6, "small");
   label("GROUP STUDY", 15 * TILE, 16 * TILE + 10, "small");
 
   return k.finish({

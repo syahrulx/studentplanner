@@ -50,6 +50,9 @@ export function createCafeMap(): WorldMap {
   });
 
   thing("bin", 29, 19);
+  // Weekly leaderboards (press E to open).
+  thing("ranks", 21, 15, 3, 2);
+  label("LEADERBOARD", 22.5 * TILE, 14 * TILE + 6, "small");
   thing("arcade", 26, 14);
   thing("arcade", 28, 14);
   label("ARCADE", 27.5 * TILE, 12 * TILE + 12, "small");
