@@ -18,6 +18,11 @@ import {
   getGoogleClientIds,
   pickPlatformClientId,
 } from './googleOauth';
+import {
+  getGoogleProviderTokens,
+  setGoogleProviderTokens,
+  clearGoogleProviderTokens,
+} from './googleProviderTokens';
 
 /**
  * Google Classroom integration.
@@ -136,28 +141,23 @@ export async function getValidToken(): Promise<string | null> {
   // ── Try server-side refresh via Edge Function (Android) ──
   // This works even when classroomToken cache doesn't exist yet (first connect
   // after token expiry) — the Edge Function reads the refresh token from
-  // googleProviderTokens in AsyncStorage.
+  // googleProviderTokens (SecureStore; see googleProviderTokens.ts).
   try {
     const freshToken = await refreshTokenViaEdgeFunction();
     if (freshToken) {
       // Read the existing refresh token so we preserve it for next time
-      const { default: AsyncStorage } = await import('@react-native-async-storage/async-storage');
-      const raw = await AsyncStorage.getItem('googleProviderTokens');
-      const existingRefresh = raw ? (JSON.parse(raw).refreshToken || '') : '';
+      const existingRefresh = (await getGoogleProviderTokens())?.refreshToken || '';
 
       await setClassroomToken({
         accessToken: freshToken.accessToken,
         expiresAt: freshToken.expiresAt,
       });
       // Update the saved provider tokens with fresh access token + keep refresh token
-      await AsyncStorage.setItem(
-        'googleProviderTokens',
-        JSON.stringify({
-          accessToken: freshToken.accessToken,
-          refreshToken: existingRefresh,
-          expiresAt: freshToken.expiresAt,
-        }),
-      );
+      await setGoogleProviderTokens({
+        accessToken: freshToken.accessToken,
+        refreshToken: existingRefresh,
+        expiresAt: freshToken.expiresAt,
+      });
       return freshToken.accessToken;
     }
   } catch {
@@ -181,11 +181,7 @@ async function refreshTokenViaEdgeFunction(): Promise<{
     if (!session?.access_token) return null;
 
     // Read the Google refresh token saved during login
-    const { default: AsyncStorage } = await import('@react-native-async-storage/async-storage');
-    const raw = await AsyncStorage.getItem('googleProviderTokens');
-    if (!raw) return null;
-
-    const tokens = JSON.parse(raw);
+    const tokens = await getGoogleProviderTokens();
     const googleRefreshToken = tokens?.refreshToken;
     if (!googleRefreshToken) return null;
 
@@ -646,10 +642,7 @@ export async function disconnectClassroom(): Promise<void> {
   await setClassroomPrefs(null);
 
   // Also clear saved provider tokens (Android direct-token flow)
-  try {
-    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-    await AsyncStorage.removeItem('googleProviderTokens');
-  } catch {}
+  await clearGoogleProviderTokens();
 }
 
 /** Whether user has completed initial setup with selected courses. */
