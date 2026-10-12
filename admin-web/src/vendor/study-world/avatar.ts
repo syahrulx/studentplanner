@@ -8,6 +8,9 @@
  */
 
 import { EXTRA_ITEMS, type ExtraItem, type FxKit, type Painter } from "./avatar-items";
+/** The action emotes (same keys as ACTIONS in chat.ts; kept here so this file
+ *  stays self-contained for the admin website's copy). */
+type ActionKey = "wave" | "laugh" | "dance" | "clap" | "cheer" | "cry" | "love" | "think";
 
 /**
  * free: everyone. coins: bought once with coins. plus / pro: included with a
@@ -43,6 +46,10 @@ export type AvatarLook = {
   back: string;
   pet: string;
   effect: string;
+  /** Show-off items (see showoff.ts): name frame, chat bubble, entrance effect. */
+  frame?: string;
+  bubble?: string;
+  entrance?: string;
 };
 
 export type ItemCategory =
@@ -202,6 +209,9 @@ export const DEFAULT_LOOK: AvatarLook = {
   back: "none",
   pet: "none",
   effect: "none",
+  frame: "plain",
+  bubble: "plain",
+  entrance: "none",
 };
 
 /**
@@ -411,6 +421,13 @@ export function shade(hex: string, amount: number): string {
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
 
+/** Very dark hex colours (a darker shade wouldn't show on them). */
+const isDark = (hex: string) => {
+  if (typeof hex !== "string" || hex[0] !== "#") return false;
+  const n = parseInt(hex.slice(1), 16);
+  return (n >> 16) * 0.3 + ((n >> 8) & 255) * 0.59 + (n & 255) * 0.11 < 60;
+};
+
 const hsl = (h: number, s: number, l: number) => `hsl(${Math.round(h)},${s}%,${l}%)`;
 
 type Fill = string | ((x: number, y: number) => string) | null;
@@ -418,10 +435,103 @@ type Grid = (string | null)[][];
 
 export type Facing = "f" | "b" | "l" | "r";
 
+/** An action emote being played: which one, and ms since it started. */
+export type AvatarPose = { kind: ActionKey; t: number };
+
+type Pt = readonly [number, number];
+/** A posed arm: the 2×2 elbow and hand blocks (top-left corners, body coords). */
+type ArmPose = { el: Pt; hd: Pt };
+type PoseSpec = {
+  /** Arms left out keep the top's own arm. l is screen-left (x 5–6). */
+  l?: ArmPose;
+  r?: ArmPose;
+  eyes?: "arc" | "sad" | "heart" | "heartSmall" | "up";
+  mouth?: "smile" | "grin" | "laugh" | "open" | "frown" | "hmm";
+  tears?: boolean;
+};
+/** The same point on the other side of the body (for 2-wide blocks). */
+const mirrorPt = ([x, y]: Pt): Pt => [22 - x, y];
+const mirrorArm = (a: ArmPose): ArmPose => ({ el: mirrorPt(a.el), hd: mirrorPt(a.hd) });
+
+/** Where the arms go and what the face does, p ms into an action. */
+function poseSpec(kind: ActionKey, p: number, fx: number): PoseSpec {
+  const tick = (ms: number) => Math.floor(p / ms) % 2;
+  switch (kind) {
+    case "wave":
+      // Arm up beside the head, the hand swinging left and right.
+      return { r: { el: [19, 13], hd: [19 + tick(200), 6] }, eyes: "arc", mouth: "smile" };
+    case "laugh": {
+      // Holding the belly, shoulders shaking.
+      const s = tick(110);
+      return {
+        l: { el: [5, 20], hd: [8, 21 - s] },
+        r: { el: [17, 20], hd: [14, 20 + s] },
+        eyes: "arc",
+        mouth: tick(140) ? "laugh" : "grin",
+      };
+    }
+    case "dance": {
+      // One arm points up, the other down; they swap on the beat.
+      const up: ArmPose = { el: [3, 12], hd: [2, 7] };
+      const down: ArmPose = { el: [5, 19], hd: [4, 22] };
+      return tick(360)
+        ? { l: down, r: mirrorArm(up), mouth: "grin" }
+        : { l: up, r: mirrorArm(down), mouth: "grin" };
+    }
+    case "clap": {
+      const shut = p % 320 < 130;
+      return {
+        l: { el: [5, 20], hd: [shut ? 10 : 8, 18] },
+        r: { el: [17, 20], hd: [shut ? 12 : 14, 18] },
+        eyes: "arc",
+        mouth: "smile",
+      };
+    }
+    case "cheer": {
+      // Arms straight up while in the air (WorldCanvas does the jump), bent on landing.
+      const k = Math.sin(p / 230) > 0 ? 0 : 2;
+      return {
+        l: { el: [3, 12], hd: [3, 3 + k] },
+        r: { el: [19, 12], hd: [19, 3 + k] },
+        mouth: "open",
+      };
+    }
+    case "cry": {
+      // Fists rubbing the cheeks, one up while the other is down.
+      const s = tick(170);
+      return {
+        l: { el: [4, 14], hd: [5, 12 - s] },
+        r: { el: [18, 14], hd: [17 + (fx ? 1 : 0), 11 + s] },
+        eyes: "sad",
+        mouth: "frown",
+        tears: true,
+      };
+    }
+    case "love":
+      return {
+        l: { el: [5, 20], hd: [10, 17] },
+        r: { el: [17, 20], hd: [12, 17] },
+        eyes: tick(260) ? "heartSmall" : "heart",
+        mouth: "smile",
+      };
+    case "think":
+      // Hand on the chin, the other arm across the belly.
+      return {
+        l: { el: [5, 20], hd: [14, 21] },
+        r: { el: [17, 20], hd: [11 + fx, 14] },
+        eyes: "up",
+        mouth: "hmm",
+      };
+    default:
+      return {};
+  }
+}
+
 /**
  * Draws one avatar frame into a colour grid.
  * frame: 0–3 walk cycle (0 and 2 lift a foot, 1 and 3 are passing poses).
  * dir: "r" is a three-quarter view; draw it mirrored for "l".
+ * pose: an action emote being played (arms and face move); none by default.
  */
 export function buildAvatar(
   look: AvatarLook,
@@ -429,21 +539,27 @@ export function buildAvatar(
   frame: number,
   blink: boolean,
   dir: Exclude<Facing, "l">,
+  pose?: AvatarPose | null,
 ): Grid {
   const grid: Grid = Array.from({ length: GRID_H }, () => Array<string | null>(GRID_W).fill(null));
+  // While a pose is being set up, marks the pixels the top draws.
+  let touched: boolean[][] | null = null;
   const R = (x: number, y: number, w: number, h: number, c: Fill) => {
     for (let j = 0; j < h; j++)
       for (let i = 0; i < w; i++) {
         const X = x + i + OX;
         const Y = y + j + OY;
-        if (X >= 0 && Y >= 0 && X < GRID_W && Y < GRID_H)
+        if (X >= 0 && Y >= 0 && X < GRID_W && Y < GRID_H) {
           grid[Y][X] = typeof c === "function" ? c(x + i, y + j) : c;
+          if (touched) touched[Y][X] = true;
+        }
       }
   };
   const px = (x: number, y: number, c: Fill) => R(x, y, 1, 1, c);
 
   const back = dir === "b";
   const fx = dir === "r" ? 2 : 0;
+  const ps = pose ? poseSpec(pose.kind, Math.max(0, pose.t), fx) : null;
   const L = look;
   const sk = L.skin;
   const skS = shade(sk, -0.13);
@@ -770,6 +886,9 @@ export function buildAvatar(
   shoe(7, 29 - lUp);
   shoe(13, 29 - rUp);
 
+  // For a pose, remember what was behind the arms before the top drew them.
+  const preTop = ps ? grid.map((row) => row.slice()) : null;
+  if (ps) touched = grid.map((row) => row.map(() => false));
   switch (L.top) {
     case "tee":
       torso(tc);
@@ -967,6 +1086,51 @@ export function buildAvatar(
     default:
       extra("top", L.top)?.draw?.(P);
   }
+  // Pose: read each arm's colours from what the top drew (works for any top),
+  // then take the arm away. The posed arms are drawn at the very end.
+  type ArmPaint = { sleeve: string; hand: string; cuff: string | null; short: boolean };
+  const at = (g: Grid, x: number, y: number) => g[y + OY]?.[x + OX] ?? null;
+  const topDrew = touched;
+  touched = null;
+  const drawnByTop = (x: number, y: number) =>
+    topDrew?.[y + OY]?.[x + OX] ? at(grid, x, y) : null;
+  const armPaint = (cols: number[]): ArmPaint => {
+    const count = new Map<string, number>();
+    let bare = 0;
+    cols.forEach((x) => {
+      for (let y = 16; y <= 22; y++) {
+        const c = drawnByTop(x, y);
+        if (!c) continue;
+        if (c === sk || c === skS) bare += y >= 20 ? 1 : 0;
+        else count.set(c, (count.get(c) ?? 0) + 1);
+      }
+    });
+    let sleeve = sk;
+    let best = 0;
+    count.forEach((n, c) => {
+      if (n > best) {
+        best = n;
+        sleeve = c;
+      }
+    });
+    const h = drawnByTop(cols[0], 23);
+    const hand = !h || h === sleeve || h === skS ? sk : h;
+    const c22 = drawnByTop(cols[0], 22);
+    const cuff = c22 && c22 !== sleeve && c22 !== sk && c22 !== skS && c22 !== hand ? c22 : null;
+    return { sleeve, hand, cuff, short: bare >= cols.length * 2 };
+  };
+  const paintL = ps?.l ? armPaint([5, 6]) : null;
+  const paintR = ps?.r ? armPaint([17]) : null;
+  const clearArm = (x0: number, x1: number) => {
+    if (!preTop || !topDrew) return;
+    for (let y = 18 + OY; y <= 23 + OY; y++)
+      for (let x = x0 + OX; x <= x1 + OX; x++) if (topDrew[y][x]) grid[y][x] = preTop[y][x];
+  };
+  if (paintL) clearArm(2, 6);
+  if (paintR) clearArm(17, 21);
+  // Seen from behind, anything drawn after this (head, hair, bags) hides the arms.
+  const afterTop = ps && back ? grid.map((row) => row.slice()) : null;
+
   if (back) {
     backItems();
     xBack?.behind?.(P);
@@ -1011,7 +1175,42 @@ export function buildAvatar(
     const a = 7 + fx;
     const b = 15 + fx;
     const xEyes = extra("eyes", L.eyes);
-    if (blink && L.eyes !== "happy" && !xEyes?.noBlink) {
+    const pe = ps?.eyes;
+    if (pe === "arc") {
+      eyeArc(a);
+      eyeArc(b);
+    } else if (pe === "sad") {
+      // Shut, with the outer corners drooping.
+      R(a, 10, 2, 1, d);
+      px(a - 1, 11, d);
+      R(b, 10, 2, 1, d);
+      px(b + 2, 11, d);
+    } else if (pe === "heart" || pe === "heartSmall") {
+      const c = "#ff4f9a";
+      // The far eye in the 3/4 view stays on the face.
+      [a - 1, Math.min(b - 1, 14)].forEach((x) => {
+        if (pe === "heart") {
+          px(x + 1, 8, c);
+          px(x + 3, 8, c);
+          R(x, 9, 5, 1, c);
+          R(x + 1, 10, 3, 1, c);
+          px(x + 2, 11, c);
+          px(x + 1, 9, "#ffd1e8");
+        } else {
+          px(x + 1, 9, c);
+          px(x + 3, 9, c);
+          R(x + 1, 10, 3, 1, c);
+          px(x + 2, 11, c);
+        }
+      });
+    } else if (pe === "up") {
+      // Glancing up and to the side.
+      [a - 1, b - 1].forEach((x) => {
+        R(x, 8, 2, 3, ec);
+        R(x, 8, 2, 1, d);
+        px(x + 1, 9, "#fff");
+      });
+    } else if (blink && L.eyes !== "happy" && !xEyes?.noBlink) {
       R(a, 10, 2, 1, d);
       R(b, 10, 2, 1, d);
     } else if (L.eyes === "round") {
@@ -1048,7 +1247,36 @@ export function buildAvatar(
     }
     R(6 + fx, 12, 2, 1, "#f4a3a3");
     if (!fx) R(16, 12, 2, 1, "#f4a3a3");
-    R(11 + fx, 13, 2, 1, "#8a3b33");
+    const m = "#8a3b33";
+    const mx = 10 + fx; // left end of a 4-wide mouth
+    switch (ps?.mouth) {
+      case "smile":
+        px(mx, 13, m);
+        R(mx + 1, 14, 2, 1, m);
+        px(mx + 3, 13, m);
+        break;
+      case "grin":
+        R(mx, 13, 4, 1, m);
+        R(mx + 1, 14, 2, 1, m);
+        break;
+      case "laugh":
+        R(mx, 13, 4, 2, m);
+        R(mx + 1, 14, 2, 1, "#e2574c");
+        break;
+      case "open":
+        R(mx + 1, 13, 2, 2, m);
+        break;
+      case "frown":
+        px(mx, 14, m);
+        R(mx + 1, 13, 2, 1, m);
+        px(mx + 3, 14, m);
+        break;
+      case "hmm":
+        R(mx, 13, 2, 1, m);
+        break;
+      default:
+        R(11 + fx, 13, 2, 1, m);
+    }
   }
 
   const hs = L.hair;
@@ -1339,6 +1567,63 @@ export function buildAvatar(
     extra("face", F)?.draw?.(P);
   } else if (F === "visor") R(5, 9, 14, 2, "#0f6f86");
   else if (F === "cyber") R(5, 9, 14, 1, "#20232b");
+
+  if (ps && pose) {
+    // Posed arms: 2×2 blocks from the shoulder to the elbow to the hand.
+    const base = grid.map((row) => row.slice());
+    const put = (x: number, y: number, c: string) => {
+      const X = x + OX;
+      const Y = y + OY;
+      if (X < 0 || Y < 0 || X >= GRID_W || Y >= GRID_H) return;
+      const under = base[Y][X];
+      if (afterTop) {
+        // From behind: the body, head, hair and back items cover the arm.
+        if ((x >= 7 && x <= 16 && y >= 16) || under !== afterTop[Y][X]) return;
+        grid[Y][X] = c;
+      } else if (c === sk && (under === sk || under === skS))
+        // A bare hand over the face: a shade darker so it still reads.
+        grid[Y][X] = shade(sk, -0.22);
+      else if (under === c && !(y <= 17 && (x <= 6 || x >= 17) && y >= 16))
+        // An arm over a shirt, hood or cape of the same colour (not at the
+        // shoulder it grows from): a fold shade, lighter on very dark cloth.
+        grid[Y][X] = shade(c, isDark(c) ? 0.2 : -0.22);
+      else grid[Y][X] = c;
+    };
+    const block = ([x, y]: Pt, c: string) => {
+      put(x, y, c);
+      put(x + 1, y, c);
+      put(x, y + 1, c);
+      put(x + 1, y + 1, c);
+    };
+    const path = (a: Pt, b: Pt): Pt[] => {
+      const n = Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])) || 1;
+      return Array.from(
+        { length: n + 1 },
+        (_, i): Pt => [
+          Math.round(a[0] + ((b[0] - a[0]) * i) / n),
+          Math.round(a[1] + ((b[1] - a[1]) * i) / n),
+        ],
+      );
+    };
+    const drawArm = (shoulder: Pt, arm: ArmPose, paint: ArmPaint) => {
+      const fore = path(arm.el, arm.hd).slice(1, -1);
+      const all = [...path(shoulder, arm.el), ...fore];
+      all.forEach((pt, i) => {
+        // Short sleeves stop near the shoulder, like armsShort.
+        let c = paint.short && i >= 3 ? sk : paint.sleeve;
+        if (paint.cuff && !paint.short && fore.length && i === all.length - 1) c = paint.cuff;
+        block(pt, c);
+      });
+      block(arm.hd, paint.hand);
+    };
+    if (ps.l && paintL) drawArm([5, 16], ps.l, paintL);
+    if (ps.r && paintR) drawArm([17, 16], ps.r, paintR);
+    if (ps.tears && !back)
+      [8 + fx, 15 + fx].forEach((x, i) => {
+        R(x, 11, 1, 2, "#a8dcf5");
+        px(x, 13 + (Math.floor(pose.t / 90 + i * 3) % 6), "#7cc8ef");
+      });
+  }
 
   return grid;
 }

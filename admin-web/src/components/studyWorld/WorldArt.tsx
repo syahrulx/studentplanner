@@ -12,6 +12,7 @@ import {
   type AvatarLook,
 } from '../../vendor/study-world/avatar';
 import { createWorldMap, isMapId } from '../../vendor/study-world/maps';
+import { ENTRANCE_MS, EMOTE_PACKS, drawBubble, drawEntrance, drawNameFrame } from '../../vendor/study-world/showoff';
 import { FISH_GRID_H, FISH_GRID_W, buildFish, drawFishGlow, hasGlow, type FishArtKey } from '../../vendor/study-world/fish-art';
 
 /** Draws an avatar exactly as the website does (same code, copied in src/vendor). */
@@ -172,6 +173,15 @@ export function ItemPicture({
   );
   const box = { width: size, height: size };
 
+  if (SHOWOFF_KINDS.has(category)) {
+    if (!drawn || !itemKey) {
+      return <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 text-center text-[11px] font-bold leading-tight text-slate-400 dark:border-slate-700" style={box}>No picture<br />yet</div>;
+    }
+    return <ShowoffArt category={category} itemKey={itemKey} size={size} />;
+  }
+  if (category === 'furniture' || category === 'room_theme') {
+    return <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 text-center text-[11px] font-bold leading-tight text-slate-400 dark:border-slate-700" style={box}>Dorm room<br />coming soon</div>;
+  }
   if (!field) {
     return <div className="grid place-items-center" style={box}><span style={{ fontSize: size * 0.55, lineHeight: 1 }}>{emoji || '🍽️'}</span></div>;
   }
@@ -233,3 +243,69 @@ export function FishArt({ species, scale = 3, animate = false }: { species: stri
 const FISH_KEYS: Record<FishArtKey, true> = {
   minnow: true, tilapia: true, carp: true, koi: true, toman: true, gourami: true, starkoi: true, thunder: true, dragon: true,
 };
+
+/**
+ * Show-off items drawn with the website's own code: a name frame around a
+ * sample name, a chat bubble with a sample line, an entrance effect playing
+ * around the default avatar, or an emote pack's emojis.
+ */
+function ShowoffArt({ category, itemKey, size }: { category: string; itemKey: string; size: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const pack = category === 'emote_pack' ? EMOTE_PACKS.find((p) => p.id === itemKey) : undefined;
+
+  useEffect(() => {
+    const canvas = ref.current;
+    const g = canvas?.getContext('2d');
+    if (!canvas || !g || category === 'emote_pack') return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
+    const sprite = document.createElement('canvas');
+    sprite.width = GRID_W;
+    sprite.height = GRID_H;
+    paintGrid(buildAvatar(DEFAULT_LOOK, 0, 1, false, 'f'), sprite);
+    const s = Math.max(1, Math.floor(size / 48));
+    let raf = 0;
+    const draw = (t: number) => {
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.clearRect(0, 0, size, size);
+      g.imageSmoothingEnabled = false;
+      const cx = size / 2;
+      if (category === 'name_frame' || category === 'chat_bubble') {
+        const text = category === 'name_frame' ? 'Izwan' : 'Jom study!';
+        const fontPx = Math.round(size / 9);
+        g.font = `700 ${fontPx}px system-ui, sans-serif`;
+        const w = g.measureText(text).width + fontPx * 1.4;
+        const h = fontPx * 1.7;
+        const y = size / 2 - h / 2;
+        const colour = category === 'name_frame'
+          ? drawNameFrame(g, itemKey, cx, y, w, h, t, '#ffffff')
+          : drawBubble(g, itemKey, cx, y, w, h, t);
+        g.fillStyle = colour;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText(text, cx, y + h / 2 + 1);
+      } else if (category === 'entrance') {
+        const w = GRID_W * s;
+        const h = GRID_H * s;
+        const fy = size / 2 + h / 2;
+        g.drawImage(sprite, 0, 0, GRID_W, GRID_H, cx - w / 2, fy - h, w, h);
+        drawEntrance(g, itemKey, cx, fy, s, t % (ENTRANCE_MS + 700));
+      }
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [category, itemKey, size]);
+
+  if (category === 'emote_pack') {
+    return (
+      <div className="flex flex-wrap items-center justify-center gap-1" style={{ width: size, height: size, fontSize: size / 4.5 }}>
+        {pack ? pack.emotes.map((e) => <span key={e.key} title={e.label}>{e.emoji}</span>) : '🎭'}
+      </div>
+    );
+  }
+  return <canvas ref={ref} style={{ width: size, height: size }} />;
+}
+
+const SHOWOFF_KINDS = new Set(['name_frame', 'chat_bubble', 'entrance', 'emote_pack']);

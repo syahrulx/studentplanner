@@ -20,7 +20,7 @@ import { AvatarArt } from './WorldArt';
 import { PlayerEconomySection } from './PlayerEconomy';
 
 const PAGE = 25;
-const LOOK_PARTS = ['hair', 'eyes', 'top', 'bottom', 'shoes', 'head', 'face', 'back', 'pet', 'effect'] as const;
+const LOOK_PARTS = ['hair', 'eyes', 'top', 'bottom', 'shoes', 'head', 'face', 'back', 'pet', 'effect', 'frame', 'bubble', 'entrance'] as const;
 const LOOK_COLOURS = ['skin', 'hairColor', 'eyeColor', 'topColor', 'bottomColor', 'shoesColor'] as const;
 
 /** A compact text-and-swatch view of a saved look (the pixel drawing lives in the website). */

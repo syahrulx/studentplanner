@@ -3,6 +3,7 @@ import { useSafeActionDialog } from '../SafeActionDialog';
 import {
   CATEGORY_LABEL,
   TIER_LABEL,
+  SHOWOFF_CATEGORIES,
   ITEM_CATEGORIES,
   deleteWorldItem,
   hasDrawing,
@@ -248,6 +249,7 @@ function ItemEditor({ id, initial, onClose, onSaved }: { id: string | null; init
   const set = <K extends keyof WorldItemInput>(key: K, value: WorldItemInput[K]) => setV((old) => ({ ...old, [key]: value }));
   const drawn = hasDrawing(v.category, v.item_key);
   const isCafe = v.category === 'drink' || v.category === 'snack';
+  const isShowoff = (SHOWOFF_CATEGORIES as readonly string[]).includes(v.category);
 
   const problem =
     !/^[a-z0-9_-]{1,32}$/.test(v.item_key) ? 'Key: lowercase letters, numbers, - or _ (max 32).'
@@ -280,13 +282,13 @@ function ItemEditor({ id, initial, onClose, onSaved }: { id: string | null; init
     >
       <div className="flex items-center gap-4 rounded-2xl bg-gradient-to-b from-sky-50 to-emerald-50 p-3 dark:from-slate-800 dark:to-slate-900">
         <ItemPicture category={v.category} itemKey={v.item_key} emoji={v.emoji} drawn={drawn} size={150} animate />
-        {!isCafe && v.category !== 'pet' && drawn ? (
+        {!isCafe && !isShowoff && v.category !== 'pet' && drawn ? (
           <ItemPicture category={v.category} itemKey={v.item_key} drawn whole size={150} animate />
         ) : null}
         <div className="min-w-0 space-y-1">
           <div className="text-lg font-black text-slate-950 dark:text-white">{v.emoji && isCafe ? `${v.emoji} ` : ''}{v.name || 'New item'}</div>
           <div className="text-xs font-semibold text-slate-500">{CATEGORY_LABEL[v.category]} · {v.tier === 'coins' ? `${v.price_coins ?? 0} coins` : TIER_LABEL[v.tier]}</div>
-          <div className="text-[11px] font-semibold text-slate-400">{isCafe ? 'How it shows on the website café menu.' : 'Close-up, and worn by the default avatar — drawn by the website’s own code.'}</div>
+          <div className="text-[11px] font-semibold text-slate-400">{isCafe ? 'How it shows on the website café menu.' : isShowoff ? 'How other players see it in the room — drawn by the website’s own code.' : 'Close-up, and worn by the default avatar — drawn by the website’s own code.'}</div>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
