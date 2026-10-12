@@ -135,7 +135,7 @@ export function StudyWorldRoute() {
         </div>
         <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
           <span className={`h-2 w-2 rounded-full ${live.connected ? (live.total ? 'bg-emerald-500' : 'bg-slate-300') : 'bg-amber-400'}`} />
-          {live.connected ? `${live.total} in the world now` : 'Connecting…'}
+          {live.connected ? `${live.total} in the world now` : live.unavailable ? 'Live count unavailable' : 'Connecting…'}
         </span>
       </div>
 

@@ -376,6 +376,8 @@ const PRESENCE_CHANNEL = 'study-world-presence';
 
 export type LiveCounts = {
   connected: boolean;
+  /** The channel refused us (not signed in as admin, or Realtime policies missing). */
+  unavailable?: boolean;
   total: number;
   byMap: Record<string, { total: number; rooms: Record<string, number> }>;
 };
@@ -391,7 +393,10 @@ const liveListeners = new Set<(c: LiveCounts) => void>();
 let liveChannel: ReturnType<typeof supabase.channel> | null = null;
 
 function startLive() {
-  const channel = supabase.channel(PRESENCE_CHANNEL);
+  // Private channel: Realtime only lets in signed-in players while the world is
+  // open, and admins (website migration 202610120010_study_world_private_channels.sql).
+  // The admin only listens; it never announces itself, so it isn't counted.
+  const channel = supabase.channel(PRESENCE_CHANNEL, { config: { private: true } });
   liveChannel = channel;
   const publish = (next: LiveCounts) => {
     liveLatest = next;
@@ -414,13 +419,16 @@ function startLive() {
     });
     publish({ connected: true, total, byMap });
   };
-  channel
-    .on('presence', { event: 'sync' }, recount)
-    .subscribe((status) => {
+  channel.on('presence', { event: 'sync' }, recount);
+  // Hand Realtime the admin's current sign-in so the private channel lets us in.
+  void supabase.realtime.setAuth().finally(() => {
+    if (liveChannel !== channel) return;
+    channel.subscribe((status) => {
       if (status === 'SUBSCRIBED') recount();
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED')
-        publish({ ...liveLatest, connected: false });
+        publish({ ...liveLatest, connected: false, unavailable: status === 'CHANNEL_ERROR' });
     });
+  });
 }
 
 export function useLiveCounts(): LiveCounts {

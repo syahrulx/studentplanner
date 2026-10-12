@@ -71,7 +71,7 @@ export function MapsRoomsPanel() {
       <ErrorBox message={error} />
       <p className="px-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
         Live numbers are real people in each room right now (up to {ROOM_LIMIT} per room, {MAX_ROOMS} open rooms and {MAX_ROOMS} Pro lounges per map). Each room also has helper bots, which are not counted here.
-        {live.connected ? '' : ' Connecting to the live count…'}
+        {live.connected ? '' : live.unavailable ? ' The live count is unavailable: sign in with an admin account (and make sure the private-channel SQL has been run).' : ' Connecting to the live count…'}
       </p>
       {maps.map((m) => {
         const counts = live.byMap[m.map_key]?.rooms ?? {};
