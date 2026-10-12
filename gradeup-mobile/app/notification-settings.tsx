@@ -43,6 +43,7 @@ export default function NotificationSettings() {
 
   const [notifPrefs, setNotifPrefs] = useState<NotificationPrefs | null>(null);
   const [focusPrefExpanded, setFocusPrefExpanded] = useState(false);
+  const [subjectLabelExpanded, setSubjectLabelExpanded] = useState(false);
   const [showReminderTimePicker, setShowReminderTimePicker] = useState(false);
 
   const isPremium = useApp().user.subscriptionPlan === 'plus' || useApp().user.subscriptionPlan === 'pro';
@@ -420,6 +421,52 @@ export default function NotificationSettings() {
                         <Text style={{ fontSize: 13, color: theme.textSecondary, marginTop: 2 }}>{opt.desc}</Text>
                       </View>
                       {notifPrefs.todaysFocusPref === opt.id && (
+                        <Feather name="check" size={20} color={theme.primary} />
+                      )}
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
+            <View style={styles.dividerList} />
+            <Pressable
+              style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+              onPress={() => setSubjectLabelExpanded(!subjectLabelExpanded)}
+            >
+              <View style={[styles.iconBox, { backgroundColor: themedIconBg('#0ea5e9') }]}>
+                <Feather name="book" size={18} color={themedIconFg('#fff')} />
+              </View>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={[styles.menuLabel, { color: theme.text }]}>Subject Label</Text>
+                <Text style={[styles.notifRowFootnote, { color: theme.primary }]} numberOfLines={1}>
+                  {notifPrefs.subjectLabel === 'name' ? 'Subject name' : 'Subject code'}
+                </Text>
+              </View>
+              <Feather name={subjectLabelExpanded ? "chevron-up" : "chevron-down"} size={20} color={theme.textSecondary} />
+            </Pressable>
+
+            {subjectLabelExpanded ? (
+              <View style={[styles.notifInset, { backgroundColor: theme.backgroundSecondary }]}>
+                <Text style={[styles.notifInsetCaption, { color: theme.textSecondary }]}>Show on Home Screen</Text>
+                <View style={{ flexDirection: 'column', gap: 16, marginTop: 12 }}>
+                  {[
+                    { id: 'code', label: 'Subject code (Default)', desc: 'Short, like EPPA4023' },
+                    { id: 'name', label: 'Subject name', desc: 'The full name you gave the subject. The code still shows under the title.' },
+                  ].map((opt) => (
+                    <Pressable
+                      key={opt.id}
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                      onPress={() => {
+                        updateNotifPref({ subjectLabel: opt.id as 'code' | 'name' });
+                        setSubjectLabelExpanded(false);
+                      }}
+                    >
+                      <View style={{ flex: 1, paddingRight: 10 }}>
+                        <Text style={{ fontSize: 15, fontWeight: '600', color: theme.text }}>{opt.label}</Text>
+                        <Text style={{ fontSize: 13, color: theme.textSecondary, marginTop: 2 }}>{opt.desc}</Text>
+                      </View>
+                      {notifPrefs.subjectLabel === opt.id && (
                         <Feather name="check" size={20} color={theme.primary} />
                       )}
                     </Pressable>

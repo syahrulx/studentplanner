@@ -639,6 +639,7 @@ function createDashboardStyles(
     },
     focusPillsRow: {
       flexDirection: 'row',
+      flexShrink: 1,
       alignItems: 'center',
       gap: 8,
       flexWrap: 'wrap',
@@ -1380,9 +1381,13 @@ export default function Dashboard() {
   );
   const semesterPhase = user.semesterPhase ?? 'teaching';
   const [todaysFocusPref, setTodaysFocusPref] = useState<'all' | 'task' | 'study' | 'exam'>('all');
+  const [subjectLabelPref, setSubjectLabelPref] = useState<'code' | 'name'>('code');
   useFocusEffect(
     useCallback(() => {
-      getNotificationPrefs().then((p) => setTodaysFocusPref(p.todaysFocusPref || 'all'));
+      getNotificationPrefs().then((p) => {
+        setTodaysFocusPref(p.todaysFocusPref || 'all');
+        setSubjectLabelPref(p.subjectLabel);
+      });
     }, [])
   );
 
@@ -1562,13 +1567,28 @@ export default function Dashboard() {
     })[0];
   }, [completedStudyKeys, revisionSettingsList, todayStr, in30Str]);
 
-  const formatSubjectName = useCallback((courseId: string) => {
+  /**
+   * A subject's code (EPPA4023) or name, as chosen in Settings. Google
+   * Classroom ids mean nothing to a student, so those always show the name.
+   * A subject saved without a name falls back to its code.
+   */
+  const subjectLabelFor = useCallback((courseId: string, mode: 'code' | 'name') => {
     if (courseId?.toLowerCase().startsWith('gc-course-')) {
       const found = courses.find(c => c.id === courseId);
       return found ? found.name : courseId.replace(/^gc-course-/i, '');
     }
+    if (mode === 'name') {
+      const upper = (courseId ?? '').toUpperCase();
+      const name = courses.find(c => c.id.toUpperCase() === upper)?.name?.trim();
+      if (name) return name;
+    }
     return courseId;
   }, [courses]);
+
+  const formatSubjectName = useCallback(
+    (courseId: string) => subjectLabelFor(courseId, subjectLabelPref),
+    [subjectLabelFor, subjectLabelPref],
+  );
 
   /**
    * "ITT569 · Essay", or just "Essay" when the task has no subject. Joining
@@ -1622,6 +1642,9 @@ export default function Dashboard() {
         statusColor = '#15803d';
       }
       const formattedCourse = formatSubjectName(focusTask.task.courseId);
+      // The line under the title shows the other label, so a student sees
+      // both the code and the name without opening the task.
+      const otherCourse = subjectLabelFor(focusTask.task.courseId, subjectLabelPref === 'name' ? 'code' : 'name');
       return {
         kind: 'task' as const,
         title: focusTask.task.title,
@@ -1637,8 +1660,8 @@ export default function Dashboard() {
             : T(info.key),
         subtitle:
           focusTask.reason === 'pinned'
-            ? `${T('subject')} • ${formattedCourse}`
-            : `${focusTask.task.type} • ${formattedCourse}`,
+            ? `${T('subject')} • ${otherCourse}`
+            : `${focusTask.task.type} • ${otherCourse}`,
         isSharedTask: (focusTask.task as any).isSharedTask,
         sharedBy: (focusTask.task as any).sharedBy,
         sharedByAvatar: (focusTask.task as any).sharedByAvatar,
@@ -1652,7 +1675,7 @@ export default function Dashboard() {
       return {
         kind: 'study' as const,
         title: nextStudyItem.name,
-        code: nextStudyItem.code,
+        code: formatSubjectName(nextStudyItem.code),
         date: nextStudyItem.date,
         time: nextStudyItem.time,
         accentColor: isDarkMinimal ? '#9ca3af' : subjectColor,
@@ -1668,7 +1691,7 @@ export default function Dashboard() {
     }
 
     return null;
-  }, [focusTask, nextStudyItem, T, getSubjectColor, theme.card, todaysFocusPref, formatSubjectName, isDarkMinimal]);
+  }, [focusTask, nextStudyItem, T, getSubjectColor, theme.card, todaysFocusPref, formatSubjectName, subjectLabelFor, subjectLabelPref, isDarkMinimal]);
 
   const formatDateLabel = useCallback((dateStr: string) => {
     const formattedDate = formatDisplayDate(dateStr);
@@ -1767,8 +1790,9 @@ export default function Dashboard() {
         <>
           <View style={styles.focusCardHeader}>
             <View style={styles.focusPillsRow}>
-              <View style={[styles.focusCoursePill, { backgroundColor: hexToRgba(focusCard.accentColor, 0.12), borderColor: hexToRgba(focusCard.accentColor, 0.16) }]}>
+              <View style={[styles.focusCoursePill, { flexShrink: 1, backgroundColor: hexToRgba(focusCard.accentColor, 0.12), borderColor: hexToRgba(focusCard.accentColor, 0.16) }]}>
                 <Text
+                  numberOfLines={1}
                   style={[
                     styles.focusCoursePillText,
                     { color: themeId === 'dark' || themeId === 'midnight' ? theme.text : focusCard.accentColor },
