@@ -238,6 +238,254 @@ function buildLists(blockedWords: string[], safeWords: string[]): Lists {
 }
 let lists = buildLists(BUILT_IN_BLOCKED, BUILT_IN_SAFE);
 
+// ─── Usernames: words that aren't ordinary words ────────────────────────────
+// A compact list of common English and Malay words of 5+ letters (shorter words
+// are always allowed). Chat words of 5+ letters that aren't on this list, after
+// trimming common endings, are treated as possible usernames and hidden. This
+// WILL hide some real words, names, slang and typos: admins can unhide any word
+// with "Mark safe" on the admin website.
+const COMMON_WORDS = new Set(
+  "about above abroad absent accept access account across action active actually added adding advance advice afraid after afternoon again against agree ahead alarm alive allow almost alone along already alright although always amazing among amount angry animal annoying another answer answers anxious anybody anymore anyone anything anyway anywhere apart apply appreciate approach april arent arrive article artist asked asking assignment assignments attempt attend attention august aunty avatar avoid awake award aware awesome awful awkward backpack balance banana based basic basically beach beautiful became because become bedroom before began begin beginning behind being believe below beside besides better between beyond birthday biscuit bless blessed blood board boring borrow bother bottle bottom bought brain bread break breakfast bridge brief bright bring broke broken brother brought brown budget build building built burger business button buying cable calculate calculator called calling camera campus cancel candy cannot canteen capital caption career careful carry casual catch caught cause certain chair challenge chance change changed chapter chapters charge charger chart chase cheap check cheese chicken child children chill choice choose chosen chocolate church circle class classes classmate classmates classroom clean clear clever click climb clock close closed clothes cloud coach coffee coins collect college colour color colours colors combo comfortable coming comment common company compare complete computer concept confirm confused congrats congratulations connect consider contact continue control cookie cooking corner correct costume could couldnt count counter country couple course courses cousin cover crazy cream create credit cross crowd crying culture curious current customise customize cycle daily damage dance danger darling deadline deadlines dealing death debate decide decided defense define delete delicious depend describe design detail details develop device diary didnt different difficult dinner direct direction dirty discuss discussion dislike distance doctor doesnt doing dollar double doubt download dozen draft drama drawing dream dress drink drive driver during early earth easier easily eaten education effect effort eight either electric eleven email emote emotes empty ended energy engine english enjoy enough enter entire episode equal equation equations error essay estimate evening event events every everybody everyone everything everywhere exact exactly exams example excel excellent except excited exciting excuse exercise exist expect expensive experience explain extra failed fairly faith falling false family famous fancy fantastic faster father favourite favorite feature february feeling fellow fever field fifteen fifth fifty fight figure filled final finally finals finance finding finish finished first fitness fixed flash flashcard flashcards floor flower focus follow followed football force forest forget forgot forgotten formula formulas forty forward found fourth freedom fresh friday fridge friend friends friendly front frozen fruit funny future gallery games garden gather general generally gentle getting giant given gives giving glass global going gonna goods google gotta grade grades graduate grammar grand great green greet group groups growing guess guest guide guitar guys habit hallo handle happen happened happens happy harder hardly havent having headache health healthy heard heart heaven heavy hello helped helpful helping hidden higher highly history hobby holiday homework honest honestly hoping horse hospital hostel hotel hours house however huge human humor hundred hungry hurry husband ideas identity image imagine immediately important improve include including income indeed information inside instead interest interesting internet interview introduce invite island issue itself january jacket jealous joined joining journey judge juice jumping junior justice keeping kidding kinda kitchen knife knock known knowledge label ladies language large later laugh laundry layer leader learn learned learning least leave leaving lecture lectures lecturer lecturers legal lemon length lesson lessons letter level library light likely limit linked listen little lived lives living local location lonely longer looked looking loose losing lovely lower lucky lunch machine magic major maker making manage management manager march marks market marriage married master match matter maths maybe meaning measure media medical medicine meeting member members memory mental mention merry message messages method middle midnight midterm might minor minute minutes mirror missed missing mistake mixed mobile model modern module modules moment monday money month months moral morning mostly mother motivation mountain mouse mouth movie movies moving music myself narrow nation natural nature naughty nearby nearly necessary needed negative neighbour nervous never newer newly night nobody noise normal north nothing notes notice novel number numbers nurse obviously ocean october offer office often okay older online opinion option order other others otherwise ought outside overall owner paint paper papers parent parents party passed password pasta patient pause payment peace people pepper perfect perhaps period person personal phone photo piano picnic picture piece place plain plane planet planner plans plant plants plate please pleasure plenty pocket point police polite pomodoro popular position positive possible potato power practice practical practise prayer prefer prepare present presentation presentations pretty price print prior private prize probably problem problems process produce product professor profile program programming project projects promise proper protect proud prove public pupil purple purpose puzzle quarter queen question questions quick quickly quiet quite quizzes radio rainy raise rather reach react reading ready really reason recent recently record relax remember remind remove repeat reply report reports research reset respect result results review revise revision rhyme right river robot rocket rolling rough round route royal rubbish rules sadly safety salad salary sandwich saturday saved saying scared schedule school science score scores screen search season second secret section seeing seems selfie semester semesters senior sense sentence separate september serious seriously server service seven several shake shall shape share sharing sharp sheet shelf shirt shoes shoot shopping short should shouldnt shoulder shout showing shower sibling sight signal silent silly simple since singer single sister sitting skill skills sleep sleepy slide slides slightly slowly small smart smell smile snack snacks softly solve somebody someday somehow someone something sometimes somewhere sorry sound sounds south space speak speaker special speech speed spell spend spent spirit sport sports spring square staff stage stairs stand start started starting state station stats statistics still stomach stone story straight strange street stress stressed strong stuck student students studied studies study studying stuff style subject subjects submit submission success sudden sugar suggest summary summer sunday super support suppose surprise sweet swimming syllabus system table taken taking talent talking tasty teach teacher teachers teaching tears teeth telling temple tennis terrible thank thanks thankyou thats their theirs theme there theres these theory thesis theyre thing things think thinking third thirsty thirty those though thought thousand three throat through throw thursday ticket timetable tired title today together toilet tomorrow tonight topic topics total touch tough towards tower track trade traffic train training travel treat trick tried tries trouble truck truly trust truth trying tuesday turned tutor tutorial tutorials twelve twenty twice under understand understood unless until upload upset useful usual usually valid value video videos village visit voice volume waiting walking wallet wanna wanted wants warning wasnt watch watching water wearing weather website wedding wednesday weekend weeks weird welcome werent whatever whats wheel where whether which while white whole whose window winner winter wishes within without woman women wonder wonderful wondering words worked worker working world worried worry worse worst worth would wouldnt write writing written wrong yellow yesterday young younger youre yours yourself youth algebra anatomy architecture biology biochemistry chemistry physics calculus coding database economics engineering geography geometry literature marketing mathematics microbiology nursing pharmacy psychology python javascript accounting sociology philosophy diploma degree bachelor masters faculty cafeteria journal rencana world arena timer focusing harvest fountain greenhouse locker lockers arcade matcha latte sushi pizza abang adakah agama ajaran akhir akhirnya aktiviti alamak alhamdulillah amboi apakah asrama assalamualaikum waalaikumsalam insyaallah inshaallah mashaallah subhanallah astaghfirullah bismillah badan bagus bahagia bahasa baiklah balik bangun banyak barang basikal bawah belajar belakang belum benar benda berapa berani berat bersama besar betul biasa bilik bincang bising boleh bosan buang bukan bukannya bulan cakap cantik cepat cerita cikgu comel cuaca cubaan cukup dalam dapat dapur datang dekat depan dewan dengan dengar diorang dorang korang kitorang doakan duduk dunia emak faham fikir gambar gembira geram gempak gunakan habis hadiah hairan hantar harga harap harapnya harini semalam hendak hidup hilang hujan hujung ibubapa ikhlas istimewa jadual jalan jangan jawab jawapan jemput jumpa kakak kalau kampung kawan kebanyakan kedai kejap kelas kemas kenapa kenal kerana kereta kerja kertas kesian ketawa khabar kongsi kosong kuliah kurang lagipun lambat lapar latihan lawak lebih lelaki lepas lepak macam makan makanan malam malas mamak mampu manis marah masalah masih masuk matematik memang mesej minggu minta minum mudah mulakan mungkin murah nanti negeri nombor okeylah orang pandai panggil panjang pasal pastu payah pejabat pelajar pelajaran pelik pening penat pensyarah percuma perempuan pergi perlu pernah pesan petang pilih pinjam pukul pulang punya rajin rakan rasanya rehat relaks rindu rumah sahabat sahaja sakit sampai sangat sayang sebab sebelum sebenarnya sedap sedang sedih sekali sekarang sekejap sekolah selalu selamat semangat semua semoga sempoi senang sendiri sentiasa seronok setiap siapa sikit simpan soalan steady sudah sukar sungguh susah tahun takut tanya tengah tengahari tengok terbaik terima kasih terus tidak tiada takde takpe takpa tidur tinggal tolong tunggu ujian untuk usaha waktu walaupun warna camne camtu camni macamni macamtu bestnya agaknya kelakar hensem handsome budak makcik pakcik ustaz ustazah doktor encik jumaat sabtu isnin selasa khamis berjaya ngantuk mengantuk kenyang nasib member buddy bestie dahlah jomlah takpelah slaps outfit outfits tomato tomatoes potatoes onion onions garlic noodle noodles burger fries chicken mango apple apples orange oranges grape grapes cherry berry strawberry watermelon coconut shirt shirts jeans dress jacket hoodie sweater skirt sneakers slippers glasses suruh disuruh selangor johor kedah kelantan melaka pahang perak perlis penang pinang sabah sarawak terengganu kuala lumpur putrajaya labuan shah alam petaling ipoh seremban kuantan kuching kinabalu malaysia singapore indonesia brunei thailand japan korea china india arabia mecca makkah madinah europe london america africa australia konek connect hutan pokok bunga taman sungai pantai gunung kucing anjing burung ikan ayam daging sayur buah nasi lemak goreng teh tarik kopi susu roti mee kuih hujan panas sejuk angin cahaya bintang langit bulan matahari rumah kereta motor basikal bas keretapi lapangan terbang hospital klinik masjid surau sekolah kedai pasar bandar kampung negeri negara bacteria virus cells protein molecule energy reaction element elements compound carbon oxygen hydrogen nitrogen organism organisms genetics evolution ecology climate pollution volume velocity acceleration momentum gravity electron electrons neutron proton atom atoms magnet circuit voltage current resistance function functions variable variables integer integers fraction fractions percent percentage graph graphs matrix vector vectors derivative integral limits probability average median standard deviation sample population survey analysis method methods introduction conclusion abstract citation references reference perpustakaan fakulti universiti kolej kafeteria tugasan pembentangan peperiksaan markah kumpulan projek kuliah kelas pagi petang malam sesi semakan latihan modul subjek kursus bahan rujukan contoh jawapan soalan formula nota buku komputer telefon internet wifi bateri"
+    .split(" ")
+    .filter(Boolean)
+    .flatMap((w) => [w, squeeze(w)]),
+);
+const EN_ENDINGS = [
+  "s",
+  "es",
+  "ed",
+  "d",
+  "ing",
+  "ly",
+  "er",
+  "ers",
+  "est",
+  "ness",
+  "ment",
+  "ments",
+  "ful",
+];
+const MY_PREFIXES = [
+  "memper",
+  "menge",
+  "meng",
+  "meny",
+  "mem",
+  "men",
+  "me",
+  "ber",
+  "be",
+  "ter",
+  "di",
+  "ke",
+  "peng",
+  "pem",
+  "pen",
+  "per",
+  "pe",
+  "se",
+];
+const MY_SUFFIXES = [
+  "kanlah",
+  "kannya",
+  "kan",
+  "an",
+  "i",
+  "nya",
+  "lah",
+  "kah",
+  "pun",
+  "tah",
+  "ku",
+  "mu",
+];
+const LAUGH = /^(?:ha|he|hi|hu|wk|ks|lo|lm)+[ho]?$/;
+const isCommon = (w: string) =>
+  COMMON_WORDS.has(w) ||
+  COMMON_WORDS.has(squeeze(w)) ||
+  lists.safe.has(w) ||
+  lists.safe.has(squeeze(w));
+
+function knownPart(w: string): boolean {
+  if (w.length <= 4 || squeeze(w).length <= 4 || isCommon(w) || LAUGH.test(squeeze(w))) return true;
+  for (const end of EN_ENDINGS)
+    if (w.endsWith(end)) {
+      const base = w.slice(0, -end.length);
+      if (isCommon(base) || isCommon(`${base}e`)) return true;
+      // Short base words ("slaps", "passing") are fine like other short words.
+      if (
+        ["s", "es", "ed", "ing", "er", "ly"].includes(end) &&
+        base.length >= 2 &&
+        base.length <= 4
+      )
+        return true;
+      if (/(.)\1$/.test(base) && isCommon(base.slice(0, -1))) return true;
+    }
+  if ((w.endsWith("ies") || w.endsWith("ied")) && isCommon(`${w.slice(0, -3)}y`)) return true;
+  // Malay: strip a suffix and/or a prefix ("belajarlah", "diorangnya", "membuat").
+  for (const suf of ["", ...MY_SUFFIXES]) {
+    if (suf && !w.endsWith(suf)) continue;
+    const noSuf = suf ? w.slice(0, -suf.length) : w;
+    if (suf && noSuf.length >= 4 && isCommon(noSuf)) return true;
+    for (const pre of MY_PREFIXES)
+      if (noSuf.startsWith(pre) && isCommon(noSuf.slice(pre.length))) return true;
+  }
+  return false;
+}
+/** Is this an ordinary word? Parts split by - or ' are checked one by one. */
+function isKnownWord(core: string): boolean {
+  const parts = core
+    .toLowerCase()
+    .split(/[^\p{L}]+/u)
+    .filter(Boolean);
+  return parts.length > 0 && parts.every(knownPart);
+}
+
+// Letters people type instead of digits in phone numbers.
+const DIGIT_LOOKALIKE: Record<string, string> = {
+  o: "0",
+  O: "0",
+  l: "1",
+  I: "1",
+  i: "1",
+  "|": "1",
+  z: "2",
+  Z: "2",
+  e: "3",
+  E: "3",
+  a: "4",
+  A: "4",
+  s: "5",
+  S: "5",
+  b: "6",
+  G: "6",
+  t: "7",
+  T: "7",
+  B: "8",
+  g: "9",
+  q: "9",
+};
+/** The digits a number-like word stands for ("ol36426438" → "0136426438"), or null. */
+export function numberDigits(core: string): string | null {
+  if (!/\d/.test(core) && !/^[oOlI|]{1,3}$/.test(core)) return null;
+  // Times, decimals and ranges stay: 8.00, 10:30, 3.5, 8.00-10.00
+  if (/^\d{1,2}[.:]\d{2}(?:-\d{1,2}[.:]\d{2})?(?:am|pm)?$/i.test(core) || /^\d+\.\d+$/.test(core))
+    return null;
+  let out = "";
+  for (const ch of core) {
+    if (/\d/.test(ch)) out += ch;
+    else if (DIGIT_LOOKALIKE[ch]) out += DIGIT_LOOKALIKE[ch];
+    else if (/[\s\-.()+/]/.test(ch)) continue;
+    else return null;
+  }
+  return out;
+}
+/** 7+ digits, or a Malaysian mobile start (01x… / 601x…) with 6+ digits. */
+export const looksLikePhone = (digits: string) =>
+  digits.length >= 7 || (/^(?:01|601)\d/.test(digits) && digits.length >= 6);
+
+// Course codes (CSC508, ITS232, MAT183) and everyday letter+number words stay.
+const OK_ALNUM = [
+  /^[a-z]{2,4}\d{3,4}[a-z]?$/i,
+  /^\d+(?:st|nd|rd|th|am|pm|h|hr|hrs|min|mins|m|k|s|x|mb|gb|kg|km|cm|mm|sen|pts?)$/i,
+  /^(?:rm|q|ch|chap|wk|week|sem|lab|tut|lec|part|no|lvl|level|grade|form|year|yr|day|room|blok|block|page|pg|p|t|l|v|ver|ps|mp|h|co|covid)\d{1,3}$/i,
+  /^\d[a-z]$/i,
+  /^(?:ch|chap|q|sec|s|p|pg|no|part)\d{1,2}(?:\.\d{1,2}){0,2}$/i,
+];
+// Words after which the next word is likely a username: "add me X", "dm me X".
+const HANDLE_TRIGGERS = new Set([
+  "add",
+  "follow",
+  "followme",
+  "dm",
+  "pm",
+  "find",
+  "search",
+  "cari",
+  "carik",
+  "id",
+  "acc",
+  "account",
+  "akaun",
+  "user",
+  "username",
+  "handle",
+  "ign",
+  "uname",
+]);
+const HANDLE_FILLERS = new Set([
+  "me",
+  "aku",
+  "saya",
+  "sy",
+  "i",
+  "my",
+  "at",
+  "on",
+  "is",
+  "kat",
+  "dekat",
+  "ialah",
+  "nama",
+  "the",
+  "for",
+  "ke",
+  "as",
+  "to",
+  "using",
+  "guna",
+  "by",
+  "id",
+  "acc",
+  "account",
+  "akaun",
+  "user",
+  "username",
+  "ig",
+  "insta",
+  "tiktok",
+  "name",
+  "kt",
+  "dkt",
+  "it",
+  "its",
+]);
+const HANDLE_STOP = new Set([
+  "later",
+  "now",
+  "back",
+  "tomorrow",
+  "esok",
+  "nanti",
+  "when",
+  "if",
+  "after",
+  "please",
+  "pls",
+  "plz",
+  "thanks",
+  "ok",
+  "okay",
+  "k",
+  "ya",
+  "yes",
+  "no",
+  "tak",
+  "lah",
+  "je",
+  "jer",
+  "too",
+  "also",
+  "more",
+  "up",
+  "out",
+  "in",
+  "and",
+  "or",
+  "pun",
+  "dulu",
+]);
+
 /** Words from the admin website: "blocked" adds to the list, "safe" overrides it. */
 export function setAdminWords(words: { word: string; status: string }[]) {
   const extraBlocked: string[] = [];
@@ -321,7 +569,35 @@ function contactRanges(text: string): Range[] {
   return ranges;
 }
 
-export function filterChat(input: string): ChatFilterResult {
+export type FilterOptions = {
+  /** Hide anything that looks like a username (on for chat, off for nicknames). */
+  usernames?: boolean;
+  /**
+   * Digits from your own number-only messages in the last couple of minutes,
+   * so a phone number typed in pieces ("013", "294", "2747") is still caught.
+   * Kept in the browser only.
+   */
+  priorDigits?: string;
+};
+
+/** If a message is only numbers ("013", "294 2747"), the digits it stands for. */
+export function messageDigits(text: string): string | null {
+  const cores = text
+    .split(/\s+/)
+    .map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
+    .filter(Boolean);
+  if (!cores.length || !cores.some((c) => /\d/.test(c))) return null;
+  let out = "";
+  for (const c of cores) {
+    const d = numberDigits(c);
+    if (d === null) return null;
+    out += d;
+  }
+  return out;
+}
+
+export function filterChat(input: string, options: FilterOptions = {}): ChatFilterResult {
+  const usernames = options.usernames ?? true;
   const text = input.replace(/\s+/g, " ").trim();
   const hide = new Array<boolean>(text.length).fill(false);
   let contactHidden = false;
@@ -335,7 +611,7 @@ export function filterChat(input: string): ChatFilterResult {
     raw: m[0],
     start: m.index ?? 0,
     end: (m.index ?? 0) + m[0].length,
-    core: m[0].replace(/^[^\p{L}\p{N}@]+|[^\p{L}\p{N}]+$/gu, ""),
+    core: m[0].replace(/^[^\p{L}\p{N}@_]+|[^\p{L}\p{N}_]+$/gu, ""),
   }));
   const action = new Array<"keep" | "censor" | "contact" | "review">(tokens.length).fill("keep");
   const review = new Set<string>();
@@ -374,12 +650,83 @@ export function filterChat(input: string): ChatFilterResult {
       contactHidden = true;
       return;
     }
+    if (isBad(raw)) {
+      action[i] = "censor";
+      return;
+    }
+    if (usernames && /\p{L}/u.test(tok.core)) {
+      // Username shapes: an underscore, or a dot between letters ("muhd.izwan",
+      // "muhdizwn__"); letters mixed with digits ("izwan99"). Course codes and
+      // "e.g." stay.
+      const dotted =
+        /\p{L}\.\p{L}/u.test(tok.core) && !/^(?:e\.g|i\.e|a\.m|p\.m|u\.s|u\.k)\.?$/i.test(tok.core);
+      const alnum = /\d/.test(tok.core) && !OK_ALNUM.some((re) => re.test(tok.core));
+      if (tok.core.includes("_") || dotted || alnum) {
+        action[i] = "contact";
+        contactHidden = true;
+        return;
+      }
+    }
     if (isBad(raw)) action[i] = "censor";
     else if (looksDisguised(tok.core) || nearBad(norm)) {
       action[i] = "review";
       if (norm.length <= 40) review.add(norm);
+    } else if (
+      usernames &&
+      tok.core.length >= 5 &&
+      /^[\p{L}'’-]+$/u.test(tok.core) &&
+      !isKnownWord(tok.core)
+    ) {
+      // Not an ordinary word: possibly a username. Hidden, and never sent for
+      // review (a username is personal data).
+      action[i] = "contact";
+      contactHidden = true;
     }
   });
+
+  // "add me X", "dm me X", "id aku X": the word after is likely a username.
+  if (usernames)
+    tokens.forEach((tok, i) => {
+      if (!HANDLE_TRIGGERS.has(tok.core.toLowerCase())) return;
+      let j = i + 1;
+      let skipped = 0;
+      const filler = (w: string) => HANDLE_FILLERS.has(w) || SOCIAL.has(w.replace(/[^a-z]/g, ""));
+      while (j < tokens.length && filler(tokens[j].core.toLowerCase())) {
+        j++;
+        skipped++;
+      }
+      if (j >= tokens.length || action[j] !== "keep") return;
+      const next = tokens[j].core;
+      if (!next || HANDLE_STOP.has(next.toLowerCase())) return;
+      if (skipped > 0 || !isKnownWord(next)) {
+        action[j] = "contact";
+        contactHidden = true;
+      }
+    });
+
+  // Phone numbers in disguise: "ol36426438", "0I329427", "o13 294 2747", and
+  // pieces sent in earlier messages (priorDigits).
+  for (let i = 0; i < tokens.length; ) {
+    let j = i;
+    let digits = "";
+    let real = false;
+    while (j < tokens.length) {
+      const d = numberDigits(tokens[j].core);
+      if (d === null) break;
+      if (/\d/.test(tokens[j].core)) real = true;
+      digits += d;
+      j++;
+    }
+    if (
+      j > i &&
+      real &&
+      (looksLikePhone(digits) || looksLikePhone((options.priorDigits ?? "") + digits))
+    ) {
+      for (let k = i; k < j; k++) action[k] = "contact";
+      contactHidden = true;
+    }
+    i = Math.max(j, i + 1);
+  }
 
   // "f u c k" or "b.a.b.i": runs of single characters spelling a bad word.
   for (let i = 0; i < tokens.length; ) {
@@ -460,7 +807,7 @@ export function filterChat(input: string): ChatFilterResult {
 
 /** For nicknames: no bad words, no contact details. */
 export function nicknameProblem(value: string): string {
-  const result = filterChat(value);
+  const result = filterChat(value, { usernames: false });
   if (result.contactHidden) return "No emails, phone numbers, links or handles";
   if (result.censored) return "Please choose a different nickname";
   return "";
