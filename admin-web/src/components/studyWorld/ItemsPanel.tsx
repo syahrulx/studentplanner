@@ -249,7 +249,7 @@ function ItemEditor({ id, initial, onClose, onSaved }: { id: string | null; init
   const set = <K extends keyof WorldItemInput>(key: K, value: WorldItemInput[K]) => setV((old) => ({ ...old, [key]: value }));
   const drawn = hasDrawing(v.category, v.item_key);
   const isCafe = v.category === 'drink' || v.category === 'snack';
-  const isShowoff = (SHOWOFF_CATEGORIES as readonly string[]).includes(v.category);
+  const isShowoff = (SHOWOFF_CATEGORIES as readonly string[]).includes(v.category) || v.category === 'furniture' || v.category === 'room_theme';
 
   const problem =
     !/^[a-z0-9_-]{1,32}$/.test(v.item_key) ? 'Key: lowercase letters, numbers, - or _ (max 32).'
@@ -288,7 +288,7 @@ function ItemEditor({ id, initial, onClose, onSaved }: { id: string | null; init
         <div className="min-w-0 space-y-1">
           <div className="text-lg font-black text-slate-950 dark:text-white">{v.emoji && isCafe ? `${v.emoji} ` : ''}{v.name || 'New item'}</div>
           <div className="text-xs font-semibold text-slate-500">{CATEGORY_LABEL[v.category]} · {v.tier === 'coins' ? `${v.price_coins ?? 0} coins` : TIER_LABEL[v.tier]}</div>
-          <div className="text-[11px] font-semibold text-slate-400">{isCafe ? 'How it shows on the website café menu.' : isShowoff ? 'How other players see it in the room — drawn by the website’s own code.' : 'Close-up, and worn by the default avatar — drawn by the website’s own code.'}</div>
+          <div className="text-[11px] font-semibold text-slate-400">{isCafe ? 'How it shows on the website café menu.' : isShowoff ? (v.category === 'furniture' || v.category === 'room_theme' ? 'How it looks in a dorm room — drawn by the website’s own code.' : 'How other players see it in the room — drawn by the website’s own code.') : 'Close-up, and worn by the default avatar — drawn by the website’s own code.'}</div>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">

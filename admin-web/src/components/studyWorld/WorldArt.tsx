@@ -12,6 +12,8 @@ import {
   type AvatarLook,
 } from '../../vendor/study-world/avatar';
 import { createWorldMap, isMapId } from '../../vendor/study-world/maps';
+import { TILE } from '../../vendor/study-world/maps/kit';
+import { createDormMap, dormFloor, furnitureOf } from '../../vendor/study-world/maps/dorm';
 import { ENTRANCE_MS, EMOTE_PACKS, drawBubble, drawEntrance, drawNameFrame } from '../../vendor/study-world/showoff';
 import { FISH_GRID_H, FISH_GRID_W, buildFish, drawFishGlow, hasGlow, type FishArtKey } from '../../vendor/study-world/fish-art';
 
@@ -180,7 +182,10 @@ export function ItemPicture({
     return <ShowoffArt category={category} itemKey={itemKey} size={size} />;
   }
   if (category === 'furniture' || category === 'room_theme') {
-    return <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 text-center text-[11px] font-bold leading-tight text-slate-400 dark:border-slate-700" style={box}>Dorm room<br />coming soon</div>;
+    if (!drawn || !itemKey) {
+      return <div className="grid place-items-center rounded-xl border border-dashed border-slate-300 text-center text-[11px] font-bold leading-tight text-slate-400 dark:border-slate-700" style={box}>No picture<br />yet</div>;
+    }
+    return <DormArt category={category} itemKey={itemKey} size={size} />;
   }
   if (!field) {
     return <div className="grid place-items-center" style={box}><span style={{ fontSize: size * 0.55, lineHeight: 1 }}>{emoji || '🍽️'}</span></div>;
@@ -309,3 +314,45 @@ function ShowoffArt({ category, itemKey, size }: { category: string; itemKey: st
 }
 
 const SHOWOFF_KINDS = new Set(['name_frame', 'chat_bubble', 'entrance', 'emote_pack']);
+
+/**
+ * Dorm pieces drawn by the website's own room builder: a furniture piece is
+ * placed alone in a small test room and zoomed in; a theme shows the whole
+ * empty room in that look.
+ */
+function DormArt({ category, itemKey, size }: { category: string; itemKey: string; size: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    const g = canvas?.getContext('2d');
+    if (!canvas || !g) return;
+    const floor = dormFloor('small');
+    const piece = category === 'furniture' ? furnitureOf(itemKey) : undefined;
+    let map;
+    try {
+      map = createDormMap({
+        size: 'small',
+        theme: category === 'room_theme' ? itemKey : 'cozy',
+        items: piece ? [{ id: 'preview', item: itemKey, x: floor.x0 + 1, y: floor.y0 + 1 }] : [],
+      });
+    } catch {
+      return;
+    }
+    // Crop: the piece plus one tile round it (and a tile above for tall things), or the whole room.
+    const [sx, sy, sw, sh] = piece
+      ? [(floor.x0) * TILE, (floor.y0 - 1) * TILE, (piece.w + 2) * TILE, (piece.h + 2) * TILE]
+      : [0, 0, map.base.width, map.base.height];
+    canvas.width = sw;
+    canvas.height = sh;
+    g.imageSmoothingEnabled = false;
+    g.fillStyle = map.bg;
+    g.fillRect(0, 0, sw, sh);
+    g.drawImage(map.base, sx, sy, sw, sh, 0, 0, sw, sh);
+    g.drawImage(map.over, sx, sy, sw, sh, 0, 0, sw, sh);
+  }, [category, itemKey]);
+  return (
+    <div className="grid place-items-center" style={{ width: size, height: size }}>
+      <canvas ref={ref} className="max-h-full max-w-full" style={{ imageRendering: 'pixelated', width: '100%', height: '100%', objectFit: 'contain' }} />
+    </div>
+  );
+}

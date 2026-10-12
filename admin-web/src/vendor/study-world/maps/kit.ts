@@ -7,8 +7,9 @@
 
 export const TILE = 16;
 
-export type MapId = "campus" | "classroom" | "cafe" | "library" | "garden";
-export type SeatKind = "stump" | "lib" | "cafe" | "sofa" | "bench" | "chair";
+export type MapId = "campus" | "classroom" | "cafe" | "library" | "garden" | "dorm";
+/** "dorm": the dorm furniture piece itself is the seat, so nothing extra is drawn. */
+export type SeatKind = "stump" | "lib" | "cafe" | "sofa" | "bench" | "chair" | "dorm";
 export type Seat = { x: number; y: number; kind: SeatKind; by: object | null };
 export type ThingType =
   | "shelf"
@@ -35,7 +36,8 @@ export type ThingType =
   | "returns"
   | "bin"
   | "market"
-  | "ranks";
+  | "ranks"
+  | "furniture";
 export type Crop = {
   x: number;
   y: number;
@@ -51,6 +53,10 @@ export type Thing = {
   h: number;
   crop?: Crop;
   screen?: [number, number, number, number];
+  /** Dorm furniture id (for t === "furniture"). */
+  item?: string;
+  /** Painted but not solid: rugs and pieces you sit in. */
+  walk?: boolean;
 };
 export type MapLabel = { text: string; x: number; y: number; style: "board" | "wall" | "small" };
 /** Inclusive tile rectangle: [x0, y0, x1, y1]. */
@@ -106,6 +112,82 @@ const makeCanvas = (w: number, h: number) => {
 const BOOK_COLORS = ["#c0504d", "#3d7fd6", "#f2c14e", "#3fae8f", "#a77de0", "#e8e0d0", "#e2874c"];
 const WALLS = new Set(["W", "V"]);
 
+/**
+ * Dorm room looks (ids match ROOM_THEMES in dorm.ts): inside wall ("V") and
+ * floor ("F") colours. "cozy" is the normal look every other map uses.
+ */
+type RoomLook = {
+  /** Wall paper and its faint stripes. */
+  wall: [string, string];
+  /** Dark crown at the top of the wall, and its lighter lip. */
+  crown: [string, string];
+  /** Wainscot panel along the bottom of the wall: base, top rail, grooves, skirting. */
+  panel: [string, string, string, string];
+  /** A thin coloured stripe across the panel. */
+  stripe?: string;
+  /** Floor boards: base, light edge, dark gap. */
+  floor: [string, string, string];
+  /** Café check floor instead of boards. */
+  checks?: boolean;
+  /** Little dots on the wall paper (stars, petals). */
+  dots?: string[];
+  petals?: boolean;
+  /** Twinkling stars on the wall (map sparkles). */
+  twinkle?: boolean;
+  /** Night sky through the windows. */
+  night?: boolean;
+};
+const ROOM_LOOKS: Record<string, RoomLook> = {
+  cozy: {
+    wall: ["#efe2c8", "#e6d6b8"],
+    crown: ["#5a3d2a", "#7a5844"],
+    panel: ["#9c6b42", "#b5865a", "#8a5a33", "#6e4425"],
+    floor: ["#dcb583", "#e8c597", "#c49a69"],
+  },
+  mint: {
+    wall: ["#d4f0e1", "#c3e6d3"],
+    crown: ["#3f7a64", "#5e9c84"],
+    panel: ["#f4f1ea", "#ffffff", "#d8d2c4", "#9fc4b2"],
+    floor: ["#ecd8b6", "#f6e7cb", "#d6bc93"],
+  },
+  night: {
+    wall: ["#1f2a4a", "#253256"],
+    crown: ["#10162a", "#2a3760"],
+    panel: ["#4a3020", "#5e3d28", "#3a2416", "#24160c"],
+    floor: ["#7a5236", "#8a6040", "#5e3e28"],
+    dots: ["#ffffff", "#ffe58a", "#bfe3ff"],
+    night: true,
+  },
+  cafe: {
+    wall: ["#f7eedb", "#efe3c8"],
+    crown: ["#5a3d2a", "#7a5844"],
+    panel: ["#3f7a5c", "#5e9c7a", "#2f6b4c", "#24523a"],
+    stripe: "#f2c14e",
+    floor: ["#dcb583", "#e8c597", "#c49a69"],
+    checks: true,
+  },
+  sakura: {
+    wall: ["#fde4ec", "#f8d6e2"],
+    crown: ["#8a4f5e", "#b06a7c"],
+    panel: ["#d99aa8", "#ebb5c1", "#c4808f", "#a86474"],
+    floor: ["#f2d2cd", "#fae2de", "#dfb5af"],
+    dots: ["#f49ac1", "#ffc4d8", "#ffffff"],
+    petals: true,
+  },
+  galaxy: {
+    wall: ["#2a1844", "#311d4f"],
+    crown: ["#140a24", "#3a2566"],
+    panel: ["#2c1846", "#46307a", "#21113a", "#140a26"],
+    stripe: "#a77de0",
+    floor: ["#3e2a5e", "#4c3672", "#2e1f48"],
+    dots: ["#c9b8ff", "#ffffff", "#ff9ee8", "#7fd1ff"],
+    twinkle: true,
+    night: true,
+  },
+};
+/** Dorm floor pieces (rugs) are painted under the other walk-on pieces. */
+const FLOOR_ITEMS = new Set(["rug", "rug_round"]);
+
 export function createKit(W: number, H: number, seed: number) {
   const rnd = () => {
     seed = (seed * 16807) % 2147483647;
@@ -128,6 +210,19 @@ export function createKit(W: number, H: number, seed: number) {
       c.fillRect(cx - d, cy + y, d * 2 + 1, 1);
     }
   };
+  /** Pixel art from rows of characters; "." is see-through. */
+  const sprite = (
+    c: CanvasRenderingContext2D,
+    sx: number,
+    sy: number,
+    rows: string[],
+    pal: Record<string, string>,
+  ) =>
+    rows.forEach((row, ry) =>
+      [...row].forEach((ch, rx) => {
+        if (pal[ch]) P(c, pal[ch], sx + rx, sy + ry);
+      }),
+    );
   const ell = (
     c: CanvasRenderingContext2D,
     cx: number,
@@ -191,6 +286,12 @@ export function createKit(W: number, H: number, seed: number) {
     }
     doorXs.forEach((x) => mats.push([x, H - 1]));
   };
+  let look = ROOM_LOOKS.cozy;
+  /** Dorm room theme, called right after room(): wall and floor colours. */
+  const roomTheme = (id: string) => {
+    look = ROOM_LOOKS[id] ?? ROOM_LOOKS.cozy;
+    if (look.checks) for (const row of G) row.forEach((t, x) => t === "F" && (row[x] = "C"));
+  };
 
   const seats = new Map<string, Seat>();
   const things: Thing[] = [];
@@ -204,6 +305,15 @@ export function createKit(W: number, H: number, seed: number) {
     things.push(item);
     block(x, y, w, h);
     return item;
+  };
+  /**
+   * Dorm furniture you walk onto (rugs) or sit in (chairs, sofas): painted
+   * before the other things and not solid.
+   */
+  const decorThing = (t: ThingType, x: number, y: number, w: number, h: number, item: string) => {
+    const piece: Thing = { t, x, y, w, h, item, walk: true };
+    things.push(piece);
+    return piece;
   };
   const label = (text: string, x: number, y: number, style: MapLabel["style"]) =>
     labels.push({ text, x, y, style });
@@ -284,9 +394,25 @@ export function createKit(W: number, H: number, seed: number) {
       const Y = y * TILE + 2;
       const width = w * TILE - 4;
       P(bx, "#f6f1e7", X, Y, width, 24);
-      P(bx, "#9fd3ef", X + 2, Y + 2, width - 4, 19);
-      P(bx, "#c4e6f8", X + 2, Y + 2, width - 4, 4);
-      for (let i = 0; i < 3; i++) P(bx, "#e3f4fd", X + 6 + i * 3 + ((x * 5) % 9), Y + 8 - i, 2, 9);
+      if (look.night) {
+        // Night sky: dark glass, a moon and a few stars.
+        P(bx, "#1d2850", X + 2, Y + 2, width - 4, 19);
+        P(bx, "#2a3870", X + 2, Y + 2, width - 4, 4);
+        circ(bx, X + width - 9, Y + 8, 3, "#fff3c4");
+        circ(bx, X + width - 7, Y + 7, 2, "#1d2850");
+        for (let i = 0; i < 5; i++)
+          P(
+            bx,
+            i % 2 ? "#ffe58a" : "#ffffff",
+            X + 4 + ((i * 7 + x * 3) % (width - 14)),
+            Y + 4 + ((i * 5) % 15),
+          );
+      } else {
+        P(bx, "#9fd3ef", X + 2, Y + 2, width - 4, 19);
+        P(bx, "#c4e6f8", X + 2, Y + 2, width - 4, 4);
+        for (let i = 0; i < 3; i++)
+          P(bx, "#e3f4fd", X + 6 + i * 3 + ((x * 5) % 9), Y + 8 - i, 2, 9);
+      }
       for (let m = 1; m < w; m++) P(bx, "#f6f1e7", X + m * TILE - 2, Y, 2, 24);
       P(bx, "#f6f1e7", X, Y + 11, width, 2);
       P(bx, "#d9cbb0", X - 2, Y + 23, width + 4, 3);
@@ -415,11 +541,12 @@ export function createKit(W: number, H: number, seed: number) {
           }
         }
         if (t === "F") {
-          P(bx, "#dcb583", X, Y, 16, 16);
+          const [fb, fl, fd] = look.floor;
+          P(bx, fb, X, Y, 16, 16);
           for (let i = 0; i < 4; i++) {
-            P(bx, "#e8c597", X, Y + i * 4, 16, 1);
-            P(bx, "#c49a69", X, Y + i * 4 + 3, 16, 1);
-            P(bx, "#c49a69", X + ((x * 7 + i * 5 + y * 3) % 14), Y + i * 4, 1, 3);
+            P(bx, fl, X, Y + i * 4, 16, 1);
+            P(bx, fd, X, Y + i * 4 + 3, 16, 1);
+            P(bx, fd, X + ((x * 7 + i * 5 + y * 3) % 14), Y + i * 4, 1, 3);
           }
         }
         if (t === "C")
@@ -443,18 +570,41 @@ export function createKit(W: number, H: number, seed: number) {
           if (!WALLS.has(at(x, y - 1))) P(bx, "#b08a70", X, Y, 16, 2);
         }
         if (t === "V") {
-          P(bx, "#efe2c8", X, Y, 16, 16);
-          P(bx, "#e6d6b8", X + 7, Y, 1, 16);
-          P(bx, "#e6d6b8", X + 15, Y, 1, 16);
-          if (at(x, y - 1) !== "V") {
-            P(bx, "#5a3d2a", X, Y, 16, 3);
-            P(bx, "#7a5844", X, Y + 3, 16, 1);
+          const top = at(x, y - 1) !== "V";
+          const bottom = at(x, y + 1) !== "V";
+          P(bx, look.wall[0], X, Y, 16, 16);
+          P(bx, look.wall[1], X + 7, Y, 1, 16);
+          P(bx, look.wall[1], X + 15, Y, 1, 16);
+          if (look.dots) {
+            // A few fixed dots per tile (stars or petals), never on the crown or panel.
+            const h = (x * 73 + y * 151) % 97;
+            for (let i = 0; i < 3; i++) {
+              const dx = (h * (i + 3) + i * 5) % 14;
+              const dy = (top ? 5 : 1) + ((h * (i + 2) + i * 7) % (bottom ? 4 : 13));
+              const col = look.dots[(h + i) % look.dots.length];
+              if (look.petals) {
+                P(bx, col, X + dx, Y + dy, 2, 1);
+                P(bx, col, X + dx + 1, Y + dy + 1);
+              } else if ((h + i) % 4 === 0) {
+                // A little cross-shaped star.
+                P(bx, col, X + dx + 1, Y + dy, 1, 3);
+                P(bx, col, X + dx, Y + dy + 1, 3, 1);
+              } else P(bx, col, X + dx, Y + dy);
+            }
+            if (look.twinkle && h % 3 === 0)
+              sparkles.push([X + 2 + (h % 11), Y + (top ? 6 : 2) + (h % (bottom ? 3 : 10)), h]);
           }
-          if (at(x, y + 1) !== "V") {
-            P(bx, "#9c6b42", X, Y + 6, 16, 10);
-            P(bx, "#b5865a", X, Y + 6, 16, 2);
-            P(bx, "#8a5a33", X + (x % 2 ? 3 : 11), Y + 9, 1, 5);
-            P(bx, "#6e4425", X, Y + 14, 16, 2);
+          if (top) {
+            P(bx, look.crown[0], X, Y, 16, 3);
+            P(bx, look.crown[1], X, Y + 3, 16, 1);
+          }
+          if (bottom) {
+            const [pb, pt, pg, ps] = look.panel;
+            P(bx, pb, X, Y + 6, 16, 10);
+            P(bx, pt, X, Y + 6, 16, 2);
+            P(bx, pg, X + (x % 2 ? 3 : 11), Y + 9, 1, 5);
+            if (look.stripe) P(bx, look.stripe, X, Y + 8, 16, 1);
+            P(bx, ps, X, Y + 14, 16, 2);
           }
         }
         if (t === "s") {
@@ -676,10 +826,698 @@ export function createKit(W: number, H: number, seed: number) {
     }
   };
 
+  /** A twinkle point (map sparkles) for the shiny Plus and Pro pieces. */
+  const glint = (x: number, y: number) => sparkles.push([x, y, rnd() * Math.PI * 2]);
+  /** Small side-on fish facing left (flip = facing right). */
+  const fish = (x: number, y: number, body: string, flip = false) => {
+    const rows = [".bbb.t", "bkbbbt", ".bbb.t"];
+    sprite(bx, x, y, flip ? rows.map((r) => [...r].reverse().join("")) : rows, {
+      b: body,
+      k: "#1a1a1a",
+      t: shade(body, -0.25),
+    });
+    P(bx, shade(body, 0.4), x + (flip ? 3 : 2), y);
+  };
+  /** Water, sand, weed and bubbles inside a tank's glass. */
+  const tankWater = (x: number, y: number, w: number, h: number) => {
+    P(bx, "#4aa3d8", x, y, w, h);
+    P(bx, "#3b93cb", x, y + h - 7, w, 4);
+    P(bx, "#7cc8ef", x, y, w, 2);
+    P(bx, "#ebd29b", x, y + h - 3, w, 3);
+    for (let i = 0; i < w; i += 3) P(bx, "#d2b77d", x + i + (i % 2), y + h - 2 + (i % 2));
+    [3, 6, w - 6].forEach((sx, n) => {
+      for (let j = 0; j < 7 + n * 2; j++)
+        P(bx, n % 2 ? "#3f8e3b" : "#5aae51", x + sx + ((j >> 1) % 2), y + h - 4 - j);
+    });
+    P(bx, "#c9eefc", x + w - 3, y + 4);
+    P(bx, "#c9eefc", x + w - 4, y + 7);
+    P(bx, "#c9eefc", x + w - 3, y + 10);
+    P(bx, "rgba(255,255,255,.35)", x + 1, y + 3, 1, 6);
+  };
+  /** A trophy cup standing on y (its base). */
+  const cup = (cx: number, y: number, col: string, big = false) => {
+    const s = big ? 1 : 0;
+    P(bx, shade(col, -0.35), cx - 2 - s, y - 2, 5 + s * 2, 2);
+    P(bx, shade(col, -0.2), cx - 1, y - 4, 3, 2);
+    P(bx, col, cx - 2 - s, y - 9 - s, 5 + s * 2, 5 + s);
+    P(bx, shade(col, -0.2), cx + 2 + s, y - 9 - s, 1, 5 + s);
+    P(bx, col, cx - 3 - s, y - 8 - s, 1, 2);
+    P(bx, col, cx + 3 + s, y - 8 - s, 1, 2);
+    P(bx, shade(col, 0.55), cx - 1 - s, y - 9 - s, 1, 3);
+  };
+
+  /** Dorm furniture, by piece id (see FURNITURE in dorm.ts). */
+  const paintFurniture = (o: Thing) => {
+    const X = o.x * TILE;
+    const Y = o.y * TILE;
+    const WW = o.w * TILE;
+    const cx = X + WW / 2;
+    const it = o.item;
+    // ─── Free ───
+    if (it === "bed") {
+      P(bx, "rgba(0,0,0,.2)", X + 2, Y + 29, WW - 3, 3);
+      P(bx, "#4e3019", X + 1, Y + 3, WW - 2, 27);
+      P(bx, "#8a5a33", X + 2, Y + 4, WW - 4, 20);
+      P(bx, "#6e4428", X + 2, Y + 24, WW - 4, 5);
+      P(bx, "#8a5a33", X + 2, Y + 24, WW - 4, 1);
+      P(bx, "#e8e2d6", X + 9, Y + 5, WW - 13, 19);
+      P(bx, "#fdfaf2", X + 9, Y + 5, WW - 13, 2);
+      P(bx, "#d8d2c4", X + 10, Y + 9, 9, 13);
+      P(bx, "#ffffff", X + 10, Y + 8, 8, 12);
+      P(bx, "#e8e2d6", X + 13, Y + 11, 1, 6);
+      const bl = "#4a78c2";
+      P(bx, shade(bl, -0.3), X + 21, Y + 5, WW - 25, 22);
+      P(bx, bl, X + 21, Y + 5, WW - 25, 18);
+      P(bx, shade(bl, 0.45), X + 21, Y + 5, WW - 25, 1);
+      P(bx, shade(bl, 0.3), X + 21, Y + 6, 4, 17);
+      for (let i = X + 28; i < X + WW - 6; i += 6)
+        for (let j = Y + 9; j < Y + 21; j += 6) P(bx, shade(bl, 0.2), i + ((j >> 1) % 3), j, 2, 2);
+      P(bx, "#4e3019", X + 1, Y - 4, 8, 34);
+      P(bx, "#8a5a33", X + 2, Y - 3, 6, 32);
+      P(bx, "#a8744a", X + 2, Y - 3, 6, 2);
+      P(bx, "#6e4428", X + 7, Y - 1, 1, 30);
+      P(bx, "#4e3019", X + WW - 4, Y + 1, 3, 29);
+      P(bx, "#a8744a", X + WW - 3, Y + 1, 1, 2);
+    }
+    if (it === "desk") paintThing({ ...o, t: "desk" });
+    if (it === "chair") {
+      P(bx, "rgba(0,0,0,.15)", X + 3, Y + 13, 10, 2);
+      P(bx, "#5e3a20", X + 3, Y - 5, 10, 11);
+      P(bx, "#a8744a", X + 4, Y - 4, 8, 9);
+      P(bx, "#c48d5d", X + 4, Y - 4, 8, 1);
+      P(bx, "#8a5a33", X + 6, Y - 2, 1, 6);
+      P(bx, "#8a5a33", X + 9, Y - 2, 1, 6);
+      P(bx, "#5e3a20", X + 2, Y + 4, 12, 8);
+      P(bx, "#c0504d", X + 3, Y + 4, 10, 5);
+      P(bx, "#d9726e", X + 3, Y + 4, 10, 1);
+      P(bx, "#a8744a", X + 3, Y + 9, 10, 2);
+      P(bx, "#5e3a20", X + 3, Y + 12, 2, 3);
+      P(bx, "#5e3a20", X + 11, Y + 12, 2, 3);
+    }
+    if (it === "plant") {
+      ell(bx, X + 8, Y + 15, 6, 1, "rgba(0,0,0,.2)");
+      P(bx, "#2f7432", X + 7, Y + 2, 2, 7);
+      circ(bx, X + 4, Y + 3, 4, "#2f7432");
+      circ(bx, X + 12, Y + 2, 4, "#2f7432");
+      circ(bx, X + 8, Y - 3, 5, "#2f7432");
+      circ(bx, X + 4, Y + 2, 3, "#3f8e3b");
+      circ(bx, X + 12, Y + 1, 3, "#3f8e3b");
+      circ(bx, X + 8, Y - 4, 4, "#3f8e3b");
+      P(bx, "#5aae51", X + 6, Y - 7, 2, 2);
+      P(bx, "#5aae51", X + 2, Y, 2, 1);
+      P(bx, "#5aae51", X + 11, Y - 1, 2, 1);
+      P(bx, "#2c6b2e", X + 8, Y - 5, 1, 4);
+      P(bx, "#a24c27", X + 4, Y + 8, 8, 7);
+      P(bx, "#d06e3d", X + 3, Y + 7, 10, 2);
+      P(bx, "#8a3e1f", X + 10, Y + 9, 2, 6);
+    }
+    if (it === "rug") {
+      const cols = ["#7a3530", "#e2b07a", "#a8423f"];
+      const w = WW - 4;
+      const h = o.h * TILE - 4;
+      P(bx, cols[0], X + 2, Y + 2, w, h);
+      P(bx, cols[1], X + 4, Y + 4, w - 4, h - 4);
+      P(bx, cols[2], X + 6, Y + 6, w - 8, h - 8);
+      for (let i = X + 10; i < X + w - 6; i += 8) {
+        P(bx, cols[1], i, Y + 8, 3, 2);
+        P(bx, cols[1], i, Y + h - 6, 3, 2);
+      }
+      P(bx, cols[1], cx - 3, Y + h / 2, 7, 3);
+      P(bx, cols[1], cx - 1, Y + h / 2 - 2, 3, 7);
+      for (let j = Y + 3; j < Y + h + 1; j += 2) {
+        P(bx, "#f4ead6", X, j, 2, 1);
+        P(bx, "#f4ead6", X + WW - 2, j, 2, 1);
+      }
+    }
+    if (it === "lamp") {
+      ell(bx, X + 8, Y + 13, 7, 3, "rgba(255,226,150,.18)");
+      ell(bx, X + 8, Y + 14, 4, 1, "rgba(0,0,0,.2)");
+      P(bx, "#3d3d45", X + 5, Y + 12, 6, 2);
+      P(bx, "#3d3d45", X + 7, Y - 7, 2, 19);
+      P(bx, "#5a5a66", X + 7, Y - 7, 1, 19);
+      P(bx, "rgba(255,226,150,.3)", X + 2, Y - 7, 12, 3);
+      P(bx, "#d9b77a", X + 5, Y - 15, 6, 1);
+      P(bx, "#f6e7c4", X + 4, Y - 14, 8, 4);
+      P(bx, "#f6e7c4", X + 3, Y - 10, 10, 2);
+      P(bx, "#e0c99a", X + 10, Y - 13, 2, 5);
+      P(bx, "#d9b77a", X + 3, Y - 8, 10, 1);
+      P(bx, "#fff6d6", X + 5, Y - 7, 6, 1);
+    }
+    if (it === "shelf_small") {
+      P(bx, "rgba(0,0,0,.18)", X + 2, Y + 14, 30, 2);
+      P(bx, "#4e3019", X + 1, Y - 4, 30, 19);
+      P(bx, "#8a5a33", X + 2, Y - 3, 28, 17);
+      P(bx, "#a8744a", X + 2, Y - 3, 28, 2);
+      P(bx, "#2e1c10", X + 4, Y + 1, 11, 11);
+      P(bx, "#2e1c10", X + 17, Y + 1, 11, 11);
+      let xx = X + 4;
+      while (xx < X + 13) {
+        const c = pick(BOOK_COLORS);
+        const h = 6 + ((rnd() * 4) | 0);
+        P(bx, c, xx, Y + 12 - h, 2, h);
+        P(bx, shade(c, 0.35), xx, Y + 13 - h);
+        xx += 2;
+      }
+      P(bx, "#c8a070", X + 18, Y + 5, 9, 7);
+      P(bx, "#a8844f", X + 18, Y + 7, 9, 1);
+      P(bx, "#a8844f", X + 18, Y + 10, 9, 1);
+      P(bx, "#e0c494", X + 18, Y + 5, 9, 1);
+      P(bx, "#a24c27", X + 23, Y - 7, 5, 4);
+      circ(bx, X + 25, Y - 9, 3, "#3f8e3b");
+      P(bx, "#5aae51", X + 24, Y - 11, 2, 1);
+      P(bx, "#f4f1ea", X + 6, Y - 9, 8, 6);
+      P(bx, "#7fa2c8", X + 7, Y - 8, 6, 4);
+      P(bx, "#4fbf6a", X + 7, Y - 6, 6, 2);
+    }
+    if (it === "wardrobe") {
+      P(bx, "rgba(0,0,0,.2)", X + 2, Y + 14, 30, 2);
+      P(bx, "#4e3019", X + 1, Y - 16, 30, 31);
+      P(bx, "#8a5a33", X + 2, Y - 15, 28, 29);
+      P(bx, "#a8744a", X + 2, Y - 15, 28, 2);
+      P(bx, "#6e4428", X + 2, Y - 13, 28, 1);
+      P(bx, "#6e4428", X + 15, Y - 12, 2, 25);
+      P(bx, "#9c6b42", X + 4, Y - 10, 10, 21);
+      P(bx, "#9c6b42", X + 18, Y - 10, 10, 21);
+      P(bx, "#b07a46", X + 4, Y - 10, 1, 21);
+      P(bx, "#b07a46", X + 18, Y - 10, 1, 21);
+      P(bx, "#7a4e2c", X + 4, Y + 10, 10, 1);
+      P(bx, "#7a4e2c", X + 18, Y + 10, 10, 1);
+      P(bx, "#f2c14e", X + 12, Y - 1, 2, 3);
+      P(bx, "#f2c14e", X + 18, Y - 1, 2, 3);
+      P(bx, "#4e3019", X + 3, Y + 14, 3, 2);
+      P(bx, "#4e3019", X + 26, Y + 14, 3, 2);
+    }
+    // ─── Coins ───
+    if (it === "beanbag") {
+      ell(bx, X + 8, Y + 14, 7, 2, "rgba(0,0,0,.2)");
+      ell(bx, X + 8, Y + 8, 7, 6, "#a8582a");
+      ell(bx, X + 8, Y + 7, 6, 5, "#e2874c");
+      ell(bx, X + 8, Y + 9, 4, 2, "#c96e36");
+      ell(bx, X + 6, Y + 4, 2, 1, "#f6b27a");
+      P(bx, "#fdfaf2", X + 11, Y + 3, 1, 1);
+    }
+    if (it === "sofa") {
+      const c = "#3fae8f";
+      P(bx, "rgba(0,0,0,.18)", X + 1, Y + 14, WW - 2, 2);
+      P(bx, shade(c, -0.5), X, Y - 6, WW, 20);
+      P(bx, shade(c, -0.15), X + 1, Y - 5, WW - 2, 9);
+      P(bx, shade(c, 0.25), X + 1, Y - 5, WW - 2, 1);
+      for (let i = 1; i < o.w; i++) P(bx, shade(c, -0.3), X + i * 16, Y - 3, 1, 6);
+      P(bx, c, X + 4, Y + 3, WW - 8, 7);
+      P(bx, shade(c, 0.3), X + 4, Y + 3, WW - 8, 1);
+      for (let i = 1; i < o.w; i++) P(bx, shade(c, -0.3), X + i * 16, Y + 3, 1, 7);
+      P(bx, shade(c, -0.3), X + 1, Y + 10, WW - 2, 3);
+      P(bx, shade(c, -0.1), X + 1, Y - 1, 4, 12);
+      P(bx, shade(c, -0.1), X + WW - 5, Y - 1, 4, 12);
+      P(bx, shade(c, 0.25), X + 1, Y - 1, 4, 1);
+      P(bx, shade(c, 0.25), X + WW - 5, Y - 1, 4, 1);
+      P(bx, "#4e3019", X + 2, Y + 13, 2, 2);
+      P(bx, "#4e3019", X + WW - 4, Y + 13, 2, 2);
+      P(bx, "#f2c14e", X + 5, Y - 3, 6, 5);
+      P(bx, "#ffe08a", X + 5, Y - 3, 6, 1);
+      P(bx, "#f2b8c8", X + WW - 11, Y - 3, 6, 5);
+      P(bx, "#ffd7e2", X + WW - 11, Y - 3, 6, 1);
+    }
+    if (it === "bookshelf") paintThing({ ...o, t: "shelf" });
+    if (it === "lavalamp") {
+      ell(bx, X + 8, Y + 6, 7, 8, "rgba(255,138,92,.12)");
+      ell(bx, X + 8, Y + 14, 4, 1, "rgba(0,0,0,.2)");
+      P(bx, "#5a5a66", X + 4, Y + 12, 8, 3);
+      P(bx, "#8a8a96", X + 5, Y + 8, 6, 4);
+      P(bx, "#b8bcc2", X + 5, Y + 8, 2, 4);
+      P(bx, "#4a2a7a", X + 5, Y - 5, 6, 13);
+      P(bx, "#4a2a7a", X + 4, Y + 1, 8, 7);
+      P(bx, "#a77de0", X + 6, Y - 4, 4, 12);
+      P(bx, "#a77de0", X + 5, Y + 1, 6, 6);
+      ell(bx, X + 8, Y + 5, 2, 1, "#ff8a5c");
+      P(bx, "#ff8a5c", X + 7, Y - 2, 2, 2);
+      P(bx, "#ffb08a", X + 8, Y + 1, 1, 1);
+      P(bx, "#d6c2ff", X + 6, Y - 3, 1, 8);
+      P(bx, "#8a8a96", X + 6, Y - 7, 4, 2);
+      P(bx, "#b8bcc2", X + 6, Y - 7, 1, 2);
+    }
+    if (it === "gamingchair") {
+      ell(bx, X + 8, Y + 14, 6, 1, "rgba(0,0,0,.2)");
+      P(bx, "#2a2a30", X + 3, Y + 13, 10, 1);
+      P(bx, "#2a2a30", X + 2, Y + 14, 2, 1);
+      P(bx, "#2a2a30", X + 12, Y + 14, 2, 1);
+      P(bx, "#5a5a66", X + 7, Y + 10, 2, 4);
+      P(bx, "#1b1b1f", X + 3, Y - 9, 10, 15);
+      P(bx, "#2d2d33", X + 4, Y - 8, 8, 13);
+      P(bx, "#e24b4a", X + 4, Y - 8, 2, 13);
+      P(bx, "#e24b4a", X + 10, Y - 8, 2, 13);
+      P(bx, "#f4f1ea", X + 6, Y - 7, 4, 2);
+      P(bx, "#1b1b1f", X + 2, Y + 3, 12, 8);
+      P(bx, "#2d2d33", X + 3, Y + 4, 10, 5);
+      P(bx, "#e24b4a", X + 3, Y + 4, 10, 1);
+      P(bx, "#1b1b1f", X + 1, Y + 1, 2, 6);
+      P(bx, "#1b1b1f", X + 13, Y + 1, 2, 6);
+      P(bx, "#5a5a66", X + 1, Y + 1, 2, 1);
+      P(bx, "#5a5a66", X + 13, Y + 1, 2, 1);
+    }
+    if (it === "fridge") {
+      P(bx, "rgba(0,0,0,.2)", X + 2, Y + 14, 13, 2);
+      P(bx, "#8a96a3", X + 2, Y - 7, 12, 22);
+      P(bx, "#e8eef2", X + 3, Y - 6, 10, 20);
+      P(bx, "#ffffff", X + 3, Y - 6, 10, 1);
+      P(bx, "#c9d3da", X + 12, Y - 6, 1, 20);
+      P(bx, "#8a96a3", X + 3, Y, 10, 1);
+      P(bx, "#8a96a3", X + 10, Y - 4, 1, 3);
+      P(bx, "#8a96a3", X + 10, Y + 3, 1, 6);
+      P(bx, "#e24b4a", X + 5, Y - 4, 2, 2);
+      P(bx, "#3d7fd6", X + 7, Y + 3, 2, 2);
+      P(bx, "#ffe58a", X + 4, Y + 7, 4, 4);
+      P(bx, "#e8c94a", X + 4, Y + 7, 4, 1);
+      P(bx, "#5a5a66", X + 3, Y + 14, 2, 1);
+      P(bx, "#5a5a66", X + 11, Y + 14, 2, 1);
+    }
+    if (it === "rug_round") {
+      const cy = Y + o.h * 8;
+      ell(bx, cx, cy, WW / 2 - 2, o.h * 8 - 2, "#5a3d6b");
+      ell(bx, cx, cy, WW / 2 - 4, o.h * 8 - 4, "#e2b07a");
+      ell(bx, cx, cy, WW / 2 - 6, o.h * 8 - 6, "#6f4c84");
+      ell(bx, cx, cy, WW / 2 - 12, o.h * 8 - 9, "#8a66a0");
+      ell(bx, cx, cy, WW / 2 - 16, o.h * 8 - 12, "#e2b07a");
+      for (let a = 0; a < Math.PI * 2; a += Math.PI / 6)
+        P(
+          bx,
+          "#e2b07a",
+          Math.round(cx + Math.cos(a) * (WW / 2 - 9)),
+          Math.round(cy + Math.sin(a) * (o.h * 8 - 7)),
+          2,
+          1,
+        );
+    }
+    if (it === "tv") {
+      P(bx, "rgba(0,0,0,.18)", X + 2, Y + 14, 30, 2);
+      P(bx, "#3a2a25", X + 2, Y + 4, 28, 11);
+      P(bx, "#5e463e", X + 2, Y + 4, 28, 1);
+      P(bx, "#2a1e1a", X + 15, Y + 6, 1, 8);
+      P(bx, "#4a3730", X + 4, Y + 6, 10, 7);
+      P(bx, "#4a3730", X + 17, Y + 6, 11, 7);
+      P(bx, "#c8a24a", X + 12, Y + 9, 1, 2);
+      P(bx, "#c8a24a", X + 18, Y + 9, 1, 2);
+      P(bx, "#1b1b1f", X + 13, Y + 2, 6, 3);
+      P(bx, "#1b1b1f", X + 3, Y - 12, 26, 15);
+      P(bx, "#2d2d33", X + 3, Y - 12, 26, 1);
+      P(bx, "#2d3b48", X + 5, Y - 10, 22, 11);
+      P(bx, "#3e5163", X + 7, Y - 9, 2, 1);
+      P(bx, "#3e5163", X + 6, Y - 8, 2, 1);
+      P(bx, "#3e5163", X + 20, Y - 3, 4, 1);
+      P(bx, "#3fae8f", X + 26, Y + 1, 1, 1);
+    }
+    if (it === "speaker") {
+      P(bx, "rgba(0,0,0,.2)", X + 3, Y + 14, 11, 2);
+      P(bx, "#1b1b1f", X + 3, Y - 9, 10, 24);
+      P(bx, "#2d2d33", X + 4, Y - 8, 8, 22);
+      P(bx, "#3d3d45", X + 4, Y - 8, 8, 1);
+      circ(bx, X + 8, Y - 3, 2, "#111");
+      P(bx, "#5a5a66", X + 8, Y - 3);
+      circ(bx, X + 8, Y + 7, 3, "#111");
+      circ(bx, X + 8, Y + 7, 1, "#3d3d45");
+      P(bx, "#8a8a96", X + 6, Y + 5);
+      P(bx, "#3fae8f", X + 10, Y - 7);
+    }
+    // ─── Plus ───
+    if (it === "fishtank") {
+      P(bx, "rgba(0,0,0,.2)", X + 1, Y + 14, 31, 2);
+      P(bx, "#4e3019", X + 1, Y + 3, 30, 12);
+      P(bx, "#6e4428", X + 2, Y + 4, 28, 10);
+      P(bx, "#8a5a33", X + 2, Y + 4, 28, 1);
+      P(bx, "#4e3019", X + 16, Y + 5, 1, 9);
+      P(bx, "#c8a24a", X + 14, Y + 8, 1, 2);
+      P(bx, "#c8a24a", X + 18, Y + 8, 1, 2);
+      P(bx, "#2a3550", X + 1, Y - 15, 30, 19);
+      tankWater(X + 2, Y - 13, 28, 16);
+      ell(bx, X + 19, Y + 1, 3, 1, "#8f949a");
+      fish(X + 8, Y - 9, "#e2874c");
+      fish(X + 18, Y - 5, "#f2c14e", true);
+      fish(X + 11, Y - 3, "#a77de0");
+      P(bx, "#1b1b1f", X + 1, Y - 16, 30, 2);
+      P(bx, "#3d3d45", X + 1, Y - 16, 30, 1);
+      P(bx, "#ffe58a", X + 11, Y - 14, 10, 1);
+      glint(X + 5, Y - 12);
+      glint(X + 21, Y - 9);
+    }
+    if (it === "trophy") {
+      P(bx, "rgba(0,0,0,.2)", X + 2, Y + 14, 30, 2);
+      P(bx, "#4e3019", X + 1, Y - 15, 30, 30);
+      P(bx, "#6e4428", X + 2, Y - 14, 28, 28);
+      P(bx, "#8a5a33", X + 2, Y - 14, 28, 2);
+      P(bx, "#2e1c10", X + 4, Y - 11, 24, 10);
+      P(bx, "#2e1c10", X + 4, Y + 2, 24, 9);
+      cup(X + 8, Y - 1, "#c9cdd2");
+      cup(X + 16, Y - 1, "#f2c14e", true);
+      cup(X + 24, Y - 1, "#d0844a");
+      P(bx, "#a8744a", X + 3, Y - 1, 26, 2);
+      P(bx, "#a8744a", X + 3, Y + 11, 26, 2);
+      P(bx, "#c0504d", X + 7, Y + 2, 2, 4);
+      P(bx, "#3d7fd6", X + 9, Y + 2, 2, 4);
+      circ(bx, X + 9, Y + 7, 2, "#f2c14e");
+      P(bx, "#ffe08a", X + 8, Y + 6);
+      P(bx, "#4e3019", X + 15, Y + 4, 11, 7);
+      P(bx, "#c8a24a", X + 16, Y + 5, 9, 5);
+      P(bx, "#8a6a20", X + 18, Y + 7, 5, 1);
+      P(bx, "rgba(255,255,255,.18)", X + 5, Y - 10, 1, 8);
+      P(bx, "rgba(255,255,255,.18)", X + 5, Y + 3, 1, 7);
+      glint(X + 14, Y - 9);
+      glint(X + 6, Y - 7);
+      glint(X + 7, Y + 7);
+    }
+    if (it === "deluxedesk") {
+      P(bx, "rgba(0,0,0,.2)", X + 2, Y + 14, 30, 2);
+      ell(bx, X + 25, Y + 4, 6, 4, "rgba(255,230,160,.18)");
+      P(bx, "#2e1c10", X + 1, Y + 10, 30, 5);
+      P(bx, "#4e3019", X + 2, Y + 11, 13, 3);
+      P(bx, "#4e3019", X + 17, Y + 11, 13, 3);
+      P(bx, "#f2c14e", X + 7, Y + 12, 3, 1);
+      P(bx, "#f2c14e", X + 22, Y + 12, 3, 1);
+      P(bx, "#2e1c10", X, Y, 32, 11);
+      P(bx, "#5e3a20", X + 1, Y + 1, 30, 9);
+      P(bx, "#7a4e2c", X + 1, Y + 1, 30, 2);
+      P(bx, "#f2c14e", X, Y + 10, 32, 1);
+      P(bx, "#ffe08a", X + 2, Y + 10, 6, 1);
+      P(bx, "#8a8a96", X + 3, Y + 5, 13, 4);
+      P(bx, "#b8bcc2", X + 3, Y + 5, 13, 1);
+      for (let i = 0; i < 5; i++) P(bx, "#5a5a66", X + 4 + i * 2, Y + 7, 1, 1);
+      P(bx, "#3d3d45", X + 4, Y - 6, 11, 11);
+      P(bx, "#7fd1ff", X + 5, Y - 5, 9, 8);
+      P(bx, "#ffffff", X + 6, Y - 4, 4, 1);
+      P(bx, "#ffd1e8", X + 6, Y - 2, 6, 1);
+      P(bx, "#c4f0ff", X + 6, Y, 3, 1);
+      P(bx, "#fdfaf2", X + 18, Y + 3, 3, 4);
+      P(bx, "#c0504d", X + 18, Y + 3, 3, 1);
+      P(bx, "#fdfaf2", X + 21, Y + 4, 1, 2);
+      P(bx, "#c8a24a", X + 25, Y - 1, 2, 7);
+      P(bx, "#c8a24a", X + 23, Y + 6, 6, 2);
+      P(bx, "#f2c14e", X + 22, Y - 4, 7, 3);
+      P(bx, "#ffe08a", X + 22, Y - 4, 7, 1);
+      P(bx, "#fff6d6", X + 23, Y - 1, 5, 1);
+      glint(X + 22, Y - 6);
+      glint(X + 8, Y - 7);
+    }
+    if (it === "hammock") {
+      ell(bx, cx, Y + 13, WW / 2 - 8, 2, "rgba(0,0,0,.18)");
+      const w = WW - 16;
+      for (let i = 0; i < w; i++) {
+        const sag = Math.round(Math.sin((Math.PI * i) / (w - 1)) * 5);
+        const col = ["#3fae8f", "#f6f0e0", "#f2c14e"][Math.floor(i / 4) % 3];
+        P(bx, shade(col, -0.5), X + 8 + i, Y - 3 + sag, 1, 10);
+        P(bx, shade(col, -0.2), X + 8 + i, Y - 2 + sag, 1, 8);
+        P(bx, col, X + 8 + i, Y - 2 + sag, 1, 5);
+        P(bx, shade(col, 0.35), X + 8 + i, Y - 2 + sag, 1, 1);
+        if (i % 2) P(bx, "#f6f0e0", X + 8 + i, Y + 7 + sag);
+      }
+      for (let i = 0; i < 5; i++) {
+        P(bx, "#d8c8a0", X + 3 + i, Y - 8 + i, 1, 2);
+        P(bx, "#d8c8a0", X + WW - 4 - i, Y - 8 + i, 1, 2);
+      }
+      [X + 1, X + WW - 4].forEach((px) => {
+        P(bx, "#4e3019", px, Y - 10, 3, 25);
+        P(bx, "#8a5a33", px + 1, Y - 10, 1, 25);
+        P(bx, "#a8744a", px, Y - 10, 3, 1);
+      });
+    }
+    if (it === "neonsign") {
+      P(bx, "rgba(0,0,0,.2)", X + 2, Y + 14, 30, 2);
+      P(bx, "#2a2a30", X + 6, Y + 3, 2, 12);
+      P(bx, "#2a2a30", X + 24, Y + 3, 2, 12);
+      P(bx, "#3d3d45", X + 4, Y + 13, 6, 2);
+      P(bx, "#3d3d45", X + 22, Y + 13, 6, 2);
+      P(bx, "#0e0e16", X + 1, Y - 15, 30, 19);
+      P(bx, "#1b1b28", X + 2, Y - 14, 28, 17);
+      const glow = (rows: string[], x: number, y: number, col: string) => {
+        const halo = { h: col.replace("1)", ".22)") };
+        [
+          [-1, 0],
+          [1, 0],
+          [0, -1],
+          [0, 1],
+        ].forEach(([dx, dy]) => sprite(bx, x + dx, y + dy, rows, halo));
+      };
+      const heart = [".hh.hh.", "h..h..h", "h.....h", ".h...h.", "..h.h..", "...h..."];
+      const word = [
+        "dd..rr..eee..a..m.m",
+        "d.d.r.r.e...a.a.mmm",
+        "d.d.rr..ee..aaa.m.m",
+        "d.d.r.r.e...a.a.m.m",
+        "dd..r.r.eee.a.a.m.m",
+      ].map((r) => r.replace(/[a-z]/g, "h"));
+      glow(heart, cx - 3, Y - 13, "rgba(255,90,180,1)");
+      glow(word, cx - 9, Y - 5, "rgba(94,242,255,1)");
+      sprite(bx, cx - 3, Y - 13, heart, { h: "#ff5ab4" });
+      sprite(bx, cx - 9, Y - 5, word, { h: "#5ef2ff" });
+      P(bx, "#ffd1ec", cx - 2, Y - 13, 1, 1);
+      P(bx, "#d8fcff", cx - 9, Y - 5, 1, 1);
+      glint(cx - 4, Y - 12);
+      glint(cx + 4, Y - 3);
+    }
+    if (it === "cattree") {
+      ell(bx, X + 8, Y + 15, 7, 1, "rgba(0,0,0,.2)");
+      P(bx, "#8a66a0", X + 1, Y + 11, 14, 4);
+      P(bx, "#a985bd", X + 1, Y + 11, 14, 1);
+      P(bx, "#d9c08a", X + 6, Y - 11, 4, 22);
+      for (let j = Y - 10; j < Y + 11; j += 2) P(bx, "#b89a62", X + 6, j, 4, 1);
+      P(bx, "#6e4f80", X + 1, Y, 9, 3);
+      P(bx, "#a985bd", X + 1, Y, 9, 1);
+      P(bx, "#f4f1ea", X + 2, Y + 3, 1, 4);
+      P(bx, "#e24b4a", X + 1, Y + 7, 3, 2);
+      P(bx, "#6e4f80", X + 4, Y - 12, 11, 3);
+      P(bx, "#a985bd", X + 4, Y - 12, 11, 1);
+      sprite(
+        bx,
+        X + 6,
+        Y - 20,
+        ["o...o...", "oo.oo...", "ooooo...", "okook...", "ooooo..t", ".ooooo.t", ".oooooot"],
+        { o: "#e2874c", k: "#1a1a1a", t: "#c96e36" },
+      );
+      P(bx, "#ffb08a", X + 7, Y - 17, 1, 1);
+      P(bx, "#f6b27a", X + 8, Y - 16, 3, 1);
+    }
+    if (it === "bunkbed") {
+      P(bx, "rgba(0,0,0,.2)", X + 2, Y + 29, WW - 3, 3);
+      P(bx, "rgba(0,0,0,.22)", X + 3, Y + 8, WW - 6, 21);
+      // Cosy corner under the loft: a little desk with a lamp.
+      ell(bx, X + 14, Y + 17, 8, 5, "rgba(255,226,150,.18)");
+      P(bx, "#5e3a20", X + 6, Y + 18, 18, 7);
+      P(bx, "#a8744a", X + 6, Y + 18, 18, 5);
+      P(bx, "#c48d5d", X + 6, Y + 18, 18, 1);
+      P(bx, "#5e3a20", X + 7, Y + 25, 2, 4);
+      P(bx, "#5e3a20", X + 21, Y + 25, 2, 4);
+      P(bx, "#fff", X + 9, Y + 19, 6, 3);
+      P(bx, "#3d3d45", X + 19, Y + 14, 1, 5);
+      P(bx, "#a77de0", X + 17, Y + 13, 5, 2);
+      P(bx, "#fff6d6", X + 18, Y + 15, 3, 1);
+      // Posts and the loft.
+      [X + 1, X + WW - 4].forEach((px) => {
+        P(bx, "#4e3019", px, Y - 14, 3, 44);
+        P(bx, "#8a5a33", px + 1, Y - 14, 1, 44);
+      });
+      P(bx, "#4e3019", X + 1, Y - 15, WW - 2, 20);
+      P(bx, "#e8e2d6", X + 4, Y - 12, WW - 8, 14);
+      P(bx, "#fdfaf2", X + 4, Y - 12, WW - 8, 1);
+      P(bx, "#ffffff", X + 5, Y - 10, 8, 9);
+      P(bx, "#d8d2c4", X + 5, Y - 2, 8, 1);
+      const bl = "#a77de0";
+      P(bx, shade(bl, -0.3), X + 16, Y - 12, WW - 20, 15);
+      P(bx, bl, X + 16, Y - 12, WW - 20, 13);
+      P(bx, shade(bl, 0.4), X + 16, Y - 12, WW - 20, 1);
+      P(bx, shade(bl, 0.25), X + 16, Y - 11, 3, 12);
+      for (let i = X + 23; i < X + WW - 6; i += 6) P(bx, "#ffe58a", i, Y - 8 + ((i >> 2) % 2) * 4);
+      P(bx, "#6e4428", X + 1, Y + 3, WW - 2, 5);
+      P(bx, "#8a5a33", X + 1, Y + 3, WW - 2, 1);
+      P(bx, "#4e3019", X + 1, Y + 8, WW - 2, 1);
+      // String lights on the rail.
+      for (let i = 0; i < WW - 8; i += 5) {
+        P(bx, "#3d3d45", X + 4 + i, Y + 5 + (i % 2), 5, 1);
+        P(
+          bx,
+          ["#ffd84d", "#ff9ec4", "#7fd1ff", "#9fe0c8"][(i / 5) % 4],
+          X + 6 + i,
+          Y + 6 + (i % 2),
+        );
+      }
+      // Ladder.
+      P(bx, "#8a5a33", X + WW - 13, Y + 8, 2, 22);
+      P(bx, "#8a5a33", X + WW - 7, Y + 8, 2, 22);
+      for (let j = Y + 11; j < Y + 29; j += 4) P(bx, "#a8744a", X + WW - 13, j, 8, 1);
+      glint(X + 12, Y + 5);
+      glint(X + 30, Y + 6);
+    }
+    // ─── Pro ───
+    if (it === "aquarium") {
+      P(bx, "rgba(0,0,0,.22)", X + 1, Y + 14, WW - 1, 2);
+      P(bx, "#2e1c10", X, Y + 3, WW, 12);
+      P(bx, "#4e3019", X + 1, Y + 4, WW - 2, 10);
+      P(bx, "#f2c14e", X, Y + 3, WW, 1);
+      P(bx, "#ffe08a", X + 2, Y + 3, 8, 1);
+      for (let i = 1; i < 3; i++) P(bx, "#2e1c10", X + i * 16, Y + 5, 1, 8);
+      for (let i = 0; i < 3; i++) P(bx, "#f2c14e", X + i * 16 + 7, Y + 8, 2, 2);
+      P(bx, "#9c7a2c", X, Y - 18, WW, 21);
+      P(bx, "#1e2a44", X + 1, Y - 17, WW - 2, 19);
+      tankWater(X + 2, Y - 15, WW - 4, 17);
+      // Coral, a little castle and a treasure chest.
+      P(bx, "#ff7a6b", X + 10, Y - 4, 1, 4);
+      P(bx, "#ff7a6b", X + 9, Y - 3, 3, 1);
+      P(bx, "#ff7a6b", X + 12, Y - 6, 1, 6);
+      P(bx, "#ff9ec4", X + 13, Y - 4, 2, 1);
+      P(bx, "#b8bcc2", X + 22, Y - 7, 7, 8);
+      P(bx, "#8f949a", X + 22, Y - 9, 2, 2);
+      P(bx, "#8f949a", X + 27, Y - 9, 2, 2);
+      P(bx, "#2a3550", X + 24, Y - 3, 3, 4);
+      P(bx, "#e24b4a", X + 25, Y - 12, 1, 3);
+      P(bx, "#8a5a33", X + 33, Y - 2, 6, 3);
+      P(bx, "#f2c14e", X + 33, Y - 3, 6, 1);
+      P(bx, "#ffe08a", X + 35, Y - 4, 2, 1);
+      fish(X + 6, Y - 12, "#e2874c");
+      fish(X + 30, Y - 11, "#f2c14e", true);
+      fish(X + 16, Y - 9, "#5b9cff");
+      fish(X + 34, Y - 7, "#ff7aa8", true);
+      fish(X + 4, Y - 6, "#3fae8f", true);
+      P(bx, "#1b1b1f", X - 1, Y - 20, WW + 2, 3);
+      P(bx, "#f2c14e", X - 1, Y - 20, WW + 2, 1);
+      P(bx, "#ffe58a", X + 6, Y - 17, WW - 12, 1);
+      for (let i = 0; i < 6; i++)
+        glint(X + 4 + ((rnd() * (WW - 10)) | 0), Y - 14 + ((rnd() * 12) | 0));
+    }
+    if (it === "arcade") {
+      P(bx, "rgba(0,0,0,.22)", X, Y + 14, 16, 2);
+      P(bx, "#1b1440", X + 1, Y - 15, 14, 31);
+      P(bx, "#3b2f7a", X + 2, Y - 14, 12, 29);
+      P(bx, "#ff5ab4", X + 1, Y - 12, 1, 26);
+      P(bx, "#5ef2ff", X + 14, Y - 12, 1, 26);
+      P(bx, "#f2c14e", X + 2, Y - 14, 12, 3);
+      P(bx, "#ffe08a", X + 3, Y - 13, 3, 1);
+      P(bx, "#0b0b12", X + 3, Y - 9, 10, 9);
+      P(bx, "#1d1a4a", X + 4, Y - 8, 8, 7);
+      sprite(bx, X + 5, Y - 7, ["a...a", ".aaa.", "aa.aa", "aaaaa"], { a: "#7fe08a" });
+      P(bx, "#ffd84d", X + 7, Y - 2, 2, 1);
+      P(bx, "#5d4fa0", X + 2, Y + 1, 12, 4);
+      P(bx, "#e24b4a", X + 4, Y + 2, 2, 2);
+      P(bx, "#3fae8f", X + 8, Y + 2, 2, 2);
+      P(bx, "#ffd84d", X + 11, Y + 2, 1, 2);
+      P(bx, "#2b2258", X + 4, Y + 8, 8, 4);
+      P(bx, "#f2c14e", X + 7, Y + 9, 2, 2);
+      glint(X + 4, Y - 13);
+      glint(X + 9, Y - 6);
+    }
+    if (it === "fireplace") {
+      ell(bx, cx, Y + 15, 15, 4, "rgba(255,150,60,.16)");
+      P(bx, "#4a4550", X, Y - 16, 32, 31);
+      for (let j = 0; j < 7; j++)
+        for (let i = 0; i < 5; i++) {
+          const x0 = Math.max(X + 1, X + 1 + i * 8 - (j % 2) * 4);
+          const x1 = Math.min(X + 31, X + 8 + i * 8 - (j % 2) * 4);
+          if (x1 > x0) P(bx, (i + j) % 2 ? "#7c7782" : "#8f8a94", x0, Y - 15 + j * 4, x1 - x0, 3);
+        }
+      P(bx, "#5e3a20", X - 2, Y - 18, 36, 4);
+      P(bx, "#8a5a33", X - 2, Y - 18, 36, 1);
+      P(bx, "#3a2416", X - 2, Y - 15, 36, 1);
+      P(bx, "rgba(255,170,80,.3)", X + 5, Y - 9, 22, 21);
+      P(bx, "#1b1416", X + 7, Y - 6, 18, 18);
+      P(bx, "#1b1416", X + 9, Y - 8, 14, 2);
+      P(bx, "#6e4425", X + 9, Y + 8, 14, 3);
+      P(bx, "#8a5a33", X + 10, Y + 8, 5, 1);
+      P(bx, "#4e3019", X + 15, Y + 9, 1, 2);
+      sprite(
+        bx,
+        X + 9,
+        Y - 5,
+        [
+          "....o.....o...",
+          "...oo....oo...",
+          "...oyo..ooo.o.",
+          "..oyyo.oyyo.oo",
+          ".ooyyooyyyoooo",
+          ".oyywyoyywyyo.",
+          "ooyywwyywwyyoo",
+          "oyywwwwwwwwyyo",
+          "oyywwwwwwwwyyo",
+          ".oyyywwwwyyyo.",
+          "..oooyyyyooo..",
+          "...oooooooo...",
+        ],
+        { o: "#e2502a", y: "#ff9a2e", w: "#ffe27a" },
+      );
+      P(bx, "#8f8a94", X + 3, Y + 11, 26, 4);
+      P(bx, "#b8bcc2", X + 3, Y + 11, 26, 1);
+      P(bx, "#fdfaf2", X + 3, Y - 22, 2, 4);
+      P(bx, "#ffd84d", X + 3, Y - 24, 2, 2);
+      P(bx, "#fdfaf2", X + 27, Y - 21, 2, 3);
+      P(bx, "#ffd84d", X + 27, Y - 23, 2, 2);
+      P(bx, "#c8a24a", X + 12, Y - 25, 8, 7);
+      P(bx, "#9fd3ef", X + 13, Y - 24, 6, 5);
+      P(bx, "#4fbf6a", X + 13, Y - 21, 6, 2);
+      for (let i = 0; i < 4; i++) glint(X + 10 + ((rnd() * 12) | 0), Y - 6 + ((rnd() * 10) | 0));
+    }
+    if (it === "projector") {
+      ell(bx, X + 8, Y + 11, 7, 3, "rgba(170,150,255,.22)");
+      ell(bx, X + 8, Y + 13, 5, 1, "rgba(0,0,0,.22)");
+      P(bx, "#2a2a30", X + 3, Y + 9, 10, 4);
+      P(bx, "#5a5a66", X + 3, Y + 9, 10, 1);
+      circ(bx, X + 8, Y + 5, 5, "#1e2a5a");
+      P(bx, "#2a2a30", X + 3, Y + 6, 11, 4);
+      circ(bx, X + 8, Y + 5, 4, "#2a3a7a");
+      P(bx, "#3a4c9a", X + 5, Y + 2, 3, 1);
+      (
+        [
+          [6, 3, "#ffe58a"],
+          [10, 4, "#ffffff"],
+          [8, 1, "#c9b8ff"],
+          [5, 6, "#7fd1ff"],
+          [11, 7, "#ffe58a"],
+        ] as const
+      ).forEach(([dx, dy, c]) => P(bx, c, X + dx, Y + dy));
+      // Stars thrown round the room (walls and floor), clipped to the map.
+      for (let i = 0; i < 18; i++) {
+        const a = rnd() * Math.PI * 2;
+        const r = 14 + rnd() * 40;
+        const sx = Math.round(X + 8 + Math.cos(a) * r);
+        const sy = Math.round(Y + 4 + Math.sin(a) * r * 0.8);
+        if (sx > TILE && sy > 4 && sx < (W - 1) * TILE - 3 && sy < (H - 1) * TILE) {
+          P(bx, "rgba(201,184,255,.55)", sx + 1, sy);
+          sparkles.push([sx, sy, a * 3]);
+        }
+      }
+    }
+    if (it === "throne") {
+      ell(bx, X + 8, Y + 15, 7, 1, "rgba(0,0,0,.22)");
+      P(bx, "#9c7a2c", X + 2, Y - 13, 12, 19);
+      P(bx, "#f2c14e", X + 3, Y - 12, 10, 17);
+      P(bx, "#7a1820", X + 5, Y - 10, 6, 14);
+      P(bx, "#a3202a", X + 5, Y - 9, 6, 13);
+      P(bx, "#c83a44", X + 5, Y - 9, 1, 13);
+      P(bx, "#9c7a2c", X + 2, Y - 15, 2, 2);
+      P(bx, "#9c7a2c", X + 7, Y - 16, 2, 3);
+      P(bx, "#9c7a2c", X + 12, Y - 15, 2, 2);
+      P(bx, "#f2c14e", X + 2, Y - 15, 1, 1);
+      P(bx, "#ffe08a", X + 7, Y - 16, 1, 1);
+      P(bx, "#f2c14e", X + 12, Y - 15, 1, 1);
+      P(bx, "#5b9cff", X + 7, Y - 12, 2, 2);
+      P(bx, "#c9e0ff", X + 7, Y - 12, 1, 1);
+      P(bx, "#9c7a2c", X + 1, Y + 3, 14, 9);
+      P(bx, "#f2c14e", X + 2, Y + 3, 12, 7);
+      P(bx, "#a3202a", X + 3, Y + 3, 10, 5);
+      P(bx, "#d0505a", X + 3, Y + 3, 10, 1);
+      P(bx, "#9c7a2c", X, Y - 1, 4, 9);
+      P(bx, "#9c7a2c", X + 12, Y - 1, 4, 9);
+      P(bx, "#f2c14e", X + 1, Y - 1, 2, 8);
+      P(bx, "#f2c14e", X + 13, Y - 1, 2, 8);
+      P(bx, "#ffe08a", X + 1, Y - 1, 2, 1);
+      P(bx, "#ffe08a", X + 13, Y - 1, 2, 1);
+      P(bx, "#9c7a2c", X + 2, Y + 12, 2, 3);
+      P(bx, "#9c7a2c", X + 12, Y + 12, 2, 3);
+      P(bx, "#fff6c8", X + 3, Y - 12, 1, 4);
+      glint(X + 3, Y - 15);
+      glint(X + 11, Y);
+    }
+  };
+
   const paintThing = (o: Thing) => {
     const X = o.x * TILE;
     const Y = o.y * TILE;
     const WW = o.w * TILE;
+    if (o.t === "furniture") return paintFurniture(o);
     if (o.t === "shelf") {
       const y0 = Y - 8;
       P(bx, "#4e3019", X, y0, 32, 24);
@@ -960,19 +1798,6 @@ export function createKit(W: number, H: number, seed: number) {
       // side-on with a wide body and forked tail so it clearly reads as a fish.
       // Roof and sign go on the top layer so people walking behind pass under.
       const cx = X + WW / 2;
-      /** Pixel art from rows of characters; "." is see-through. */
-      const sprite = (
-        c: CanvasRenderingContext2D,
-        sx: number,
-        sy: number,
-        rows: string[],
-        pal: Record<string, string>,
-      ) =>
-        rows.forEach((row, ry) =>
-          [...row].forEach((ch, rx) => {
-            if (pal[ch]) P(c, pal[ch], sx + rx, sy + ry);
-          }),
-        );
       P(bx, "rgba(0,0,0,.22)", X + 1, Y + 15, WW - 2, 2);
       // Back wall with a fishing net in the middle.
       P(bx, "#7a4e2c", X + 2, Y - 17, WW - 4, 17);
@@ -1149,7 +1974,12 @@ export function createKit(W: number, H: number, seed: number) {
     afterGround.forEach((fn) => fn());
     paintNature();
     seats.forEach(paintSeat);
-    things.forEach(paintThing);
+    // Walk-on pieces (rugs first) go under the rest; dorm furniture is painted
+    // top to bottom so lower pieces overlap the ones behind them. Other things
+    // keep the order they were added in.
+    const layer = (o: Thing) => (o.walk ? (FLOOR_ITEMS.has(o.item ?? "") ? 0 : 1) : 2);
+    const row = (o: Thing) => (o.t === "furniture" ? o.y + o.h : -1);
+    [...things].sort((a, b) => layer(a) - layer(b) || row(a) - row(b)).forEach(paintThing);
     afterThings.forEach((fn) => fn());
     return {
       ...meta,
@@ -1199,6 +2029,8 @@ export function createKit(W: number, H: number, seed: number) {
     window: window_,
     sign,
     rug,
+    roomTheme,
+    decorThing,
     decor,
     afterThings: (fn: () => void) => afterThings.push(fn),
     finish,

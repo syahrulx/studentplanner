@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { CATALOG as ART_CATALOG, COLORS as ART_COLORS, DEFAULT_LOOK, type AvatarLook } from '../vendor/study-world/avatar';
 import { isMapId } from '../vendor/study-world/maps';
 import { BUBBLES, EMOTE_PACKS, ENTRANCES, FRAMES } from '../vendor/study-world/showoff';
+import { FURNITURE, ROOM_THEMES } from '../vendor/study-world/maps/dorm';
 
 /**
  * Study World (Rencana website, /app/world) admin data.
@@ -32,7 +33,7 @@ export const TIER_LABEL: Record<ItemTier, string> = {
 export const AVATAR_CATEGORIES = ['hair', 'eyes', 'top', 'bottom', 'shoes', 'head', 'face', 'back', 'pet', 'effect'] as const;
 /** Shown to others in the room: frame around your name, chat bubble style, entrance effect, extra emotes. */
 export const SHOWOFF_CATEGORIES = ['name_frame', 'chat_bubble', 'entrance', 'emote_pack'] as const;
-/** Reserved for the dorm room (not built in the website yet). */
+/** Dorm room pieces and wall/floor looks. */
 export const ROOM_CATEGORIES = ['furniture', 'room_theme'] as const;
 export const ITEM_CATEGORIES = [...AVATAR_CATEGORIES, 'hair_dye', ...SHOWOFF_CATEGORIES, 'drink', 'snack', ...ROOM_CATEGORIES] as const;
 export type ItemCategory = (typeof ITEM_CATEGORIES)[number];
@@ -41,7 +42,7 @@ export const CATEGORY_LABEL: Record<ItemCategory, string> = {
   hair: 'Hair', eyes: 'Eyes', top: 'Top', bottom: 'Bottom', shoes: 'Shoes', head: 'Head', face: 'Face',
   back: 'Back', pet: 'Pet', effect: 'Effect', hair_dye: 'Hair dye', drink: 'Café drink', snack: 'Café snack',
   name_frame: 'Name frame', chat_bubble: 'Chat bubble', entrance: 'Entrance', emote_pack: 'Emote pack',
-  furniture: 'Furniture (dorm)', room_theme: 'Room theme (dorm)',
+  furniture: 'Dorm furniture', room_theme: 'Dorm theme',
 };
 
 /**
@@ -57,9 +58,8 @@ export const DRAWN_KEYS: Partial<Record<ItemCategory, readonly string[]>> = {
   chat_bubble: BUBBLES.map((i) => i.id),
   entrance: ENTRANCES.map((i) => i.id),
   emote_pack: EMOTE_PACKS.map((i) => i.id),
-  // The dorm room isn't built yet, so nothing there can go on sale.
-  furniture: [],
-  room_theme: [],
+  furniture: FURNITURE.map((f) => f.id),
+  room_theme: ROOM_THEMES.map((t) => t.id),
 };
 /** The website has a built map for this key. */
 export const hasMapArt = (key: string) => isMapId(key);
