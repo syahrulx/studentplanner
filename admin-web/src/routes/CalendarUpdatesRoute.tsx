@@ -246,7 +246,13 @@ function PeriodListEditor({
   );
 }
 
-export function CalendarUpdatesRoute() {
+/**
+ * `publish` is the "Official calendars" tab (header + publish form);
+ * `offers` is the "Existing offers" tab (the list of published offers).
+ * Both views share this component so the list and the form keep one source
+ * of state and refresh logic.
+ */
+export function CalendarUpdatesRoute({ view = "publish" }: { view?: "publish" | "offers" } = {}) {
   const { requestSafeAction, safeActionDialog } = useSafeActionDialog();
   const { searchQuery, clearSearch } = useAdminSearch();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -635,7 +641,7 @@ export function CalendarUpdatesRoute() {
     );
     if (duplicate) {
       setErr(
-        "This university/campus calendar already exists. Open Existing offers and filter Redundant calendars if cleanup is needed.",
+        "This university/campus calendar already exists. Open the Existing offers tab and filter Redundant calendars if cleanup is needed.",
       );
       return;
     }
@@ -751,8 +757,25 @@ export function CalendarUpdatesRoute() {
     }
   };
 
+  const statusBanners = (
+    <>
+      {err ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
+          {err}
+        </div>
+      ) : null}
+      {okMsg ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-100">
+          {okMsg}
+        </div>
+      ) : null}
+    </>
+  );
+
   return (
     <div>
+      {view === "publish" ? (
+      <>
       <MotionSection>
         <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">
           Academic calendar updates
@@ -789,16 +812,7 @@ export function CalendarUpdatesRoute() {
           </CardHeader>
           {publishOpen ? (
             <CardContent className="space-y-5">
-              {err ? (
-                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
-                  {err}
-                </div>
-              ) : null}
-              {okMsg ? (
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-100">
-                  {okMsg}
-                </div>
-              ) : null}
+              {statusBanners}
 
               <div>
                 <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
@@ -1487,8 +1501,13 @@ export function CalendarUpdatesRoute() {
           ) : null}
         </Card>
       </MotionPanel>
+      </>
+      ) : null}
 
-      <MotionSection className="mt-10">
+      {view === "offers" ? (
+      <>
+      {err || okMsg ? <div className="mb-4 space-y-3">{statusBanners}</div> : null}
+      <MotionSection>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="text-lg font-black text-slate-900 dark:text-slate-100">
@@ -1748,6 +1767,8 @@ export function CalendarUpdatesRoute() {
             ) : null}
           </div>
         </>
+      ) : null}
+      </>
       ) : null}
       {safeActionDialog}
     </div>

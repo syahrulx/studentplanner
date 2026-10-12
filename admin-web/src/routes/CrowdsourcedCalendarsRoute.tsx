@@ -14,7 +14,7 @@ import { useAdminSearch } from '../state/AdminSearchContext';
 import { MotionPanel, MotionSection } from '../ui/motion';
 import { AcademicCalendarOfferGraphic } from '../components/AcademicCalendarOfferGraphic';
 import { useSafeActionDialog } from '../components/SafeActionDialog';
-import { duplicateRecordIds, normaliseRecordName } from '../lib/dataQuality';
+import { crowdsourcedDuplicates, uitmSuggestions } from '../lib/calendarReview';
 
 export function CrowdsourcedCalendarsRoute() {
   const { requestSafeAction, safeActionDialog } = useSafeActionDialog();
@@ -30,6 +30,10 @@ export function CrowdsourcedCalendarsRoute() {
   const [deletingOfferId, setDeletingOfferId] = useState<string>('');
   const [deletingExpired, setDeletingExpired] = useState(false);
   const [reviewingUitmId, setReviewingUitmId] = useState('');
+  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'semester' | 'university' | 'reports'>('newest');
+  const [groupBy, setGroupBy] = useState<'none' | 'university' | 'duplicates'>('none');
+  const [uitmStatus, setUitmStatus] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [deletingDuplicates, setDeletingDuplicates] = useState(false);
 
   const refreshHistory = async () => {
     setBusy(true);
@@ -61,15 +65,23 @@ export function CrowdsourcedCalendarsRoute() {
 
   const expiredOffers = useMemo(() => offers.filter(isExpired), [offers, today]);
   const expiredIdSet = useMemo(() => new Set(expiredOffers.map((offer) => offer.id)), [expiredOffers]);
-  const redundantIds = useMemo(
-    () => duplicateRecordIds(offers, (offer) => [
-      offer.university_id,
-      offer.campus_id ?? 'all',
-      normaliseRecordName(offer.semester_label),
-      offer.start_date,
-      offer.end_date,
-    ].join('|')),
-    [offers],
+  // Copies students would see as one calendar, with one copy picked to keep.
+  const duplicates = useMemo(() => crowdsourcedDuplicates(offers), [offers]);
+  const redundantIds = useMemo(() => new Set(duplicates.keys()), [duplicates]);
+  const suggestedDeleteIds = useMemo(
+    () => [...duplicates.entries()].filter(([, info]) => !info.keep).map(([id]) => id),
+    [duplicates],
+  );
+  const uitmVerdicts = useMemo(() => uitmSuggestions(uitmContributions, today), [uitmContributions, today]);
+  const visibleUitm = useMemo(
+    () =>
+      uitmContributions
+        .filter((row) => uitmStatus === 'all' || row.status === uitmStatus)
+        .sort((a, b) =>
+          (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1) ||
+          b.created_at.localeCompare(a.created_at),
+        ),
+    [uitmContributions, uitmStatus],
   );
 
   useEffect(() => {
@@ -99,8 +111,77 @@ export function CrowdsourcedCalendarsRoute() {
         if (!texts.some(t => t.includes(qLocal))) return false;
       }
       return true;
+    }).sort((a, b) => {
+      switch (sortBy) {
+        case 'oldest': return a.created_at.localeCompare(b.created_at);
+        case 'semester': return b.start_date.localeCompare(a.start_date) || b.created_at.localeCompare(a.created_at);
+        case 'university': return a.university_id.localeCompare(b.university_id) || b.start_date.localeCompare(a.start_date);
+        case 'reports': return (b.report_count ?? 0) - (a.report_count ?? 0) || b.created_at.localeCompare(a.created_at);
+        default: return b.created_at.localeCompare(a.created_at);
+      }
     });
-  }, [calendarAge, offers, offersSearch, searchQuery, today, redundantIds]);
+  }, [calendarAge, offers, offersSearch, searchQuery, today, redundantIds, sortBy]);
+
+  // Sections for the list. "Duplicates" puts every same-calendar group together
+  // (kept copy first) and leaves single calendars in a last section.
+  const offerSections = useMemo(() => {
+    if (groupBy === 'university') {
+      const byUni = new Map<string, CrowdsourcedCalendarRow[]>();
+      filteredOffers.forEach((o) => byUni.set(o.university_id, [...(byUni.get(o.university_id) ?? []), o]));
+      return [...byUni.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([uni, items]) => ({ key: uni, title: uni, subtitle: `${items.length} calendar(s)`, items }));
+    }
+    if (groupBy === 'duplicates') {
+      const byGroup = new Map<string, CrowdsourcedCalendarRow[]>();
+      const singles: CrowdsourcedCalendarRow[] = [];
+      filteredOffers.forEach((o) => {
+        const info = duplicates.get(o.id);
+        if (!info) singles.push(o);
+        else byGroup.set(info.groupKey, [...(byGroup.get(info.groupKey) ?? []), o]);
+      });
+      const groups = [...byGroup.values()].map((items) => {
+        const sorted = [...items].sort((a, b) => Number(duplicates.get(b.id)?.keep) - Number(duplicates.get(a.id)?.keep));
+        const first = sorted[0];
+        return {
+          key: duplicates.get(first.id)!.groupKey,
+          title: `${first.university_id} · ${first.start_date} to ${first.end_date}`,
+          subtitle: `${items.length} copies of the same calendar · keep 1, delete ${items.length - 1}`,
+          items: sorted,
+        };
+      });
+      return singles.length
+        ? [...groups, { key: 'singles', title: 'No duplicates', subtitle: `${singles.length} calendar(s)`, items: singles }]
+        : groups;
+    }
+    return [{ key: 'all', title: '', subtitle: '', items: filteredOffers }];
+  }, [filteredOffers, groupBy, duplicates]);
+
+  const deleteSuggestedDuplicates = () => {
+    const ids = suggestedDeleteIds;
+    if (!ids.length) return;
+    requestSafeAction({
+      title: 'Delete suggested duplicates',
+      operation: 'Delete calendars',
+      affectedCount: ids.length,
+      confirmationText: `DELETE ${ids.length}`,
+      requireReason: true,
+      irreversible: true,
+      warning: 'Deletes only the extra copies. One copy of each calendar (the one marked Keep) stays, so students still see it.',
+      onConfirm: async () => {
+        setErr(''); setOkMsg(''); setDeletingDuplicates(true);
+        let deleted = 0;
+        try {
+          for (const id of ids) {
+            try { await deleteUniversityCalendarOffer(id); deleted += 1; } catch { /* counted as failed below */ }
+          }
+          await refreshHistory();
+          setOkMsg(`${deleted} duplicate calendar${deleted === 1 ? '' : 's'} deleted.`);
+          return { affected: deleted, failed: ids.length - deleted };
+        } finally { setDeletingDuplicates(false); }
+      },
+    });
+  };
 
   const allExpiredSelected = expiredOffers.length > 0 && expiredOffers.every((offer) => selectedExpiredIds.includes(offer.id));
 
@@ -204,10 +285,28 @@ export function CrowdsourcedCalendarsRoute() {
               {uitmContributions.filter((row) => row.status === 'pending').length} pending
             </span>
           </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {(['pending', 'approved', 'rejected', 'all'] as const).map((st) => {
+              const n = st === 'all' ? uitmContributions.length : uitmContributions.filter((r) => r.status === st).length;
+              return (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => setUitmStatus(st)}
+                  className={`rounded-xl px-3 py-1.5 text-xs font-black capitalize ${uitmStatus === st ? 'bg-violet-700 text-white' : 'bg-white text-violet-900 hover:bg-violet-100 dark:bg-slate-900 dark:text-violet-100'}`}
+                >
+                  {st} ({n})
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+            Each pending submission shows a suggestion. It is only advice: you still press Approve or Reject.
+          </div>
           <div className="mt-4 space-y-3">
-            {uitmContributions.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-violet-200 px-4 py-5 text-sm font-semibold text-violet-900 dark:border-violet-900/60 dark:text-violet-100">No UiTM community submissions yet.</div>
-            ) : uitmContributions.map((row) => (
+            {visibleUitm.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-violet-200 px-4 py-5 text-sm font-semibold text-violet-900 dark:border-violet-900/60 dark:text-violet-100">{uitmContributions.length === 0 ? 'No UiTM community submissions yet.' : `No ${uitmStatus} submissions.`}</div>
+            ) : visibleUitm.map((row) => (
               <div key={row.id} className="rounded-2xl border border-violet-100 bg-white p-4 dark:border-violet-900/40 dark:bg-slate-950/40">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
@@ -217,6 +316,20 @@ export function CrowdsourcedCalendarsRoute() {
                   </div>
                   <span className={`self-start rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${row.status === 'approved' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200' : row.status === 'rejected' ? 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200'}`}>{row.status}</span>
                 </div>
+                {uitmVerdicts.get(row.id) ? (() => {
+                  const v = uitmVerdicts.get(row.id)!;
+                  const tone = v.verdict === 'approve'
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-100'
+                    : v.verdict === 'reject'
+                      ? 'border-red-200 bg-red-50 text-red-900 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-100'
+                      : 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100';
+                  const label = v.verdict === 'approve' ? 'Suggested: Approve' : v.verdict === 'reject' ? 'Suggested: Reject' : 'Check first';
+                  return (
+                    <div className={`mt-3 rounded-xl border px-3 py-2 text-xs font-semibold ${tone}`}>
+                      <span className="font-black">{label}</span> · {v.reason}
+                    </div>
+                  );
+                })() : null}
                 <div className="mt-3 flex flex-wrap items-center gap-3 text-xs font-black">
                   {row.source_url ? <a href={row.source_url} target="_blank" rel="noreferrer" className="text-brand-700 underline underline-offset-2 dark:text-brand-300">Open source</a> : null}
                   {row.status === 'pending' ? (
@@ -234,7 +347,7 @@ export function CrowdsourcedCalendarsRoute() {
 
       <MotionSection delay={0.1}>
         <div className="mt-4 rounded-3xl border border-blue-100 bg-blue-50/50 p-4 dark:border-blue-900/30 dark:bg-blue-950/20">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Label className="block">
               <span className="mb-1 block text-xs font-black uppercase tracking-wide text-blue-600 dark:text-blue-300">
                 Search
@@ -254,6 +367,28 @@ export function CrowdsourcedCalendarsRoute() {
                 <option value="all">All calendars</option>
                 <option value="expired">Old academic calendars</option>
                 <option value="redundant">Redundant calendars ({redundantIds.size})</option>
+              </Select>
+            </Label>
+            <Label className="block">
+              <span className="mb-1 block text-xs font-black uppercase tracking-wide text-blue-600 dark:text-blue-300">
+                Sort by
+              </span>
+              <Select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className="border-blue-200 focus:border-blue-500">
+                <option value="newest">Newest submitted</option>
+                <option value="oldest">Oldest submitted</option>
+                <option value="semester">Semester start (latest first)</option>
+                <option value="university">University A–Z</option>
+                <option value="reports">Most reported</option>
+              </Select>
+            </Label>
+            <Label className="block">
+              <span className="mb-1 block text-xs font-black uppercase tracking-wide text-blue-600 dark:text-blue-300">
+                Group by
+              </span>
+              <Select value={groupBy} onChange={(e) => setGroupBy(e.target.value as typeof groupBy)} className="border-blue-200 focus:border-blue-500">
+                <option value="none">No grouping</option>
+                <option value="university">University</option>
+                <option value="duplicates">Duplicates together</option>
               </Select>
             </Label>
           </div>
@@ -286,8 +421,33 @@ export function CrowdsourcedCalendarsRoute() {
           </div>
         ) : null}
 
-        <div className="mt-6 space-y-6">
-          {filteredOffers.map((h) => (
+        {suggestedDeleteIds.length ? (
+          <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-red-900/50 dark:bg-red-950/30">
+            <div className="text-sm font-bold text-red-950 dark:text-red-100">
+              {duplicates.size - suggestedDeleteIds.length} calendar(s) have extra copies. {suggestedDeleteIds.length} copy(ies) can go; one of each is kept.
+              <button type="button" onClick={() => { setGroupBy('duplicates'); setCalendarAge('redundant'); }} className="ml-2 underline underline-offset-2">Show them</button>
+            </div>
+            <button
+              type="button"
+              onClick={deleteSuggestedDuplicates}
+              disabled={deletingDuplicates || Boolean(deletingOfferId) || deletingExpired}
+              className="h-10 rounded-xl bg-red-600 px-4 text-xs font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {deletingDuplicates ? 'Deleting…' : `Delete suggested duplicates (${suggestedDeleteIds.length})`}
+            </button>
+          </div>
+        ) : null}
+
+        <div className="mt-6 space-y-8">
+          {offerSections.map((section) => (
+          <div key={section.key} className="space-y-4">
+            {section.title ? (
+              <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-200 pb-2 dark:border-slate-800">
+                <div className="text-base font-black text-slate-900 dark:text-slate-100">{section.title}</div>
+                <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">{section.subtitle}</div>
+              </div>
+            ) : null}
+          {section.items.map((h) => (
             <Card key={h.id} className="border-blue-200 dark:border-blue-900/50 shadow-sm hover:shadow-md transition-shadow">
               <CardContent className="space-y-4 py-5">
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-slate-100 pb-4 dark:border-slate-800">
@@ -320,10 +480,16 @@ export function CrowdsourcedCalendarsRoute() {
                           Old calendar · ended {h.end_date}
                         </div>
                       ) : null}
-                      {redundantIds.has(h.id) ? (
-                        <div className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
-                          Redundant · remove only the chosen submission
-                        </div>
+                      {duplicates.get(h.id) ? (
+                        duplicates.get(h.id)!.keep ? (
+                          <div className="mt-1 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200">
+                            Keep · best of {duplicates.get(h.id)!.size} copies
+                          </div>
+                        ) : (
+                          <div className="mt-1 inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-red-800 dark:bg-red-500/15 dark:text-red-200">
+                            Suggested delete · duplicate copy
+                          </div>
+                        )
                       ) : null}
                     </div>
                   </div>
@@ -398,6 +564,8 @@ export function CrowdsourcedCalendarsRoute() {
                 </div>
               </CardContent>
             </Card>
+          ))}
+          </div>
           ))}
           {filteredOffers.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 py-16 text-center dark:border-slate-800">

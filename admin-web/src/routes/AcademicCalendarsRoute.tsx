@@ -9,6 +9,7 @@ export function AcademicCalendarsRoute() {
       description="Publish official calendars and review community contributions in one place. Existing calendar data is unchanged."
       tabs={[
         { id: 'official', label: 'Official calendars', description: 'University calendars published by the team.', content: <CalendarUpdatesRoute /> },
+        { id: 'offers', label: 'Existing offers', description: 'Every published calendar offer, grouped by university.', content: <CalendarUpdatesRoute view="offers" /> },
         { id: 'community', label: 'Community submissions', description: 'Crowdsourced and UiTM calendar review.', content: <CrowdsourcedCalendarsRoute /> },
       ]}
     />
