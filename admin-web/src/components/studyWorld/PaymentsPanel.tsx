@@ -121,7 +121,7 @@ export function PaymentsPanel() {
 
         <section className={`${CARD} space-y-3 p-5`}>
           <div className="text-sm font-black text-slate-900 dark:text-white">Premium pass (demo)</div>
-          <p className="text-xs font-semibold text-slate-500">Not used right now: Plus items come free with Rencana Plus, and Pro items with Rencana Pro (Pro also gets every Plus item). Kept only in case a separate Study World pass is sold later.</p>
+          <p className="text-xs font-semibold text-slate-500">Not used right now: Plus items come free with Rencana Plus, and Pro items with Rencana Pro (Pro also gets every Plus item). Kept only in case a separate RenCity pass is sold later.</p>
           <Field label="Monthly (RM)"><input type="number" min={0} step="0.10" value={monthly} onChange={(e) => setMonthly(e.target.value)} className={FIELD} /></Field>
           <Field label="Yearly (RM)"><input type="number" min={0} step="0.10" value={yearly} onChange={(e) => setYearly(e.target.value)} className={FIELD} /></Field>
           <button type="button" className={BTN_DARK} onClick={() => void savePremium()}>Save demo prices</button>

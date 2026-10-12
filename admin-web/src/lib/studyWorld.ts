@@ -198,7 +198,7 @@ function explain(error: { code?: string; message?: string } | null): Error | nul
     /does not exist|could not find the (table|function)/i.test(msg)
   ) {
     return new Error(
-      'Study World tables are not in the database yet. Run the website migration 202610120001_study_world_profiles.sql, then gradeup-mobile/supabase/migrations/20261012000001_study_world_admin.sql in the Supabase SQL Editor.',
+      'RenCity (RenCity) tables are not in the database yet. Run the website migration 202610120001_study_world_profiles.sql, then gradeup-mobile/supabase/migrations/20261012000001_study_world_admin.sql in the Supabase SQL Editor.',
     );
   }
   return new Error(msg);

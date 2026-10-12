@@ -33,7 +33,7 @@ const nav: NavItem[] = [
   { to: '/events', label: 'Events', Icon: IconClipboard },
   { to: '/services', label: 'Services', Icon: IconBriefcase },
   { to: '/confessions', label: 'Confessions', Icon: IconFileText },
-  { to: '/study-world', label: 'Study World', Icon: IconCircles, alerts: 'studyWorld' },
+  { to: '/rencity', label: 'RenCity', Icon: IconCircles, alerts: 'studyWorld' },
 
   { header: 'App Config' },
   { to: '/task-categories', label: 'Task Categories', Icon: IconClipboard },

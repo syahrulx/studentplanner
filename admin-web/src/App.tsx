@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { LoginRoute } from './routes/LoginRoute';
 import { AdminLayout } from './routes/AdminLayout';
 import { DashboardRoute } from './routes/DashboardRoute';
@@ -22,6 +22,12 @@ import { InstitutionsRoute } from './routes/InstitutionsRoute';
 import { ConfessionsRoute } from './routes/ConfessionsRoute';
 import { StudyWorldRoute } from './routes/StudyWorldRoute';
 import { AuthProvider } from './state/AuthProvider';
+
+/** Study World was renamed RenCity; old links (with their ?s= / ?tab=) still work. */
+function ToRenCity() {
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: '/rencity', search }} replace />;
+}
 
 export default function App() {
   return (
@@ -49,7 +55,8 @@ export default function App() {
             <Route path="authorities" element={<Navigate to="/institutions?tab=authorities" replace />} />
             <Route path="services" element={<ServicesRoute />} />
             <Route path="confessions" element={<ConfessionsRoute />} />
-            <Route path="study-world" element={<StudyWorldRoute />} />
+            <Route path="rencity" element={<StudyWorldRoute />} />
+            <Route path="study-world" element={<ToRenCity />} />
             <Route path="campuses" element={<Navigate to="/institutions?tab=campuses" replace />} />
             <Route path="organizations" element={<Navigate to="/institutions?tab=organisations" replace />} />
             <Route path="communications" element={<CommunicationsRoute />} />

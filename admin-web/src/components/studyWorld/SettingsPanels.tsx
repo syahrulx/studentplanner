@@ -42,7 +42,7 @@ export function OverviewPanel({ onGo }: { onGo: (tab: string) => void }) {
       <ErrorBox message={error} />
       {settings && !settings.world_open ? (
         <button type="button" onClick={() => onGo('settings')} className="block w-full rounded-2xl border border-rose-200 bg-rose-50 p-4 text-left text-sm font-bold text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-100">
-          Study World is CLOSED for players. {settings.closed_message ? `Message: “${settings.closed_message}”` : ''} <span className="underline">Change →</span>
+          RenCity is CLOSED for players. {settings.closed_message ? `Message: “${settings.closed_message}”` : ''} <span className="underline">Change →</span>
         </button>
       ) : null}
 
@@ -65,7 +65,7 @@ export function OverviewPanel({ onGo }: { onGo: (tab: string) => void }) {
       </section>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="In Study World now" value={live.connected ? live.total : '—'} hint={live.connected ? 'Live · real people only' : 'Connecting…'} />
+        <Stat label="In RenCity now" value={live.connected ? live.total : '—'} hint={live.connected ? 'Live · real people only' : 'Connecting…'} />
         <Stat label="Players with an avatar" value={data?.players ?? '—'} hint={data ? `${data.players_7d} saved in the last 7 days` : undefined} />
         <Stat label="Banned now" value={data?.active_bans ?? '—'} tone="rose" />
         <Stat label="Items on sale" value={data?.items_available ?? '—'} hint={data ? `${data.items_coming_soon} coming soon · ${data.items_hidden} hidden` : undefined} />
@@ -85,8 +85,8 @@ export function OverviewPanel({ onGo }: { onGo: (tab: string) => void }) {
       <details className={`${CARD} p-5 text-sm font-semibold text-slate-600 dark:text-slate-300`}>
         <summary className="cursor-pointer font-black text-slate-900 dark:text-white">How this connects to the website</summary>
         <ul className="mt-2 list-disc space-y-1 pl-5">
-          <li>Items, prices, maps, coin packs, switches and chat words are read by the Rencana website’s Study World page. Changes reach players within seconds.</li>
-          <li>Bans are checked when a player opens Study World. A banned player sees the reason and cannot enter.</li>
+          <li>Items, prices, maps, coin packs, switches and chat words are read by the Rencana website’s RenCity page. Changes reach players within seconds.</li>
+          <li>Bans are checked when a player opens RenCity. A banned player sees the reason and cannot enter.</li>
           <li>Rooms are still simulated on the website (no real multiplayer yet), so reports name a nickname, not an account. Match it in the report before banning.</li>
           <li>“In the world now” counts real open tabs inside a room. Each tab sends only its map, room and room type — never who it is, and never a private room’s code. The simulated bots are not counted.</li>
           <li>Coins and unlocked items live only in each player’s browser until real payments are added.</li>
@@ -141,7 +141,7 @@ export function SettingsPanel() {
       <div className={`${CARD} space-y-3 p-5`}>
         <Toggle checked={s.world_open} onChange={(v) => set('world_open', v)} label="World is open" hint="Turn off for maintenance or emergencies. Players see the message below instead of the world." />
         <Field label="Message when closed">
-          <input value={s.closed_message ?? ''} maxLength={300} onChange={(e) => set('closed_message', e.target.value)} placeholder="Study World is having a quick tune-up. Back soon!" className={FIELD} />
+          <input value={s.closed_message ?? ''} maxLength={300} onChange={(e) => set('closed_message', e.target.value)} placeholder="RenCity is having a quick tune-up. Back soon!" className={FIELD} />
         </Field>
         <Toggle checked={s.shop_enabled} onChange={(v) => set('shop_enabled', v)} label="Shop open" hint="When off, players can still change into items they own, but cannot unlock new ones." />
         <Toggle checked={s.chat_enabled} onChange={(v) => set('chat_enabled', v)} label="Room chat on" hint="When off, only emotes work." />
