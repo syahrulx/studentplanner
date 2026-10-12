@@ -316,6 +316,11 @@ function ItemEditor({ id, initial, onClose, onSaved }: { id: string | null; init
           <input type="number" min={0} step="0.10" disabled={v.tier !== 'premium'} value={v.price_myr ?? ''} onChange={(e) => set('price_myr', e.target.value === '' ? null : Number(e.target.value))} className={FIELD} />
         </Field>
       </div>
+      {id && !isCafe && initial.tier === 'free' && v.tier !== 'free' ? (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-100">
+          This item is free today. Once it is {v.tier === 'coins' ? 'a coins item' : 'premium'}, the world only lets people wear it if they own it, so players already wearing it for free will lose it from their look. Their owned items and coins are not touched.
+        </div>
+      ) : null}
       <div className="grid grid-cols-3 gap-3">
         <Field label="Status">
           <select value={v.status} onChange={(e) => set('status', e.target.value as ItemStatus)} className={FIELD}>
