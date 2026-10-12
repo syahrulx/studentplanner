@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Modal, Alert, Image } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Platform, ActivityIndicator, Modal, Alert, Image } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import Markdown from 'react-native-markdown-display';
@@ -21,6 +21,7 @@ import { noteHasPdfAttachment } from '@/src/lib/studyApi';
 import { extractPdfTextFromStoragePath } from '@/src/lib/pdfText';
 import type { ChatSession, Note } from '@/src/types';
 import { ensureImageLibraryAccessForPicker } from '@/src/lib/imageLibraryPickerGate';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 type Message = {
   role: 'ai' | 'user';
@@ -697,9 +698,11 @@ export default function SubjectChat() {
 
   return (
     <View style={s.container}>
-      <KeyboardAvoidingView
+      {/* On Android the keyboard used to hide the input (Samsung A57 report). */}
+      <KeyboardAvoidingScreen
         style={[s.sheetContainer, { backgroundColor: theme.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        onAndroidKeyboardShow={() => scrollRef.current?.scrollToEnd({ animated: true })}
       >
         <View style={[s.header, { backgroundColor: theme.primary }]}>
           <View style={s.headerLeft}>
@@ -770,7 +773,7 @@ export default function SubjectChat() {
                     s.bubble,
                     m.role === 'user'
                       ? [s.bubbleUser, { backgroundColor: theme.primary, borderBottomRightRadius: 6 }]
-                      : [s.bubbleAi, { backgroundColor: theme.card, borderColor: theme.border, borderBottomLeftRadius: 6 }],
+                      : s.bubbleAi,
                   ]}
                 >
                   {m.imageUri ? (
@@ -836,7 +839,7 @@ export default function SubjectChat() {
           })}
           {isProcessing && !isStreamingText && (
             <View style={s.bubbleWrap}>
-              <View style={[s.bubble, s.bubbleAi, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <View style={[s.bubble, s.bubbleAi]}>
                 <View style={s.processingRow}>
                   <ActivityIndicator size="small" color={theme.primary} />
                   <Text style={[s.bubbleText, { color: theme.textSecondary }]}>{T('tutorThinking')}</Text>
@@ -885,7 +888,7 @@ export default function SubjectChat() {
             <Feather name="arrow-up" size={20} color={theme.textInverse} />
           </Pressable>
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardAvoidingScreen>
 
       {/* History Modal */}
       <Modal visible={showHistory} animationType="slide" transparent>
@@ -1004,10 +1007,12 @@ const s = StyleSheet.create({
   messagesList: { flex: 1 },
   messagesContent: { padding: 20, paddingBottom: 40, gap: 16 },
   dateIndicator: { textAlign: 'center', fontSize: 12, fontWeight: '600', marginBottom: 8 },
-  bubbleWrap: { alignItems: 'flex-start' },
+  bubbleWrap: { alignItems: 'stretch' },
   bubbleRight: { alignItems: 'flex-end' },
   bubble: { maxWidth: '85%', padding: 16, borderRadius: 20 },
-  bubbleAi: { borderWidth: 1, alignSelf: 'flex-start' },
+  // AI answers read as plain text across the full width, like other AI
+  // chats; only the student's own message sits in a bubble.
+  bubbleAi: { alignSelf: 'stretch', maxWidth: '100%', paddingHorizontal: 0, paddingVertical: 4, borderRadius: 0 },
   bubbleUser: { alignSelf: 'flex-end' },
   bubbleText: { fontSize: 16, lineHeight: 24, fontWeight: '500' },
   processingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
