@@ -578,6 +578,8 @@ export type FilterOptions = {
    * Kept in the browser only.
    */
   priorDigits?: string;
+  /** Nicknames of people in the room: always shown, even if they look like usernames. */
+  allowNames?: string[];
 };
 
 /** If a message is only numbers ("013", "294 2747"), the digits it stands for. */
@@ -598,6 +600,7 @@ export function messageDigits(text: string): string | null {
 
 export function filterChat(input: string, options: FilterOptions = {}): ChatFilterResult {
   const usernames = options.usernames ?? true;
+  const allowed = new Set((options.allowNames ?? []).map((n) => n.toLowerCase()));
   const text = input.replace(/\s+/g, " ").trim();
   const hide = new Array<boolean>(text.length).fill(false);
   let contactHidden = false;
@@ -616,7 +619,13 @@ export function filterChat(input: string, options: FilterOptions = {}): ChatFilt
   const action = new Array<"keep" | "censor" | "contact" | "review">(tokens.length).fill("keep");
   const review = new Set<string>();
 
+  // Room nicknames, and markers from an earlier pass ("[hidden]", "•••", "****"
+  // in a message someone else already filtered), are left exactly as they are.
+  const fixed = tokens.map(
+    (t) => allowed.has(t.core.toLowerCase()) || /^(?:\[hidden\]|•••|\*{3,})\W*$/u.test(t.raw),
+  );
   tokens.forEach((tok, i) => {
+    if (fixed[i]) return;
     if (hide[tok.start]) {
       action[i] = "contact";
       return;
@@ -695,7 +704,7 @@ export function filterChat(input: string, options: FilterOptions = {}): ChatFilt
         j++;
         skipped++;
       }
-      if (j >= tokens.length || action[j] !== "keep") return;
+      if (j >= tokens.length || action[j] !== "keep" || fixed[j]) return;
       const next = tokens[j].core;
       if (!next || HANDLE_STOP.has(next.toLowerCase())) return;
       if (skipped > 0 || !isKnownWord(next)) {
@@ -710,7 +719,7 @@ export function filterChat(input: string, options: FilterOptions = {}): ChatFilt
     let j = i;
     let digits = "";
     let real = false;
-    while (j < tokens.length) {
+    while (j < tokens.length && !fixed[j]) {
       const d = numberDigits(tokens[j].core);
       if (d === null) break;
       if (/\d/.test(tokens[j].core)) real = true;

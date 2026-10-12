@@ -5,16 +5,14 @@ import { CARD, FIELD } from './format';
 import { ErrorBox, StatusBadge } from './ui';
 
 /**
- * The rooms the website offers per map. Mirrors serversFor() in the website's
- * src/lib/study-world/rooms.ts: three open rooms and two Pro lounges, named
- * after the map. Private rooms are left out on purpose (the website does not
- * announce them). Each room holds at most 50 people.
+ * Rooms are made by the website as people arrive ("Campus 1", "Campus 2"…,
+ * "Campus Pro lounge 1"…; see serversFor() in its src/lib/study-world/rooms.ts),
+ * so this lists the rooms that have real people in them right now. Private
+ * rooms are never announced, so they never appear. Each room holds at most 50.
  */
 const ROOM_LIMIT = 50;
-const roomsFor = (mapName: string) => ({
-  open: [1, 2, 3].map((n) => `${mapName} ${n}`),
-  pro: [1, 2].map((n) => `${mapName} Pro lounge ${n}`),
-});
+const roomNumber = (room: string) => Number(room.match(/(\d+)\s*$/)?.[1] ?? 0);
+const byNumber = (a: string, b: string) => roomNumber(a) - roomNumber(b) || a.localeCompare(b);
 
 function RoomRow({ name, count }: { name: string; count: number }) {
   return (
@@ -68,16 +66,15 @@ export function MapsRoomsPanel() {
     <div className="space-y-4 p-4">
       <ErrorBox message={error} />
       <p className="px-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-        Live numbers are real people with Study World open in that room. The website still shows made-up numbers to players until real multiplayer is built.
+        Live numbers are real people in each room right now. Each open room and Pro lounge also has 2 helper bots, which are not counted here.
         {live.connected ? '' : ' Connecting to the live count…'}
       </p>
       {maps.map((m) => {
         const counts = live.byMap[m.map_key]?.rooms ?? {};
-        const { open, pro } = roomsFor(m.name);
-        // Any live room not in the standard list (e.g. the map was renamed while people were inside).
-        const known = new Set([...open, ...pro]);
-        const extra = Object.keys(counts).filter((r) => !known.has(r) && !/^private room/i.test(r));
-        const total = [...open, ...pro, ...extra].reduce((sum, r) => sum + (counts[r] ?? 0), 0);
+        const rooms = Object.keys(counts).filter((r) => counts[r] > 0 && !/^private room/i.test(r));
+        const pro = rooms.filter((r) => /pro lounge/i.test(r)).sort(byNumber);
+        const open = rooms.filter((r) => !/pro lounge/i.test(r)).sort(byNumber);
+        const total = rooms.reduce((sum, r) => sum + counts[r], 0);
         const off = m.status !== 'available';
         return (
           <section key={m.map_key} className={`${CARD} grid overflow-hidden md:grid-cols-[320px_1fr]`}>
@@ -108,13 +105,11 @@ export function MapsRoomsPanel() {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <div className="mb-1 text-[11px] font-black uppercase tracking-wider text-slate-400">Open world</div>
-                  {open.map((r) => <RoomRow key={r} name={r} count={counts[r] ?? 0} />)}
-                  {extra.filter((r) => !/pro lounge/i.test(r)).map((r) => <RoomRow key={r} name={r} count={counts[r] ?? 0} />)}
+                  {open.length ? open.map((r) => <RoomRow key={r} name={r} count={counts[r]} />) : <div className="py-1 text-sm text-slate-400">No one here right now</div>}
                 </div>
                 <div>
                   <div className="mb-1 text-[11px] font-black uppercase tracking-wider text-violet-500">Pro lounges</div>
-                  {pro.map((r) => <RoomRow key={r} name={r} count={counts[r] ?? 0} />)}
-                  {extra.filter((r) => /pro lounge/i.test(r)).map((r) => <RoomRow key={r} name={r} count={counts[r] ?? 0} />)}
+                  {pro.length ? pro.map((r) => <RoomRow key={r} name={r} count={counts[r]} />) : <div className="py-1 text-sm text-slate-400">No one here right now</div>}
                 </div>
               </div>
             </div>
