@@ -40,12 +40,14 @@ const TIER_BADGE: Record<WorldItem['tier'], string> = {
   plus: 'bg-sky-500 text-white',
   premium: 'bg-sky-500 text-white',
   pro: 'bg-violet-600 text-white',
+  admin: 'bg-slate-900 text-white dark:bg-white dark:text-slate-950',
 };
 
 function priceLabel(item: WorldItem): string {
   if (item.tier === 'free') return 'Free';
   if (item.tier === 'coins') return `${item.price_coins ?? 0} coins`;
   if (item.tier === 'pro') return 'Pro';
+  if (item.tier === 'admin') return 'Admin';
   return 'Plus';
 }
 
@@ -320,6 +322,7 @@ function ItemEditor({ id, initial, onClose, onSaved }: { id: string | null; init
             <option value="coins">Coins (buy in the shop)</option>
             <option value="plus">Plus members (free with Plus or Pro)</option>
             <option value="pro">Pro members only</option>
+            <option value="admin">Admins only (never sold)</option>
             {v.tier === 'premium' ? <option value="premium">{TIER_LABEL.premium}</option> : null}
           </select>
         </Field>
@@ -330,6 +333,11 @@ function ItemEditor({ id, initial, onClose, onSaved }: { id: string | null; init
           <input type="number" min={0} step="0.10" disabled value={v.price_myr ?? ''} className={FIELD} />
         </Field>
       </div>
+      {id && initial.tier === 'admin' && v.tier !== 'admin' ? (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-100">
+          This is an admin-only item. Changing its tier lets players {v.tier === 'free' ? 'use it for free' : v.tier === 'coins' ? 'buy it' : `with ${v.tier === 'pro' ? 'Pro' : 'Plus'} use it`}. Keep it as “Admins only” unless you mean to release it.
+        </div>
+      ) : null}
       {id && !isCafe && initial.tier === 'free' && v.tier !== 'free' ? (
         <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-xs font-bold text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-100">
           This item is free today. Once it is {v.tier === 'coins' ? 'a coins item, only players who buy it can wear it' : v.tier === 'pro' ? 'Pro-only, only Pro members can wear it' : 'a Plus item, only Plus and Pro members can wear it'}. Players already wearing it without that will lose it from their look. Their owned items and coins are not touched.

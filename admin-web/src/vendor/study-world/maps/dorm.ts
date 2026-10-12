@@ -8,7 +8,8 @@ import { TILE, createKit, type SeatKind, type WorldMap } from "./kit";
  * (migration 202610130003) and checks sizes, limits and ownership.
  */
 
-export type DormTier = "free" | "coins" | "plus" | "pro";
+/** "admin": special pieces only RenCity admins can place. */
+export type DormTier = "free" | "coins" | "plus" | "pro" | "admin";
 export type DormSize = "small" | "medium" | "large";
 
 /** Inside floor size (tiles) and how many pieces may be placed, by plan. */
@@ -47,7 +48,8 @@ export type FurnitureUse =
   | "wardrobe"
   | "fridge"
   | "tv"
-  | "pet";
+  | "pet"
+  | "coffee";
 
 export const FURNITURE: Furniture[] = [
   // Free
@@ -168,6 +170,55 @@ export const FURNITURE: Furniture[] = [
     h: 1,
     seats: [{ dx: 0, dy: 0, kind: "chair" }],
   },
+  // Admin only: the developer studio set.
+  {
+    id: "devdesk",
+    name: "Dev battlestation",
+    tier: "admin",
+    w: 3,
+    h: 1,
+    // No standard chair is drawn: pair it with the Ergo chair (turned to face the desk).
+    seats: [{ dx: 1, dy: 1, kind: "dorm" }],
+    use: "focus",
+  },
+  {
+    id: "ergochair",
+    name: "Ergo chair",
+    tier: "admin",
+    w: 1,
+    h: 1,
+    seats: [{ dx: 0, dy: 0, kind: "chair" }],
+  },
+  { id: "codewall", name: "Code wall screen", tier: "admin", w: 2, h: 1, use: "tv" },
+  { id: "whiteboard", name: "Whiteboard", tier: "admin", w: 2, h: 1, use: "read" },
+  { id: "serverrack", name: "Server rack", tier: "admin", w: 1, h: 1, use: "light" },
+  { id: "espresso", name: "Espresso bar", tier: "admin", w: 2, h: 1, use: "coffee" },
+  { id: "adminrug", name: "Studio rug", tier: "admin", w: 3, h: 2, floor: true },
+  { id: "adminneon", name: "Admin neon", tier: "admin", w: 2, h: 1, use: "light" },
+  {
+    id: "studiobed",
+    name: "Studio bed",
+    tier: "admin",
+    w: 3,
+    h: 2,
+    seats: [
+      { dx: 1, dy: 1, kind: "sofa" },
+      { dx: 2, dy: 1, kind: "sofa" },
+    ],
+  },
+  {
+    id: "studiosofa",
+    name: "Studio sofa",
+    tier: "admin",
+    w: 3,
+    h: 1,
+    seats: [
+      { dx: 0, dy: 0, kind: "sofa" },
+      { dx: 1, dy: 0, kind: "sofa" },
+      { dx: 2, dy: 0, kind: "sofa" },
+    ],
+  },
+  { id: "techshelf", name: "Tech shelf", tier: "admin", w: 2, h: 1, use: "read" },
 ];
 export const furnitureOf = (id: string) => FURNITURE.find((f) => f.id === id);
 
@@ -215,7 +266,14 @@ export function seatsFor(f: Furniture, r: number, sitIn: boolean) {
   });
 }
 
-export type RoomTheme = { id: string; name: string; tier: DormTier; price?: number };
+export type RoomTheme = {
+  id: string;
+  name: string;
+  tier: DormTier;
+  price?: number;
+  /** Neon room: lights down, RGB strip, glowing screens (drawn in WorldCanvas). */
+  dim?: boolean;
+};
 /** Wall and floor looks (drawn in kit.ts room themes). */
 export const ROOM_THEMES: RoomTheme[] = [
   { id: "cozy", name: "Cozy wood", tier: "free" },
@@ -224,6 +282,40 @@ export const ROOM_THEMES: RoomTheme[] = [
   { id: "cafe", name: "Café", tier: "plus" },
   { id: "sakura", name: "Sakura", tier: "pro" },
   { id: "galaxy", name: "Galaxy", tier: "pro" },
+  { id: "studio", name: "Neon gamer den", tier: "admin", dim: true },
+];
+
+/** Ready-made rooms admins can set up in one click (large room). */
+export const DORM_LAYOUTS: {
+  id: string;
+  name: string;
+  theme: string;
+  items: { item: string; x: number; y: number; r: number }[];
+}[] = [
+  {
+    id: "gamerden",
+    name: "Neon gamer den",
+    theme: "studio",
+    items: [
+      // Back wall: rack, neon, the battlestation in the middle, shelf, lava lamp.
+      { item: "serverrack", x: 1, y: 3, r: 0 },
+      { item: "adminneon", x: 3, y: 3, r: 0 },
+      { item: "devdesk", x: 7, y: 3, r: 0 },
+      { item: "ergochair", x: 8, y: 4, r: 2 },
+      { item: "techshelf", x: 12, y: 3, r: 0 },
+      { item: "lavalamp", x: 14, y: 3, r: 0 },
+      // Bed in the left corner.
+      { item: "studiobed", x: 1, y: 6, r: 3 },
+      // Lounge: screen, rug, sofa facing it.
+      { item: "codewall", x: 7, y: 7, r: 0 },
+      { item: "adminrug", x: 6, y: 8, r: 0 },
+      { item: "studiosofa", x: 6, y: 10, r: 2 },
+      // Right side: arcade and the aquarium.
+      { item: "arcade", x: 14, y: 7, r: 0 },
+      { item: "aquarium", x: 11, y: 11, r: 0 },
+      { item: "plant", x: 1, y: 11, r: 0 },
+    ],
+  },
 ];
 
 export type PlacedFurniture = { id: string; item: string; x: number; y: number; r?: number };
@@ -233,6 +325,8 @@ export type DormLayout = {
   items: PlacedFurniture[];
   /** The owner has caught fish: tanks are drawn empty and real fish swim in them. */
   fish?: { species: string; kg: number }[];
+  /** A pet fish lives in the tank (also drawn live). */
+  pet?: unknown;
 };
 
 /** Map size for a dorm: inside floor plus the 3-tile back wall and walls round it. */
@@ -279,7 +373,7 @@ export function createDormMap(layout: DormLayout): WorldMap {
     placed.item = p.item;
     placed.rot = r;
     // Real fish are drawn live only on front-facing tanks.
-    if (layout.fish?.length && f.use === "tank" && r === 0) placed.emptyTank = true;
+    if ((layout.fish?.length || layout.pet) && f.use === "tank" && r === 0) placed.emptyTank = true;
     seatsFor(f, r, sitIn).forEach((s) => {
       const sx = p.x + s.dx;
       const sy = p.y + s.dy;

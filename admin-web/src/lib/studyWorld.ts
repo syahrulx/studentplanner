@@ -18,9 +18,10 @@ export type ItemStatus = 'available' | 'coming_soon' | 'hidden';
 /**
  * free = everyone; coins = bought with coins; plus / pro = free with a Rencana
  * Plus / Pro membership (Pro also gets every Plus item); premium = old value,
- * treated like plus by the website.
+ * treated like plus by the website; admin = only RenCity admins can use it
+ * (never sold).
  */
-export type ItemTier = 'free' | 'coins' | 'plus' | 'pro' | 'premium';
+export type ItemTier = 'free' | 'coins' | 'plus' | 'pro' | 'premium' | 'admin';
 
 export const TIER_LABEL: Record<ItemTier, string> = {
   free: 'Free',
@@ -28,6 +29,7 @@ export const TIER_LABEL: Record<ItemTier, string> = {
   plus: 'Plus members',
   pro: 'Pro members',
   premium: 'Premium (old, same as Plus)',
+  admin: 'Admins only',
 };
 
 export const AVATAR_CATEGORIES = ['hair', 'eyes', 'top', 'bottom', 'shoes', 'head', 'face', 'back', 'pet', 'effect'] as const;
