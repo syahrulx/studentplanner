@@ -33,12 +33,35 @@ export type Furniture = {
   /** Flat on the floor: you can walk over it (rugs). */
   floor?: boolean;
   /** What pressing E next to it does. */
-  use?: "arcade" | "focus" | "tank" | "trophy" | "music" | "lamp";
+  use?: FurnitureUse;
 };
+export type FurnitureUse =
+  | "arcade"
+  | "focus"
+  | "tank"
+  | "trophy"
+  | "music"
+  | "light"
+  | "plant"
+  | "read"
+  | "wardrobe"
+  | "fridge"
+  | "tv"
+  | "pet";
 
 export const FURNITURE: Furniture[] = [
   // Free
-  { id: "bed", name: "Bed", tier: "free", w: 3, h: 2 },
+  {
+    id: "bed",
+    name: "Bed",
+    tier: "free",
+    w: 3,
+    h: 2,
+    seats: [
+      { dx: 1, dy: 1, kind: "sofa" },
+      { dx: 2, dy: 1, kind: "sofa" },
+    ],
+  },
   {
     id: "desk",
     name: "Study desk",
@@ -56,11 +79,11 @@ export const FURNITURE: Furniture[] = [
     h: 1,
     seats: [{ dx: 0, dy: 0, kind: "chair" }],
   },
-  { id: "plant", name: "Plant", tier: "free", w: 1, h: 1 },
+  { id: "plant", name: "Plant", tier: "free", w: 1, h: 1, use: "plant" },
   { id: "rug", name: "Rug", tier: "free", w: 3, h: 2, floor: true },
-  { id: "lamp", name: "Floor lamp", tier: "free", w: 1, h: 1, use: "lamp" },
-  { id: "shelf_small", name: "Small shelf", tier: "free", w: 2, h: 1 },
-  { id: "wardrobe", name: "Wardrobe", tier: "free", w: 2, h: 1 },
+  { id: "lamp", name: "Floor lamp", tier: "free", w: 1, h: 1, use: "light" },
+  { id: "shelf_small", name: "Small shelf", tier: "free", w: 2, h: 1, use: "read" },
+  { id: "wardrobe", name: "Wardrobe", tier: "free", w: 2, h: 1, use: "wardrobe" },
   // Coins
   {
     id: "beanbag",
@@ -84,8 +107,8 @@ export const FURNITURE: Furniture[] = [
       { dx: 2, dy: 0, kind: "sofa" },
     ],
   },
-  { id: "bookshelf", name: "Bookshelf", tier: "coins", price: 80, w: 2, h: 1 },
-  { id: "lavalamp", name: "Lava lamp", tier: "coins", price: 40, w: 1, h: 1 },
+  { id: "bookshelf", name: "Bookshelf", tier: "coins", price: 80, w: 2, h: 1, use: "read" },
+  { id: "lavalamp", name: "Lava lamp", tier: "coins", price: 40, w: 1, h: 1, use: "light" },
   {
     id: "gamingchair",
     name: "Gaming chair",
@@ -95,9 +118,9 @@ export const FURNITURE: Furniture[] = [
     h: 1,
     seats: [{ dx: 0, dy: 0, kind: "chair" }],
   },
-  { id: "fridge", name: "Mini fridge", tier: "coins", price: 70, w: 1, h: 1 },
+  { id: "fridge", name: "Mini fridge", tier: "coins", price: 70, w: 1, h: 1, use: "fridge" },
   { id: "rug_round", name: "Round rug", tier: "coins", price: 50, w: 3, h: 2, floor: true },
-  { id: "tv", name: "TV", tier: "coins", price: 120, w: 2, h: 1 },
+  { id: "tv", name: "TV", tier: "coins", price: 120, w: 2, h: 1, use: "tv" },
   { id: "speaker", name: "Speaker", tier: "coins", price: 60, w: 1, h: 1, use: "music" },
   // Plus
   { id: "fishtank", name: "Fish tank", tier: "plus", w: 2, h: 1, use: "tank" },
@@ -119,14 +142,24 @@ export const FURNITURE: Furniture[] = [
     h: 1,
     seats: [{ dx: 1, dy: 0, kind: "sofa" }],
   },
-  { id: "neonsign", name: "Neon sign", tier: "plus", w: 2, h: 1 },
-  { id: "cattree", name: "Cat tree", tier: "plus", w: 1, h: 1 },
-  { id: "bunkbed", name: "Loft bed", tier: "plus", w: 3, h: 2 },
+  { id: "neonsign", name: "Neon sign", tier: "plus", w: 2, h: 1, use: "light" },
+  { id: "cattree", name: "Cat tree", tier: "plus", w: 1, h: 1, use: "pet" },
+  {
+    id: "bunkbed",
+    name: "Loft bed",
+    tier: "plus",
+    w: 3,
+    h: 2,
+    seats: [
+      { dx: 1, dy: 1, kind: "sofa" },
+      { dx: 2, dy: 1, kind: "sofa" },
+    ],
+  },
   // Pro
   { id: "aquarium", name: "Grand aquarium", tier: "pro", w: 3, h: 1, use: "tank" },
   { id: "arcade", name: "Mini arcade", tier: "pro", w: 1, h: 1, use: "arcade" },
-  { id: "fireplace", name: "Fireplace", tier: "pro", w: 2, h: 1 },
-  { id: "projector", name: "Star projector", tier: "pro", w: 1, h: 1 },
+  { id: "fireplace", name: "Fireplace", tier: "pro", w: 2, h: 1, use: "light" },
+  { id: "projector", name: "Star projector", tier: "pro", w: 1, h: 1, use: "light" },
   {
     id: "throne",
     name: "Gold throne",
@@ -137,6 +170,50 @@ export const FURNITURE: Furniture[] = [
   },
 ];
 export const furnitureOf = (id: string) => FURNITURE.find((f) => f.id === id);
+
+/** Pieces that look the same from every side, so they don't turn. */
+const ROUND = new Set([
+  "plant",
+  "lamp",
+  "lavalamp",
+  "rug_round",
+  "beanbag",
+  "projector",
+  "cattree",
+]);
+export const canRotate = (id: string) => !ROUND.has(id);
+export type Facing = 0 | 1 | 2 | 3;
+/** 0 front (faces down), 1 faces right, 2 faces up (back to you), 3 faces left. */
+export const FACING_NAMES = ["front", "right", "back", "left"] as const;
+export const nextFacing = (r: number): Facing => (((r | 0) + 1) % 4) as Facing;
+export const cleanFacing = (id: string, r: unknown): Facing =>
+  canRotate(id) && (r === 1 || r === 2 || r === 3) ? r : 0;
+
+/** Footprint of a piece turned to facing r (sideways swaps width and height). */
+export const footprint = (f: { w: number; h: number }, r: number) =>
+  r === 1 || r === 3 ? { w: f.h, h: f.w } : { w: f.w, h: f.h };
+
+const DIRS = ["f", "r", "b", "l"] as const;
+/**
+ * Seat spots of a turned piece (tile offsets from its top-left) and which way
+ * the seated player faces: in sofas/chairs you face where the piece faces; at
+ * a desk you face the desk.
+ */
+export function seatsFor(f: Furniture, r: number, sitIn: boolean) {
+  const { w, h } = f;
+  return (f.seats ?? []).map((s) => {
+    const [dx, dy] =
+      r === 1
+        ? [s.dy, w - 1 - s.dx]
+        : r === 2
+          ? [w - 1 - s.dx, h - 1 - s.dy]
+          : r === 3
+            ? [h - 1 - s.dy, s.dx]
+            : [s.dx, s.dy];
+    const face = DIRS[sitIn ? r : (r + 2) % 4];
+    return { dx, dy, kind: s.kind, face };
+  });
+}
 
 export type RoomTheme = { id: string; name: string; tier: DormTier; price?: number };
 /** Wall and floor looks (drawn in kit.ts room themes). */
@@ -149,8 +226,14 @@ export const ROOM_THEMES: RoomTheme[] = [
   { id: "galaxy", name: "Galaxy", tier: "pro" },
 ];
 
-export type PlacedFurniture = { id: string; item: string; x: number; y: number };
-export type DormLayout = { size: DormSize; theme: string; items: PlacedFurniture[] };
+export type PlacedFurniture = { id: string; item: string; x: number; y: number; r?: number };
+export type DormLayout = {
+  size: DormSize;
+  theme: string;
+  items: PlacedFurniture[];
+  /** The owner has caught fish: tanks are drawn empty and real fish swim in them. */
+  fish?: { species: string; kg: number }[];
+};
 
 /** Map size for a dorm: inside floor plus the 3-tile back wall and walls round it. */
 export const dormMapSize = (size: DormSize) => ({
@@ -174,6 +257,7 @@ export function createDormMap(layout: DormLayout): WorldMap {
   k.window(2, 1, 2);
   k.window(W - 4, 1, 2);
   const floor = dormFloor(layout.size);
+  const seatFaces: { x: number; y: number; face: "f" | "b" | "l" | "r" }[] = [];
   // Rugs first so other pieces sit on top of them.
   const sorted = [...layout.items].sort(
     (a, b) => Number(!furnitureOf(a.item)?.floor) - Number(!furnitureOf(b.item)?.floor),
@@ -181,28 +265,39 @@ export function createDormMap(layout: DormLayout): WorldMap {
   sorted.forEach((p) => {
     const f = furnitureOf(p.item);
     if (!f) return;
-    if (p.x < floor.x0 || p.y < floor.y0 || p.x + f.w - 1 > floor.x1 || p.y + f.h - 1 > floor.y1)
+    const r = cleanFacing(f.id, p.r);
+    const { w, h } = footprint(f, r);
+    if (p.x < floor.x0 || p.y < floor.y0 || p.x + w - 1 > floor.x1 || p.y + h - 1 > floor.y1)
       return;
-    // Rugs, and pieces you sit in (chairs, sofas, beanbags), are drawn but
-    // not walls: you walk onto them. Their seats draw nothing extra ("dorm").
+    // Rugs, and pieces you sit in (chairs, sofas, beds), are drawn but not
+    // walls: you walk onto them. Their seats draw nothing extra ("dorm").
     const sitIn = Boolean(f.seats?.length) && f.seats!.every((s) => s.dy < f.h);
-    if (f.floor || sitIn) k.decorThing("furniture", p.x, p.y, f.w, f.h, p.item);
-    else {
-      const placed = thing("furniture", p.x, p.y, f.w, f.h);
-      placed.item = p.item;
-    }
-    f.seats?.forEach((s) => {
+    const placed =
+      f.floor || sitIn
+        ? k.decorThing("furniture", p.x, p.y, w, h, p.item)
+        : thing("furniture", p.x, p.y, w, h);
+    placed.item = p.item;
+    placed.rot = r;
+    // Real fish are drawn live only on front-facing tanks.
+    if (layout.fish?.length && f.use === "tank" && r === 0) placed.emptyTank = true;
+    seatsFor(f, r, sitIn).forEach((s) => {
       const sx = p.x + s.dx;
       const sy = p.y + s.dy;
-      if (sy > floor.y1) return;
+      if (sx < floor.x0 || sx > floor.x1 || sy < floor.y0 || sy > floor.y1) return;
       seat(sx, sy, sitIn ? "dorm" : s.kind);
+      seatFaces.push({ x: sx, y: sy, face: s.face });
     });
   });
-  return k.finish({
+  const map = k.finish({
     id: "dorm",
     spawn: [door * TILE + 8, (H - 2) * TILE + 12],
     roam: [floor.x0, floor.y0, floor.x1, floor.y1],
     bg: "#1c1a24",
     npcs: 0,
   });
+  seatFaces.forEach(({ x, y, face }) => {
+    const s = [...map.seats.values()].find((seat) => seat.x === x && seat.y === y);
+    if (s) s.face = face;
+  });
+  return map;
 }

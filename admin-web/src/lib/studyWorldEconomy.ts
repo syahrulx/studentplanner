@@ -33,6 +33,7 @@ export const BOARDS = [
   { id: 'harvests', label: 'Harvests', unit: 'harvests' },
   { id: 'quiz_correct', label: 'Quiz', unit: 'correct' },
   { id: 'trash_thrown', label: 'Clean-up', unit: 'trash' },
+  { id: 'cozy_dorm', label: 'Cozy dorm', unit: 'hearts' },
 ] as const;
 export type BoardId = (typeof BOARDS)[number]['id'];
 

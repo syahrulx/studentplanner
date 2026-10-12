@@ -144,6 +144,7 @@ export function LeaderboardsPanel() {
       <p className="px-1 text-xs font-semibold text-slate-500">
         {board === 'coins' ? 'Richest wallets right now. Admins only: players never see this board.'
           : board === 'collection' ? 'All time: how many kinds of fish each player has caught without a worm.'
+          : board === 'cozy_dorm' ? 'This week: hearts other players gave each dorm room. Needs SQL 20261013000001.'
           : 'This week (Monday–Sunday, Malaysia time). Fish caught with a worm don’t count.'}
         {' '}Players see nicknames only; you also see the account.
       </p>

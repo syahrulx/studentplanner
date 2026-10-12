@@ -10,7 +10,14 @@ export const TILE = 16;
 export type MapId = "campus" | "classroom" | "cafe" | "library" | "garden" | "dorm";
 /** "dorm": the dorm furniture piece itself is the seat, so nothing extra is drawn. */
 export type SeatKind = "stump" | "lib" | "cafe" | "sofa" | "bench" | "chair" | "dorm";
-export type Seat = { x: number; y: number; kind: SeatKind; by: object | null };
+export type Seat = {
+  x: number;
+  y: number;
+  kind: SeatKind;
+  by: object | null;
+  /** Which way a seated player faces (dorm pieces that were rotated); default by kind. */
+  face?: "f" | "b" | "l" | "r";
+};
 export type ThingType =
   | "shelf"
   | "desk"
@@ -37,7 +44,8 @@ export type ThingType =
   | "bin"
   | "market"
   | "ranks"
-  | "furniture";
+  | "furniture"
+  | "dormdoor";
 export type Crop = {
   x: number;
   y: number;
@@ -57,6 +65,13 @@ export type Thing = {
   item?: string;
   /** Painted but not solid: rugs and pieces you sit in. */
   walk?: boolean;
+  /**
+   * Dorm furniture facing: 0 front (faces down), 1 faces right, 2 faces up
+   * (seen from behind), 3 faces left. w and h are already the turned footprint.
+   */
+  rot?: 0 | 1 | 2 | 3;
+  /** Fish tank / aquarium painted without its decorative fish (the owner's real fish are drawn live on top). */
+  emptyTank?: boolean;
 };
 export type MapLabel = { text: string; x: number; y: number; style: "board" | "wall" | "small" };
 /** Inclusive tile rectangle: [x0, y0, x1, y1]. */
@@ -187,6 +202,16 @@ const ROOM_LOOKS: Record<string, RoomLook> = {
 };
 /** Dorm floor pieces (rugs) are painted under the other walk-on pieces. */
 const FLOOR_ITEMS = new Set(["rug", "rug_round"]);
+/** Dorm pieces that look the same from every side: never turned (rot is ignored). */
+const ROUND_PIECES = new Set([
+  "plant",
+  "lamp",
+  "lavalamp",
+  "rug_round",
+  "beanbag",
+  "projector",
+  "cattree",
+]);
 
 export function createKit(W: number, H: number, seed: number) {
   const rnd = () => {
@@ -197,7 +222,9 @@ export function createKit(W: number, H: number, seed: number) {
 
   const base = makeCanvas(W * TILE, H * TILE);
   const over = makeCanvas(W * TILE, H * TILE);
-  const bx = base.getContext("2d")!;
+  const realBx = base.getContext("2d")!;
+  // Swapped for a mirrored stand-in while a turned dorm piece is painted (mirror()).
+  let bx = realBx;
   const ox = over.getContext("2d")!;
   const P = (c: CanvasRenderingContext2D, col: string, x: number, y: number, w = 1, h = 1) => {
     c.fillStyle = col;
@@ -826,10 +853,35 @@ export function createKit(W: number, H: number, seed: number) {
     }
   };
 
+  /** While mirror() runs, x maps to flip - x (minus the fill's width); 0 = not mirrored. */
+  let flip = 0;
   /** A twinkle point (map sparkles) for the shiny Plus and Pro pieces. */
-  const glint = (x: number, y: number) => sparkles.push([x, y, rnd() * Math.PI * 2]);
+  const glint = (x: number, y: number) =>
+    sparkles.push([flip ? flip - x - 3 : x, y, rnd() * Math.PI * 2]);
+  /** Runs fn with every fill (and glint) mirrored left to right inside [x0, x0 + w). */
+  const mirror = (x0: number, w: number, fn: () => void) => {
+    const axis = x0 * 2 + w;
+    const real = bx;
+    bx = {
+      get fillStyle() {
+        return real.fillStyle;
+      },
+      set fillStyle(v) {
+        real.fillStyle = v;
+      },
+      fillRect: (x: number, y: number, fw: number, fh: number) =>
+        real.fillRect(axis - x - fw, y, fw, fh),
+    } as CanvasRenderingContext2D;
+    flip = axis;
+    fn();
+    bx = real;
+    flip = 0;
+  };
+  /** Set while painting an empty tank (Thing.emptyTank): fish() then draws nothing. */
+  let noFish = false;
   /** Small side-on fish facing left (flip = facing right). */
   const fish = (x: number, y: number, body: string, flip = false) => {
+    if (noFish) return;
     const rows = [".bbb.t", "bkbbbt", ".bbb.t"];
     sprite(bx, x, y, flip ? rows.map((r) => [...r].reverse().join("")) : rows, {
       b: body,
@@ -866,8 +918,8 @@ export function createKit(W: number, H: number, seed: number) {
     P(bx, shade(col, 0.55), cx - 1 - s, y - 9 - s, 1, 3);
   };
 
-  /** Dorm furniture, by piece id (see FURNITURE in dorm.ts). */
-  const paintFurniture = (o: Thing) => {
+  /** Dorm furniture facing the front (rot 0), by piece id (see FURNITURE in dorm.ts). */
+  const paintFront = (o: Thing) => {
     const X = o.x * TILE;
     const Y = o.y * TILE;
     const WW = o.w * TILE;
@@ -1513,6 +1565,794 @@ export function createKit(W: number, H: number, seed: number) {
     }
   };
 
+  /**
+   * A dorm piece turned to face right (rot 1): its front is the right edge.
+   * leftDown: the piece's rot-0 left end is at the bottom (rot 1); otherwise
+   * at the top (rot 3, which paints this mirrored). Tall pieces show a
+   * shortened top and the end that faces the viewer.
+   */
+  const paintSide = (o: Thing, leftDown: boolean) => {
+    const X = o.x * TILE;
+    const Y = o.y * TILE;
+    const WW = o.w * TILE;
+    const it = o.item;
+    /** y for something at the rot-0 left (or right) end: the top or bottom choice. */
+    const leftEnd = (top: number, bottom: number) => (leftDown ? bottom : top);
+    const rightEnd = (top: number, bottom: number) => (leftDown ? top : bottom);
+    /** A box: outline, top face (with a light edge) and the end face toward the viewer. */
+    const box = (
+      x: number,
+      y: number,
+      w: number,
+      top: number,
+      face: number,
+      cols: [string, string, string],
+    ) => {
+      P(bx, cols[0], x, y, w, top + face);
+      P(bx, cols[1], x + 1, y + 1, w - 2, top - 1);
+      P(bx, shade(cols[1], 0.2), x + 1, y + 1, w - 2, 1);
+      P(bx, cols[2], x + 1, y + top, w - 2, face - 1);
+    };
+    // ─── Free ───
+    if (it === "bed") {
+      const bl = "#4a78c2";
+      P(bx, "rgba(0,0,0,.2)", X + 2, Y + 45, WW - 3, 3);
+      P(bx, "#4e3019", X + 1, Y + 2, WW - 2, 44);
+      P(bx, "#8a5a33", X + 2, Y + 3, WW - 4, 42);
+      P(bx, "#6e4428", X + 2, Y + 41, WW - 4, 4);
+      P(bx, "#8a5a33", X + 2, Y + 41, WW - 4, 1);
+      const dots = (y0: number, y1: number) => {
+        for (let i = X + 7; i < X + WW - 6; i += 6)
+          for (let j = y0; j < y1; j += 6) P(bx, shade(bl, 0.2), i + ((j >> 1) % 3), j, 2, 2);
+      };
+      if (leftDown) {
+        // Headboard nearest the viewer (seen from its back), foot at the top.
+        P(bx, "#e8e2d6", X + 4, Y + 5, WW - 8, 34);
+        P(bx, "#4e3019", X + 1, Y + 1, WW - 2, 4);
+        P(bx, "#a8744a", X + 2, Y + 1, WW - 4, 1);
+        P(bx, bl, X + 4, Y + 5, WW - 8, 20);
+        P(bx, shade(bl, 0.3), X + 4, Y + 5, 3, 20);
+        dots(Y + 8, Y + 20);
+        P(bx, shade(bl, 0.3), X + 4, Y + 22, WW - 8, 3);
+        P(bx, shade(bl, 0.45), X + 4, Y + 22, WW - 8, 1);
+        P(bx, shade(bl, -0.3), X + 4, Y + 25, WW - 8, 1);
+        P(bx, "#d8d2c4", X + 9, Y + 28, 14, 8);
+        P(bx, "#ffffff", X + 9, Y + 27, 13, 7);
+        P(bx, "#e8e2d6", X + 12, Y + 30, 6, 1);
+        P(bx, "#4e3019", X + 1, Y + 32, WW - 2, 14);
+        P(bx, "#a8744a", X + 2, Y + 33, WW - 4, 2);
+        P(bx, "#8a5a33", X + 2, Y + 35, WW - 4, 9);
+        for (let i = X + 8; i < X + WW - 4; i += 7) P(bx, "#7a4e2c", i, Y + 36, 1, 7);
+        P(bx, "#6e4428", X + 2, Y + 43, WW - 4, 1);
+      } else {
+        // Headboard at the top, blanket over the foot end.
+        P(bx, "#e8e2d6", X + 4, Y + 7, WW - 8, 33);
+        P(bx, "#d8d2c4", X + 9, Y + 10, 14, 9);
+        P(bx, "#ffffff", X + 9, Y + 9, 13, 8);
+        P(bx, "#e8e2d6", X + 12, Y + 13, 6, 1);
+        P(bx, shade(bl, -0.3), X + 4, Y + 20, WW - 8, 22);
+        P(bx, bl, X + 4, Y + 20, WW - 8, 18);
+        P(bx, shade(bl, 0.45), X + 4, Y + 20, WW - 8, 1);
+        P(bx, shade(bl, 0.3), X + 4, Y + 21, WW - 8, 3);
+        dots(Y + 27, Y + 37);
+        P(bx, "#4e3019", X + 1, Y + 40, WW - 2, 3);
+        P(bx, "#a8744a", X + 2, Y + 40, 2, 1);
+        P(bx, "#4e3019", X + 1, Y - 6, WW - 2, 14);
+        P(bx, "#a8744a", X + 2, Y - 5, WW - 4, 3);
+        P(bx, "#8a5a33", X + 2, Y - 2, WW - 4, 8);
+        P(bx, "#6e4428", X + 2, Y + 6, WW - 4, 1);
+      }
+    }
+    if (it === "desk") {
+      P(bx, "rgba(0,0,0,.18)", X + 2, Y + 30, 14, 2);
+      P(bx, "#5e3a20", X + 1, Y + 1, 14, 30);
+      P(bx, "#a8744a", X + 1, Y + 1, 14, 26);
+      P(bx, "#c48d5d", X + 1, Y + 1, 2, 26);
+      P(bx, "#8a5a33", X + 14, Y + 1, 1, 26);
+      const py = leftEnd(Y + 4, Y + 17);
+      P(bx, "#fff", X + 5, py, 6, 9);
+      P(bx, "#d8d2c4", X + 5, py + 4, 6, 1);
+      for (let i = 0; i < 3; i++) {
+        P(bx, "#bbb", X + 6 + i * 2, py + 1, 1, 2);
+        P(bx, "#bbb", X + 6 + i * 2, py + 6, 1, 2);
+      }
+      P(bx, "#5b7cfa", X + 9, rightEnd(Y + 12, Y + 15), 4, 4);
+      const ly = rightEnd(Y + 3, Y + 19);
+      P(bx, "#3d3d45", X + 3, ly + 1, 2, 7);
+      P(bx, "#f2c14e", X + 2, ly, 6, 3);
+      P(bx, "#ffe9a8", X + 4, ly + 2, 4, 1);
+    }
+    if (it === "chair") {
+      P(bx, "rgba(0,0,0,.15)", X + 3, Y + 13, 10, 2);
+      P(bx, "#5e3a20", X + 4, Y + 11, 2, 4);
+      P(bx, "#5e3a20", X + 11, Y + 11, 2, 4);
+      P(bx, "#5e3a20", X + 3, Y + 4, 11, 8);
+      P(bx, "#c0504d", X + 4, Y + 4, 9, 5);
+      P(bx, "#d9726e", X + 4, Y + 4, 9, 1);
+      P(bx, "#a8744a", X + 4, Y + 9, 9, 2);
+      P(bx, "#5e3a20", X + 2, Y - 6, 4, 17);
+      P(bx, "#a8744a", X + 3, Y - 5, 2, 15);
+      P(bx, "#c48d5d", X + 3, Y - 5, 2, 1);
+      P(bx, "#8a5a33", X + 3, Y - 2, 2, 1);
+      P(bx, "#8a5a33", X + 3, Y + 1, 2, 1);
+    }
+    if (it === "rug") {
+      const cols = ["#7a3530", "#e2b07a", "#a8423f"];
+      const w = WW - 4;
+      const h = o.h * TILE - 4;
+      P(bx, cols[0], X + 2, Y + 2, w, h);
+      P(bx, cols[1], X + 4, Y + 4, w - 4, h - 4);
+      P(bx, cols[2], X + 6, Y + 6, w - 8, h - 8);
+      for (let j = Y + 10; j < Y + h - 6; j += 8) {
+        P(bx, cols[1], X + 8, j, 2, 3);
+        P(bx, cols[1], X + w - 6, j, 2, 3);
+      }
+      P(bx, cols[1], X + WW / 2 - 3, Y + h / 2 + 1, 7, 3);
+      P(bx, cols[1], X + WW / 2 - 1, Y + h / 2 - 1, 3, 7);
+      for (let i = X + 3; i < X + w + 1; i += 2) {
+        P(bx, "#f4ead6", i, Y, 1, 2);
+        P(bx, "#f4ead6", i, Y + h + 2, 1, 2);
+      }
+    }
+    if (it === "shelf_small") {
+      P(bx, "rgba(0,0,0,.18)", X + 2, Y + 30, 13, 2);
+      box(X + 2, Y + 1, 12, 13, 18, ["#4e3019", "#a8744a", "#8a5a33"]);
+      P(bx, "#6e4428", X + 3, Y + 14, 10, 1);
+      P(bx, "#7a4e2c", X + 5, Y + 17, 6, 10);
+      P(bx, "#9c6b42", X + 5, Y + 17, 6, 1);
+      // Cubbies peek out on the front (right) edge.
+      P(bx, "#2e1c10", X + 12, Y + 16, 1, 5);
+      P(bx, "#2e1c10", X + 12, Y + 23, 1, 5);
+      const fy = leftEnd(Y - 2, Y + 6);
+      P(bx, "#f4f1ea", X + 5, fy, 5, 6);
+      P(bx, "#7fa2c8", X + 6, fy + 1, 3, 4);
+      P(bx, "#4fbf6a", X + 6, fy + 3, 3, 2);
+      const py = rightEnd(Y + 1, Y + 8);
+      P(bx, "#a24c27", X + 6, py, 5, 4);
+      circ(bx, X + 8, py - 2, 3, "#3f8e3b");
+      P(bx, "#5aae51", X + 7, py - 4, 2, 1);
+    }
+    if (it === "wardrobe") {
+      P(bx, "rgba(0,0,0,.2)", X + 2, Y + 29, 14, 2);
+      box(X + 2, Y - 12, 12, 14, 28, ["#4e3019", "#a8744a", "#8a5a33"]);
+      P(bx, "#6e4428", X + 3, Y + 4, 10, 1);
+      P(bx, "#9c6b42", X + 5, Y + 7, 6, 19);
+      P(bx, "#b07a46", X + 5, Y + 7, 1, 19);
+      P(bx, "#7a4e2c", X + 5, Y + 25, 6, 1);
+      P(bx, "#6e4428", X + 12, Y + 3, 1, 26);
+      P(bx, "#f2c14e", X + 14, Y + 12, 1, 3);
+      P(bx, "#4e3019", X + 3, Y + 29, 3, 2);
+      P(bx, "#4e3019", X + 10, Y + 29, 3, 2);
+    }
+    // ─── Coins ───
+    if (it === "sofa") {
+      const c = "#3fae8f";
+      P(bx, "rgba(0,0,0,.18)", X + 1, Y + 45, 14, 2);
+      P(bx, shade(c, -0.5), X, Y - 6, 7, 51);
+      P(bx, shade(c, -0.5), X, Y - 3, 16, 48);
+      P(bx, shade(c, -0.15), X + 1, Y - 5, 5, 41);
+      P(bx, shade(c, 0.25), X + 1, Y - 5, 1, 41);
+      for (let i = 1; i < 3; i++) P(bx, shade(c, -0.3), X + 2, Y + i * 13 - 3, 4, 1);
+      P(bx, shade(c, -0.1), X + 6, Y - 2, 9, 4);
+      P(bx, shade(c, 0.25), X + 6, Y - 2, 9, 1);
+      P(bx, shade(c, -0.3), X + 6, Y + 2, 9, 2);
+      P(bx, c, X + 6, Y + 4, 8, 32);
+      P(bx, shade(c, 0.3), X + 6, Y + 4, 1, 32);
+      P(bx, shade(c, -0.3), X + 6, Y + 14, 8, 1);
+      P(bx, shade(c, -0.3), X + 6, Y + 25, 8, 1);
+      const pillow = (y: number, col: string, hi: string) => {
+        P(bx, col, X + 5, y, 5, 6);
+        P(bx, hi, X + 5, y, 5, 1);
+      };
+      pillow(leftEnd(Y + 5, Y + 28), "#f2c14e", "#ffe08a");
+      pillow(rightEnd(Y + 5, Y + 28), "#f2b8c8", "#ffd7e2");
+      P(bx, shade(c, -0.1), X + 1, Y + 35, 14, 4);
+      P(bx, shade(c, 0.25), X + 1, Y + 35, 14, 1);
+      P(bx, shade(c, -0.3), X + 1, Y + 39, 14, 5);
+      P(bx, "#4e3019", X + 2, Y + 44, 2, 2);
+      P(bx, "#4e3019", X + 12, Y + 44, 2, 2);
+    }
+    if (it === "bookshelf") {
+      P(bx, "rgba(0,0,0,.18)", X + 2, Y + 29, 14, 2);
+      box(X + 2, Y - 8, 12, 13, 25, ["#4e3019", "#8a5a33", "#6e4428"]);
+      P(bx, "#5e3a20", X + 3, Y + 5, 10, 1);
+      P(bx, "#5e3a20", X + 3, Y + 17, 10, 1);
+      // Book spines peek out on the front (right) edge.
+      [Y + 7, Y + 19].forEach((sy, n) => {
+        P(bx, "#2e1c10", X + 12, sy, 1, 9);
+        for (let j = 0; j < 4; j++)
+          P(bx, BOOK_COLORS[(j * 2 + n * 3) % 7], X + 12, sy + 2 + j * 2, 1, 2);
+      });
+    }
+    if (it === "gamingchair") {
+      ell(bx, X + 8, Y + 14, 6, 1, "rgba(0,0,0,.2)");
+      P(bx, "#2a2a30", X + 3, Y + 13, 10, 1);
+      P(bx, "#2a2a30", X + 2, Y + 14, 2, 1);
+      P(bx, "#2a2a30", X + 12, Y + 14, 2, 1);
+      P(bx, "#5a5a66", X + 7, Y + 10, 2, 4);
+      P(bx, "#1b1b1f", X + 5, Y - 1, 8, 2);
+      P(bx, "#5a5a66", X + 5, Y - 1, 8, 1);
+      P(bx, "#1b1b1f", X + 3, Y + 3, 11, 8);
+      P(bx, "#2d2d33", X + 4, Y + 4, 9, 5);
+      P(bx, "#e24b4a", X + 4, Y + 4, 9, 1);
+      P(bx, "#1b1b1f", X + 2, Y - 10, 5, 19);
+      P(bx, "#2d2d33", X + 3, Y - 9, 3, 17);
+      P(bx, "#e24b4a", X + 3, Y - 9, 1, 17);
+      P(bx, "#f4f1ea", X + 4, Y - 8, 2, 2);
+      P(bx, "#1b1b1f", X + 6, Y + 6, 7, 2);
+      P(bx, "#5a5a66", X + 6, Y + 6, 7, 1);
+    }
+    if (it === "fridge") {
+      P(bx, "rgba(0,0,0,.2)", X + 3, Y + 14, 12, 2);
+      box(X + 3, Y - 11, 10, 6, 20, ["#8a96a3", "#e8eef2", "#dde5ea"]);
+      P(bx, "#ffffff", X + 4, Y - 10, 8, 1);
+      P(bx, "#c9d3da", X + 11, Y - 5, 1, 19);
+      P(bx, "#c9d3da", X + 4, Y + 1, 7, 1);
+      P(bx, "#8a96a3", X + 13, Y - 3, 1, 3);
+      P(bx, "#8a96a3", X + 13, Y + 3, 1, 6);
+      P(bx, "#5a5a66", X + 4, Y + 14, 2, 1);
+      P(bx, "#5a5a66", X + 10, Y + 14, 2, 1);
+    }
+    if (it === "tv") {
+      P(bx, "rgba(0,0,0,.18)", X + 2, Y + 29, 14, 2);
+      box(X + 2, Y + 5, 12, 14, 11, ["#2a1e1a", "#5e463e", "#3a2a25"]);
+      P(bx, "#4a3730", X + 4, Y + 21, 8, 6);
+      // The screen, turned a little so its face shows on the right.
+      P(bx, "#1b1b1f", X + 4, Y + 11, 8, 3);
+      P(bx, "#1b1b1f", X + 5, Y - 12, 7, 24);
+      P(bx, "#2d2d33", X + 5, Y - 12, 7, 1);
+      P(bx, "#2d3b48", X + 8, Y - 10, 3, 19);
+      P(bx, "#3e5163", X + 9, Y - 8, 1, 2);
+      P(bx, "#3e5163", X + 9, Y - 4, 1, 1);
+      P(bx, "#3fae8f", X + 10, Y + 10, 1, 1);
+    }
+    if (it === "speaker") {
+      P(bx, "rgba(0,0,0,.2)", X + 3, Y + 14, 11, 2);
+      box(X + 4, Y - 9, 8, 4, 20, ["#1b1b1f", "#3d3d45", "#2d2d33"]);
+      P(bx, "#111", X + 12, Y - 4, 1, 4);
+      P(bx, "#111", X + 12, Y + 3, 1, 7);
+      P(bx, "#3d3d45", X + 5, Y - 4, 6, 1);
+      P(bx, "#3fae8f", X + 11, Y - 7, 1, 1);
+    }
+    // ─── Plus ───
+    if (it === "fishtank") {
+      P(bx, "rgba(0,0,0,.2)", X + 1, Y + 30, 15, 2);
+      P(bx, "#4e3019", X + 2, Y + 18, 12, 12);
+      P(bx, "#6e4428", X + 3, Y + 19, 10, 10);
+      P(bx, "#8a5a33", X + 3, Y + 19, 10, 1);
+      P(bx, "#2a3550", X + 2, Y - 1, 12, 20);
+      tankWater(X + 3, Y + 1, 10, 16);
+      fish(X + 5, Y + 6, "#e2874c");
+      // Glass top: the water seen from above, two fish.
+      P(bx, "#1b1b1f", X + 2, Y - 16, 12, 16);
+      P(bx, "#3d3d45", X + 2, Y - 16, 12, 1);
+      P(bx, "#4aa3d8", X + 3, Y - 14, 10, 13);
+      P(bx, "#7cc8ef", X + 3, Y - 14, 10, 2);
+      P(bx, "#ffe58a", X + 12, Y - 13, 1, 10);
+      if (!noFish) {
+        P(bx, "#f2c14e", X + 5, Y - 10, 2, 3);
+        P(bx, "#c9a23e", X + 5, Y - 7, 2, 1);
+        P(bx, "#a77de0", X + 9, Y - 6, 2, 3);
+        P(bx, "#8a66c0", X + 9, Y - 7, 2, 1);
+      }
+      glint(X + 4, Y + 3);
+      glint(X + 5, Y - 12);
+    }
+    if (it === "trophy") {
+      // Glass sides: the cups show through.
+      P(bx, "rgba(0,0,0,.2)", X + 2, Y + 29, 14, 2);
+      box(X + 2, Y - 13, 12, 13, 30, ["#4e3019", "#8a5a33", "#6e4428"]);
+      P(bx, "#2e1c10", X + 4, Y + 2, 8, 11);
+      P(bx, "#2e1c10", X + 4, Y + 16, 8, 10);
+      cup(X + 8, Y + 13, "#f2c14e");
+      P(bx, "#a8744a", X + 3, Y + 13, 10, 2);
+      P(bx, "#c0504d", X + 6, Y + 18, 2, 4);
+      circ(bx, X + 7, Y + 23, 2, "#f2c14e");
+      P(bx, "#ffe08a", X + 6, Y + 22);
+      P(bx, "#a8744a", X + 3, Y + 26, 10, 2);
+      P(bx, "rgba(255,255,255,.18)", X + 5, Y + 3, 1, 8);
+      P(bx, "rgba(255,255,255,.18)", X + 5, Y + 17, 1, 7);
+      glint(X + 8, Y + 4);
+      glint(X + 6, Y + 21);
+    }
+    if (it === "deluxedesk") {
+      const ly = rightEnd(Y + 4, Y + 18);
+      const my = leftEnd(Y + 2, Y + 15);
+      P(bx, "rgba(0,0,0,.2)", X + 2, Y + 30, 14, 2);
+      ell(bx, X + 6, ly + 2, 6, 5, "rgba(255,230,160,.18)");
+      P(bx, "#2e1c10", X + 1, Y, 15, 31);
+      P(bx, "#5e3a20", X + 2, Y + 1, 12, 25);
+      P(bx, "#7a4e2c", X + 2, Y + 1, 2, 25);
+      P(bx, "#f2c14e", X + 14, Y, 1, 27);
+      P(bx, "#ffe08a", X + 14, Y + 2, 1, 6);
+      P(bx, "#f2c14e", X + 1, Y + 26, 15, 1);
+      P(bx, "#4e3019", X + 2, Y + 27, 12, 3);
+      P(bx, "#f2c14e", X + 7, Y + 28, 3, 1);
+      // Keyboard in front of the monitor, screen facing right.
+      P(bx, "#8a8a96", X + 8, my, 4, 13);
+      P(bx, "#b8bcc2", X + 8, my, 1, 13);
+      for (let i = 0; i < 5; i++) P(bx, "#5a5a66", X + 10, my + 2 + i * 2, 1, 1);
+      P(bx, "#3d3d45", X + 3, my + 8, 5, 2);
+      P(bx, "#3d3d45", X + 3, my - 6, 3, 15);
+      P(bx, "#7fd1ff", X + 6, my - 5, 1, 11);
+      P(bx, "#ffffff", X + 6, my - 4, 1, 3);
+      const gy = rightEnd(Y + 12, Y + 6);
+      P(bx, "#fdfaf2", X + 9, gy, 4, 3);
+      P(bx, "#c0504d", X + 9, gy, 4, 1);
+      P(bx, "#fdfaf2", X + 10, gy + 3, 2, 1);
+      P(bx, "#c8a24a", X + 4, ly, 2, 7);
+      P(bx, "#c8a24a", X + 2, ly + 6, 6, 2);
+      P(bx, "#f2c14e", X + 2, ly - 3, 7, 3);
+      P(bx, "#ffe08a", X + 2, ly - 3, 7, 1);
+      P(bx, "#fff6d6", X + 3, ly, 5, 1);
+      glint(X + 4, ly - 5);
+      glint(X + 5, my - 6);
+    }
+    if (it === "hammock") {
+      ell(bx, X + 8, Y + 27, 7, 3, "rgba(0,0,0,.18)");
+      const post = (y: number) => {
+        P(bx, "#4e3019", X + 6, y, 3, 16);
+        P(bx, "#8a5a33", X + 7, y, 1, 16);
+        P(bx, "#a8744a", X + 6, y, 3, 1);
+      };
+      post(Y - 13);
+      // Seen from above the cloth is a long oval, gathered at the ends and
+      // sagging lower in the middle.
+      const n = 43;
+      for (let i = 0; i < n; i++) {
+        const t = Math.sin((Math.PI * i) / (n - 1));
+        const half = 1 + Math.round(t * 5);
+        const sy = Y - 11 + i + Math.round(t * 8);
+        const col = ["#3fae8f", "#f6f0e0", "#f2c14e"][Math.floor(i / 4) % 3];
+        P(bx, shade(col, -0.5), X + 7 - half, sy, half * 2 + 2, 2);
+        P(bx, shade(col, -0.2), X + 8 - half, sy, half * 2, 2);
+        if (half > 1) P(bx, col, X + 9 - half, sy, half * 2 - 2, 2);
+        if (half > 2) P(bx, shade(col, 0.35), X + 9 - half, sy, 1, 2);
+        if (i % 2 && half > 2) P(bx, "#f6f0e0", X + 8 + half, sy + 1);
+      }
+      post(Y + 30);
+    }
+    if (it === "neonsign") {
+      P(bx, "rgba(0,0,0,.2)", X + 3, Y + 30, 11, 2);
+      P(bx, "#3d3d45", X + 4, Y + 1, 8, 2);
+      P(bx, "#2a2a30", X + 7, Y + 21, 2, 8);
+      P(bx, "#3d3d45", X + 4, Y + 28, 8, 2);
+      ell(bx, X + 13, Y + 16, 3, 12, "rgba(94,242,255,.12)");
+      P(bx, "#0e0e16", X + 4, Y - 13, 6, 35);
+      P(bx, "#1b1b28", X + 5, Y - 12, 4, 33);
+      P(bx, "#2a2a3a", X + 5, Y - 12, 4, 1);
+      P(bx, "rgba(255,90,180,.22)", X + 10, Y - 11, 4, 15);
+      P(bx, "rgba(94,242,255,.22)", X + 10, Y + 4, 4, 17);
+      // The tubes stand out a little from the board, toward the front.
+      for (let j = 0; j < 12; j++) if (j % 4 !== 3) P(bx, "#ff5ab4", X + 10, Y - 10 + j, 2, 1);
+      for (let j = 0; j < 15; j++) if (j % 5 !== 4) P(bx, "#5ef2ff", X + 10, Y + 5 + j, 2, 1);
+      P(bx, "#ffd1ec", X + 11, Y - 10);
+      P(bx, "#d8fcff", X + 11, Y + 5);
+      glint(X + 9, Y - 8);
+      glint(X + 9, Y + 9);
+    }
+    if (it === "bunkbed") {
+      const bl = "#a77de0";
+      P(bx, "rgba(0,0,0,.2)", X + 2, Y + 45, WW - 3, 3);
+      // Under the loft: shade, a little desk end-on and the lamp's glow.
+      P(bx, "rgba(0,0,0,.22)", X + 3, Y + 29, WW - 6, 16);
+      ell(bx, X + 16, Y + 36, 9, 5, "rgba(255,226,150,.18)");
+      P(bx, "#5e3a20", X + 8, Y + 36, 14, 7);
+      P(bx, "#a8744a", X + 8, Y + 36, 14, 4);
+      P(bx, "#c48d5d", X + 8, Y + 36, 14, 1);
+      P(bx, "#3d3d45", X + 18, Y + 32, 1, 4);
+      P(bx, "#a77de0", X + 16, Y + 31, 5, 2);
+      P(bx, "#fff6d6", X + 17, Y + 33, 3, 1);
+      // The loft.
+      P(bx, "#4e3019", X + 1, Y - 17, WW - 2, 47);
+      P(bx, "#e8e2d6", X + 4, Y - 14, WW - 12, 36);
+      P(bx, "#fdfaf2", X + 4, Y - 14, 1, 36);
+      if (leftDown) {
+        P(bx, shade(bl, -0.3), X + 4, Y - 14, WW - 12, 24);
+        P(bx, bl, X + 4, Y - 14, WW - 12, 22);
+        P(bx, shade(bl, 0.25), X + 4, Y + 5, WW - 12, 3);
+        P(bx, shade(bl, 0.4), X + 4, Y + 5, WW - 12, 1);
+        P(bx, "#d8d2c4", X + 7, Y + 12, 12, 9);
+        P(bx, "#ffffff", X + 7, Y + 11, 12, 8);
+        for (let j = Y - 11; j < Y + 3; j += 6) P(bx, "#ffe58a", X + 8 + ((j >> 2) % 2) * 8, j);
+      } else {
+        P(bx, "#d8d2c4", X + 7, Y - 11, 12, 9);
+        P(bx, "#ffffff", X + 7, Y - 12, 12, 8);
+        P(bx, shade(bl, -0.3), X + 4, Y - 2, WW - 12, 24);
+        P(bx, bl, X + 4, Y - 2, WW - 12, 22);
+        P(bx, shade(bl, 0.25), X + 4, Y - 2, WW - 12, 3);
+        P(bx, shade(bl, 0.4), X + 4, Y - 2, WW - 12, 1);
+        for (let j = Y + 5; j < Y + 19; j += 6) P(bx, "#ffe58a", X + 8 + ((j >> 2) % 2) * 8, j);
+      }
+      P(bx, "#6e4428", X + 2, Y + 24, WW - 4, 5);
+      P(bx, "#8a5a33", X + 2, Y + 24, WW - 4, 1);
+      // Rail along the front (right) with string lights.
+      P(bx, "#4e3019", X + WW - 8, Y - 20, 5, 49);
+      P(bx, "#8a5a33", X + WW - 7, Y - 19, 3, 47);
+      P(bx, "#a8744a", X + WW - 7, Y - 19, 1, 47);
+      for (let j = 0; j < 44; j += 5)
+        P(bx, ["#ffd84d", "#ff9ec4", "#7fd1ff", "#9fe0c8"][(j / 5) % 4], X + WW - 3, Y - 17 + j);
+      // Near posts.
+      [X + 1, X + WW - 4].forEach((px) => {
+        P(bx, "#4e3019", px, Y + 24, 3, 22);
+        P(bx, "#8a5a33", px + 1, Y + 24, 1, 22);
+      });
+      // Ladder on the front, at the rot-0 right end.
+      const ly = rightEnd(Y - 14, Y + 20);
+      P(bx, "#8a5a33", X + WW - 9, ly, 1, 26);
+      P(bx, "#8a5a33", X + WW - 4, ly, 1, 26);
+      for (let j = ly + 2; j < ly + 26; j += 4) P(bx, "#a8744a", X + WW - 9, j, 6, 1);
+      glint(X + WW - 4, Y - 7);
+      glint(X + WW - 4, Y + 13);
+    }
+    // ─── Pro ───
+    if (it === "aquarium") {
+      P(bx, "rgba(0,0,0,.22)", X + 1, Y + 45, 15, 2);
+      P(bx, "#2e1c10", X + 1, Y + 33, 14, 13);
+      P(bx, "#4e3019", X + 2, Y + 34, 12, 11);
+      P(bx, "#f2c14e", X + 1, Y + 33, 14, 1);
+      P(bx, "#f2c14e", X + 7, Y + 38, 2, 2);
+      P(bx, "#9c7a2c", X + 1, Y + 12, 14, 22);
+      P(bx, "#1e2a44", X + 2, Y + 13, 12, 20);
+      tankWater(X + 3, Y + 15, 10, 17);
+      fish(X + 5, Y + 20, "#5b9cff");
+      // Glass top: water seen from above with fish, gold rim and lid light.
+      P(bx, "#1b1b1f", X, Y - 10, 16, 23);
+      P(bx, "#f2c14e", X, Y - 10, 16, 1);
+      P(bx, "#4aa3d8", X + 2, Y - 8, 12, 19);
+      P(bx, "#7cc8ef", X + 2, Y - 8, 12, 2);
+      P(bx, "#3b93cb", X + 2, Y + 7, 12, 4);
+      (
+        [
+          [4, -4, "#e2874c"],
+          [9, 0, "#f2c14e"],
+          [5, 5, "#ff7aa8"],
+        ] as const
+      ).forEach(([dx, dy, c]) => {
+        if (noFish) return;
+        P(bx, c, X + dx, Y + dy, 2, 3);
+        P(bx, shade(c, -0.25), X + dx, Y + dy + 3, 2, 1);
+      });
+      P(bx, "#ffe58a", X + 13, Y - 7, 1, 17);
+      for (let i = 0; i < 4; i++) glint(X + 3 + ((rnd() * 8) | 0), Y - 6 + ((rnd() * 36) | 0));
+    }
+    if (it === "arcade") {
+      P(bx, "rgba(0,0,0,.22)", X + 1, Y + 14, 15, 2);
+      P(bx, "#1b1440", X + 2, Y - 15, 10, 31);
+      P(bx, "#1b1440", X + 11, Y - 15, 3, 5);
+      P(bx, "#1b1440", X + 11, Y, 4, 5);
+      P(bx, "#3b2f7a", X + 3, Y - 14, 8, 29);
+      P(bx, "#5d4fa0", X + 3, Y - 14, 8, 1);
+      P(bx, "#f2c14e", X + 11, Y - 14, 2, 3);
+      P(bx, "#0b0b12", X + 11, Y - 10, 1, 10);
+      P(bx, "#1d1a4a", X + 12, Y - 9, 1, 8);
+      P(bx, "#5d4fa0", X + 12, Y + 1, 2, 3);
+      P(bx, "#e24b4a", X + 12, Y, 1, 1);
+      P(bx, "#ffd84d", X + 14, Y, 1, 1);
+      P(bx, "#ff5ab4", X + 3, Y - 12, 1, 26);
+      P(bx, "#5ef2ff", X + 10, Y - 10, 1, 24);
+      sprite(bx, X + 5, Y - 6, ["a...a", ".aaa.", "aa.aa", "aaaaa"], { a: "#7fe08a" });
+      P(bx, "#2b2258", X + 5, Y + 8, 4, 4);
+      P(bx, "#f2c14e", X + 6, Y + 9, 2, 2);
+      glint(X + 5, Y - 13);
+      glint(X + 9, Y + 1);
+    }
+    if (it === "fireplace") {
+      ell(bx, X + 13, Y + 22, 4, 9, "rgba(255,150,60,.18)");
+      box(X + 2, Y - 10, 12, 10, 30, ["#4a4550", "#7c7782", "#4a4550"]);
+      for (let j = 0; j < 7; j++)
+        for (let i = 0; i < 3; i++) {
+          const x0 = Math.max(X + 3, X + 3 + i * 5 - (j % 2) * 3);
+          const x1 = Math.min(X + 13, X + 7 + i * 5 - (j % 2) * 3);
+          if (x1 > x0) P(bx, (i + j) % 2 ? "#7c7782" : "#8f8a94", x0, Y + 2 + j * 4, x1 - x0, 3);
+        }
+      P(bx, "#5e3a20", X + 1, Y - 1, 15, 4);
+      P(bx, "#8a5a33", X + 1, Y - 1, 15, 1);
+      P(bx, "#3a2416", X + 1, Y + 2, 15, 1);
+      // The firebox, seen at a slant on the front (right) side.
+      P(bx, "rgba(255,170,80,.3)", X + 7, Y + 7, 8, 20);
+      P(bx, "#1b1416", X + 9, Y + 9, 5, 17);
+      sprite(
+        bx,
+        X + 9,
+        Y + 13,
+        ["..o..", ".oo.o", ".oyoo", "oyyyo", "oywyo", "oywyo", "yywyy", ".ooo."],
+        { o: "#e2502a", y: "#ff9a2e", w: "#ffe27a" },
+      );
+      P(bx, "#6e4425", X + 9, Y + 21, 5, 3);
+      P(bx, "#8a5a33", X + 10, Y + 21, 2, 1);
+      P(bx, "#8f8a94", X + 7, Y + 26, 9, 4);
+      P(bx, "#b8bcc2", X + 7, Y + 26, 9, 1);
+      P(bx, "#fdfaf2", X + 4, Y - 9, 2, 4);
+      P(bx, "#ffd84d", X + 4, Y - 11, 2, 2);
+      P(bx, "#c8a24a", X + 8, Y - 7, 2, 6);
+      P(bx, "#9fd3ef", X + 10, Y - 6, 1, 4);
+      for (let i = 0; i < 2; i++) glint(X + 9 + ((rnd() * 3) | 0), Y + 12 + ((rnd() * 8) | 0));
+    }
+    if (it === "throne") {
+      ell(bx, X + 8, Y + 15, 7, 1, "rgba(0,0,0,.22)");
+      P(bx, "#9c7a2c", X + 5, Y + 12, 2, 3);
+      P(bx, "#9c7a2c", X + 12, Y + 12, 2, 3);
+      P(bx, "#9c7a2c", X + 5, Y - 1, 9, 3);
+      P(bx, "#f2c14e", X + 5, Y - 1, 9, 1);
+      P(bx, "#9c7a2c", X + 4, Y + 3, 11, 9);
+      P(bx, "#f2c14e", X + 5, Y + 3, 9, 7);
+      P(bx, "#a3202a", X + 5, Y + 3, 9, 5);
+      P(bx, "#d0505a", X + 5, Y + 3, 9, 1);
+      P(bx, "#9c7a2c", X + 1, Y - 13, 5, 25);
+      P(bx, "#f2c14e", X + 2, Y - 12, 3, 23);
+      P(bx, "#fff6c8", X + 2, Y - 12, 1, 8);
+      P(bx, "#a3202a", X + 5, Y - 10, 1, 13);
+      P(bx, "#9c7a2c", X + 1, Y - 15, 2, 2);
+      P(bx, "#9c7a2c", X + 4, Y - 16, 2, 3);
+      P(bx, "#ffe08a", X + 4, Y - 16, 1, 1);
+      P(bx, "#5b9cff", X + 3, Y - 9, 1, 2);
+      glint(X + 2, Y - 15);
+      glint(X + 11, Y + 2);
+    }
+  };
+
+  /** A dorm piece turned away (rot 2): seen from behind. */
+  const paintBack = (o: Thing) => {
+    const X = o.x * TILE;
+    const Y = o.y * TILE;
+    const WW = o.w * TILE;
+    const it = o.item;
+    // Beds and the hammock look the same from either side, just mirrored.
+    if (it === "bed" || it === "bunkbed" || it === "hammock")
+      return mirror(X, WW, () => paintFront(o));
+    if (it === "rug") return paintFront(o);
+    /** A plain back panel: outline, boards and a light top edge. */
+    const panel = (x: number, y: number, w: number, h: number, cols: [string, string, string]) => {
+      P(bx, cols[0], x, y, w, h);
+      P(bx, cols[1], x + 1, y + 1, w - 2, h - 2);
+      for (let i = x + 7; i < x + w - 3; i += 7) P(bx, cols[2], i, y + 3, 1, h - 5);
+    };
+    if (it === "desk") {
+      P(bx, "rgba(0,0,0,.18)", X + 2, Y + 14, 30, 2);
+      P(bx, "#5e3a20", X + 1, Y + 11, 30, 4);
+      P(bx, "#4e3019", X + 1, Y + 13, 30, 1);
+      P(bx, "#a8744a", X + 1, Y + 1, 30, 11);
+      P(bx, "#c48d5d", X + 1, Y + 1, 30, 1);
+      P(bx, "#fff", X + 18, Y + 2, 9, 6);
+      P(bx, "#d8d2c4", X + 22, Y + 2, 1, 6);
+      for (let i = 0; i < 3; i++) {
+        P(bx, "#bbb", X + 19, Y + 3 + i * 2, 2, 1);
+        P(bx, "#bbb", X + 24, Y + 3 + i * 2, 2, 1);
+      }
+      P(bx, "#5b7cfa", X + 12, Y + 3, 4, 4);
+      P(bx, "#3d3d45", X + 6, Y + 5, 2, 6);
+      P(bx, "#f2c14e", X + 4, Y + 3, 7, 3);
+      P(bx, "#c8a24a", X + 4, Y + 5, 7, 1);
+    }
+    if (it === "chair") {
+      P(bx, "rgba(0,0,0,.15)", X + 3, Y + 13, 10, 2);
+      P(bx, "#5e3a20", X + 3, Y + 11, 2, 4);
+      P(bx, "#5e3a20", X + 11, Y + 11, 2, 4);
+      P(bx, "#c0504d", X + 2, Y + 3, 12, 5);
+      P(bx, "#d9726e", X + 2, Y + 3, 12, 1);
+      P(bx, "#5e3a20", X + 3, Y - 5, 10, 16);
+      P(bx, "#8a5a33", X + 4, Y - 4, 8, 14);
+      P(bx, "#a8744a", X + 4, Y - 4, 8, 1);
+      P(bx, "#6e4428", X + 4, Y + 1, 8, 1);
+      P(bx, "#6e4428", X + 4, Y + 6, 8, 1);
+    }
+    if (it === "shelf_small") {
+      P(bx, "rgba(0,0,0,.18)", X + 2, Y + 14, 30, 2);
+      P(bx, "#a24c27", X + 4, Y - 7, 5, 4);
+      circ(bx, X + 6, Y - 9, 3, "#3f8e3b");
+      P(bx, "#5aae51", X + 6, Y - 11, 2, 1);
+      P(bx, "#6e4428", X + 18, Y - 9, 8, 6);
+      P(bx, "#4e3019", X + 21, Y - 6, 2, 3);
+      panel(X + 1, Y - 4, 30, 19, ["#4e3019", "#7a4e2c", "#6e4428"]);
+      P(bx, "#a8744a", X + 2, Y - 3, 28, 2);
+    }
+    if (it === "wardrobe") {
+      P(bx, "rgba(0,0,0,.2)", X + 2, Y + 14, 30, 2);
+      panel(X + 1, Y - 16, 30, 31, ["#4e3019", "#7a4e2c", "#6e4428"]);
+      P(bx, "#a8744a", X + 2, Y - 15, 28, 2);
+      P(bx, "#6e4428", X + 2, Y - 13, 28, 1);
+      P(bx, "#4e3019", X + 3, Y + 14, 3, 2);
+      P(bx, "#4e3019", X + 26, Y + 14, 3, 2);
+    }
+    if (it === "sofa") {
+      const c = "#3fae8f";
+      P(bx, "rgba(0,0,0,.18)", X + 1, Y + 14, WW - 2, 2);
+      // Throw pillows peek over the back.
+      P(bx, "#f2b8c8", X + 5, Y - 9, 6, 3);
+      P(bx, "#ffd7e2", X + 5, Y - 9, 6, 1);
+      P(bx, "#f2c14e", X + WW - 11, Y - 9, 6, 3);
+      P(bx, "#ffe08a", X + WW - 11, Y - 9, 6, 1);
+      P(bx, shade(c, -0.5), X, Y - 6, WW, 20);
+      P(bx, shade(c, -0.15), X + 1, Y - 5, WW - 2, 17);
+      P(bx, shade(c, 0.25), X + 1, Y - 5, WW - 2, 1);
+      P(bx, shade(c, -0.05), X + 1, Y - 4, WW - 2, 3);
+      for (let i = 1; i < o.w; i++) P(bx, shade(c, -0.3), X + i * 16, Y - 1, 1, 10);
+      P(bx, shade(c, -0.3), X + 1, Y + 10, WW - 2, 3);
+      P(bx, "#4e3019", X + 2, Y + 13, 2, 2);
+      P(bx, "#4e3019", X + WW - 4, Y + 13, 2, 2);
+    }
+    if (it === "bookshelf") {
+      P(bx, "rgba(0,0,0,.18)", X + 2, Y + 14, 30, 2);
+      panel(X, Y - 8, 32, 24, ["#4e3019", "#6e4428", "#5e3a20"]);
+      P(bx, "#8a5a33", X + 1, Y - 7, 30, 1);
+    }
+    if (it === "gamingchair") {
+      ell(bx, X + 8, Y + 14, 6, 1, "rgba(0,0,0,.2)");
+      P(bx, "#2a2a30", X + 3, Y + 13, 10, 1);
+      P(bx, "#2a2a30", X + 2, Y + 14, 2, 1);
+      P(bx, "#2a2a30", X + 12, Y + 14, 2, 1);
+      P(bx, "#5a5a66", X + 7, Y + 10, 2, 4);
+      P(bx, "#1b1b1f", X + 1, Y + 1, 2, 6);
+      P(bx, "#1b1b1f", X + 13, Y + 1, 2, 6);
+      P(bx, "#5a5a66", X + 1, Y + 1, 2, 1);
+      P(bx, "#5a5a66", X + 13, Y + 1, 2, 1);
+      P(bx, "#1b1b1f", X + 3, Y - 9, 10, 19);
+      P(bx, "#2d2d33", X + 4, Y - 8, 8, 17);
+      P(bx, "#e24b4a", X + 4, Y - 8, 1, 17);
+      P(bx, "#e24b4a", X + 11, Y - 8, 1, 17);
+      P(bx, "#e24b4a", X + 6, Y - 2, 4, 4);
+      P(bx, "#1b1b1f", X + 7, Y - 1, 2, 2);
+      P(bx, "#3d3d45", X + 4, Y - 8, 8, 1);
+    }
+    if (it === "fridge") {
+      P(bx, "rgba(0,0,0,.2)", X + 2, Y + 14, 13, 2);
+      P(bx, "#8a96a3", X + 2, Y - 7, 12, 22);
+      P(bx, "#d5dde3", X + 3, Y - 6, 10, 20);
+      P(bx, "#ffffff", X + 3, Y - 6, 10, 1);
+      for (let j = 0; j < 5; j++) P(bx, "#6e7882", X + 5, Y - 2 + j * 3, 6, 1);
+      P(bx, "#6e7882", X + 5, Y - 2, 1, 13);
+      P(bx, "#6e7882", X + 10, Y - 2, 1, 13);
+      P(bx, "#5a5a66", X + 3, Y + 14, 2, 1);
+      P(bx, "#5a5a66", X + 11, Y + 14, 2, 1);
+    }
+    if (it === "tv") {
+      P(bx, "rgba(0,0,0,.18)", X + 2, Y + 14, 30, 2);
+      P(bx, "#2a1e1a", X + 2, Y + 4, 28, 11);
+      P(bx, "#3a2a25", X + 3, Y + 5, 26, 9);
+      P(bx, "#5e463e", X + 2, Y + 4, 28, 1);
+      P(bx, "#2a1e1a", X + 9, Y + 6, 14, 1);
+      P(bx, "#1b1b1f", X + 13, Y + 2, 6, 3);
+      P(bx, "#1b1b1f", X + 3, Y - 12, 26, 15);
+      P(bx, "#2d2d33", X + 3, Y - 12, 26, 1);
+      P(bx, "#26262c", X + 7, Y - 9, 18, 10);
+      for (let i = 0; i < 5; i++) P(bx, "#111", X + 10 + i * 3, Y - 7, 1, 4);
+      P(bx, "#111", X + 21, Y + 1, 1, 6);
+    }
+    if (it === "speaker") {
+      P(bx, "rgba(0,0,0,.2)", X + 3, Y + 14, 11, 2);
+      P(bx, "#1b1b1f", X + 3, Y - 9, 10, 24);
+      P(bx, "#2d2d33", X + 4, Y - 8, 8, 22);
+      P(bx, "#3d3d45", X + 4, Y - 8, 8, 1);
+      circ(bx, X + 8, Y + 1, 2, "#111");
+      P(bx, "#5a5a66", X + 6, Y + 8, 4, 3);
+      P(bx, "#e24b4a", X + 7, Y + 9, 1, 1);
+      P(bx, "#111", X + 8, Y + 9, 1, 1);
+    }
+    if (it === "fishtank" || it === "aquarium") {
+      // The glass looks the same from behind (fish turned round); the
+      // stand's back is plain and a filter hangs on the back rim.
+      mirror(X, WW, () => paintFront(o));
+      const gold = it === "aquarium";
+      P(bx, gold ? "#4e3019" : "#6e4428", X + 2, Y + 4, WW - 4, 10);
+      P(bx, gold ? "#f2c14e" : "#8a5a33", X + 2, Y + 4, WW - 4, 1);
+      P(bx, "#3d3d45", X + 5, Y - (gold ? 18 : 15), 6, 10);
+      P(bx, "#5a5a66", X + 5, Y - (gold ? 18 : 15), 6, 1);
+      P(bx, "#2a2a30", X + 7, Y - (gold ? 8 : 5), 2, 4);
+    }
+    if (it === "trophy") {
+      P(bx, "rgba(0,0,0,.2)", X + 2, Y + 14, 30, 2);
+      panel(X + 1, Y - 15, 30, 30, ["#4e3019", "#6e4428", "#5e3a20"]);
+      P(bx, "#8a5a33", X + 2, Y - 14, 28, 2);
+    }
+    if (it === "deluxedesk") {
+      P(bx, "rgba(0,0,0,.2)", X + 2, Y + 14, 30, 2);
+      ell(bx, X + 7, Y + 6, 6, 4, "rgba(255,230,160,.18)");
+      P(bx, "#2e1c10", X + 1, Y + 10, 30, 5);
+      P(bx, "#4e3019", X + 2, Y + 11, 28, 3);
+      P(bx, "#2e1c10", X, Y, 32, 11);
+      P(bx, "#5e3a20", X + 1, Y + 1, 30, 9);
+      P(bx, "#7a4e2c", X + 1, Y + 1, 30, 1);
+      P(bx, "#f2c14e", X, Y + 10, 32, 1);
+      P(bx, "#ffe08a", X + 24, Y + 10, 6, 1);
+      P(bx, "#fdfaf2", X + 11, Y + 2, 3, 4);
+      P(bx, "#c0504d", X + 11, Y + 2, 3, 1);
+      P(bx, "#fdfaf2", X + 10, Y + 3, 1, 2);
+      P(bx, "#c8a24a", X + 5, Y + 1, 2, 7);
+      P(bx, "#c8a24a", X + 3, Y + 7, 6, 2);
+      P(bx, "#f2c14e", X + 3, Y - 2, 7, 3);
+      P(bx, "#d9a22a", X + 3, Y, 7, 1);
+      P(bx, "#3d3d45", X + 17, Y - 5, 11, 11);
+      P(bx, "#2a2a30", X + 19, Y - 3, 7, 6);
+      P(bx, "#2a2a30", X + 21, Y + 6, 3, 3);
+      glint(X + 4, Y - 4);
+      glint(X + 26, Y + 9);
+    }
+    if (it === "neonsign") {
+      P(bx, "rgba(0,0,0,.2)", X + 2, Y + 14, 30, 2);
+      P(bx, "#2a2a30", X + 6, Y + 3, 2, 12);
+      P(bx, "#2a2a30", X + 24, Y + 3, 2, 12);
+      P(bx, "#3d3d45", X + 4, Y + 13, 6, 2);
+      P(bx, "#3d3d45", X + 22, Y + 13, 6, 2);
+      // A little light leaks round the edges of the dark back.
+      P(bx, "rgba(255,90,180,.22)", X, Y - 16, 32, 21);
+      P(bx, "rgba(94,242,255,.18)", X, Y - 6, 32, 11);
+      P(bx, "#0e0e16", X + 1, Y - 15, 30, 19);
+      P(bx, "#24242e", X + 2, Y - 14, 28, 17);
+      P(bx, "#30303c", X + 2, Y - 14, 28, 1);
+      P(bx, "#111", X + 8, Y - 6, 16, 1);
+      P(bx, "#111", X + 23, Y - 6, 1, 9);
+      P(bx, "#3d3d45", X + 13, Y - 10, 6, 4);
+    }
+    if (it === "arcade") {
+      P(bx, "rgba(0,0,0,.22)", X, Y + 14, 16, 2);
+      P(bx, "#1b1440", X + 1, Y - 15, 14, 31);
+      P(bx, "#2b2258", X + 2, Y - 14, 12, 29);
+      P(bx, "#5ef2ff", X + 1, Y - 12, 1, 26);
+      P(bx, "#ff5ab4", X + 14, Y - 12, 1, 26);
+      P(bx, "#9c7a2c", X + 2, Y - 14, 12, 2);
+      for (let j = 0; j < 4; j++) P(bx, "#1b1440", X + 4, Y - 10 + j * 3, 8, 1);
+      P(bx, "#3b2f7a", X + 4, Y + 2, 8, 9);
+      P(bx, "#5d4fa0", X + 4, Y + 2, 8, 1);
+      P(bx, "#c8a24a", X + 10, Y + 5, 1, 2);
+      P(bx, "#111", X + 7, Y + 11, 1, 4);
+      glint(X + 9, Y - 13);
+    }
+    if (it === "fireplace") {
+      P(bx, "#fdfaf2", X + 3, Y - 22, 2, 4);
+      P(bx, "#ffd84d", X + 3, Y - 24, 2, 2);
+      P(bx, "#fdfaf2", X + 27, Y - 21, 2, 3);
+      P(bx, "#ffd84d", X + 27, Y - 23, 2, 2);
+      P(bx, "#6e4425", X + 12, Y - 25, 8, 7);
+      P(bx, "#4e3019", X + 15, Y - 22, 2, 2);
+      P(bx, "#4a4550", X, Y - 16, 32, 31);
+      for (let j = 0; j < 7; j++)
+        for (let i = 0; i < 5; i++) {
+          const x0 = Math.max(X + 1, X + 1 + i * 8 - (j % 2) * 4);
+          const x1 = Math.min(X + 31, X + 8 + i * 8 - (j % 2) * 4);
+          if (x1 > x0) P(bx, (i + j) % 2 ? "#7c7782" : "#8f8a94", x0, Y - 15 + j * 4, x1 - x0, 3);
+        }
+      P(bx, "#5e3a20", X - 2, Y - 18, 36, 4);
+      P(bx, "#8a5a33", X - 2, Y - 18, 36, 1);
+      P(bx, "#3a2416", X - 2, Y - 15, 36, 1);
+      P(bx, "#8f8a94", X + 3, Y + 11, 26, 4);
+      P(bx, "#b8bcc2", X + 3, Y + 11, 26, 1);
+    }
+    if (it === "throne") {
+      ell(bx, X + 8, Y + 15, 7, 1, "rgba(0,0,0,.22)");
+      P(bx, "#9c7a2c", X, Y - 1, 4, 9);
+      P(bx, "#9c7a2c", X + 12, Y - 1, 4, 9);
+      P(bx, "#f2c14e", X + 1, Y - 1, 2, 8);
+      P(bx, "#f2c14e", X + 13, Y - 1, 2, 8);
+      P(bx, "#9c7a2c", X + 2, Y + 12, 2, 3);
+      P(bx, "#9c7a2c", X + 12, Y + 12, 2, 3);
+      P(bx, "#9c7a2c", X + 2, Y - 13, 12, 26);
+      P(bx, "#f2c14e", X + 3, Y - 12, 10, 24);
+      P(bx, "#c8a24a", X + 5, Y - 10, 6, 19);
+      P(bx, "#9c7a2c", X + 7, Y - 8, 2, 15);
+      P(bx, "#9c7a2c", X + 2, Y - 15, 2, 2);
+      P(bx, "#9c7a2c", X + 7, Y - 16, 2, 3);
+      P(bx, "#9c7a2c", X + 12, Y - 15, 2, 2);
+      P(bx, "#f2c14e", X + 13, Y - 15, 1, 1);
+      P(bx, "#ffe08a", X + 8, Y - 16, 1, 1);
+      P(bx, "#f2c14e", X + 3, Y - 15, 1, 1);
+      P(bx, "#fff6c8", X + 12, Y - 12, 1, 4);
+      glint(X + 12, Y - 15);
+      glint(X + 4, Y + 2);
+    }
+  };
+
+  /** Dorm furniture, by piece id and facing (Thing.rot). */
+  const paintFurniture = (o: Thing) => {
+    const rot = ROUND_PIECES.has(o.item ?? "") ? 0 : (o.rot ?? 0);
+    noFish = Boolean(o.emptyTank);
+    if (rot === 1) paintSide(o, true);
+    else if (rot === 3) mirror(o.x * TILE, o.w * TILE, () => paintSide(o, false));
+    else if (rot === 2) paintBack(o);
+    else paintFront(o);
+    noFish = false;
+  };
+
   const paintThing = (o: Thing) => {
     const X = o.x * TILE;
     const Y = o.y * TILE;
@@ -1951,6 +2791,66 @@ export function createKit(W: number, H: number, seed: number) {
         P(bx, "#5b6b8a", X + WW - 14, Y + 1 + i * 4, 9, 1);
       }
     }
+    if (o.t === "dormdoor") {
+      // Front of the dorm block: brick wall, tiled roof (top layer, so people
+      // behind it pass under), two windows with flower boxes, a double door
+      // on a stone step and a DORMS plaque.
+      const cx = X + WW / 2;
+      const HH = o.h * TILE;
+      P(bx, "rgba(0,0,0,.2)", X + 1, Y + HH - 2, WW - 2, 3);
+      P(bx, "#5a3d2a", X + 1, Y - 2, WW - 2, HH + 1);
+      P(bx, "#7a5844", X + 2, Y - 1, WW - 4, HH - 1);
+      for (let j = 0; j < (HH - 2) / 4; j++) {
+        P(bx, "#664637", X + 2, Y + 2 + j * 4, WW - 4, 1);
+        for (let i = X + 2 + (j % 2) * 4; i < X + WW - 2; i += 8)
+          P(bx, "#664637", i, Y - 1 + j * 4, 1, 3);
+      }
+      [X + 4, X + WW - 13].forEach((wx) => {
+        P(bx, "#f6f1e7", wx, Y + 6, 9, 9);
+        P(bx, "#9fd3ef", wx + 1, Y + 7, 7, 7);
+        P(bx, "#c4e6f8", wx + 1, Y + 7, 7, 2);
+        P(bx, "#f6f1e7", wx + 4, Y + 7, 1, 7);
+        P(bx, "#f6f1e7", wx + 1, Y + 10, 7, 1);
+        P(bx, "#6e4425", wx, Y + 15, 9, 3);
+        P(bx, "#8a5a33", wx, Y + 15, 9, 1);
+        [1, 4, 7].forEach((f, n) => {
+          P(bx, "#3f8e3b", wx + f, Y + 13, 1, 2);
+          P(bx, n % 2 ? "#ffd84d" : "#ff9ec4", wx + f, Y + 13);
+        });
+      });
+      P(bx, "#4e3019", cx - 8, Y + 9, 16, HH - 11);
+      P(bx, "#a8744a", cx - 7, Y + 10, 14, HH - 12);
+      P(bx, "#c48d5d", cx - 7, Y + 10, 14, 1);
+      P(bx, "#6e4425", cx, Y + 10, 1, HH - 12);
+      [cx - 6, cx + 2].forEach((dx) => {
+        P(bx, "#9fd3ef", dx, Y + 12, 4, 4);
+        P(bx, "#c4e6f8", dx, Y + 12, 4, 1);
+        P(bx, "#8a5a33", dx, Y + 18, 4, 6);
+      });
+      P(bx, "#f2c14e", cx - 2, Y + 19, 1, 2);
+      P(bx, "#f2c14e", cx + 1, Y + 19, 1, 2);
+      P(bx, "#8f949a", cx - 10, Y + HH - 3, 20, 3);
+      P(bx, "#b8bcc2", cx - 10, Y + HH - 3, 20, 1);
+      // Plaque over the door.
+      P(bx, "#4e3019", cx - 12, Y - 1, 24, 9);
+      P(bx, "#8a5a33", cx - 11, Y, 22, 7);
+      P(bx, "#a8744a", cx - 11, Y, 22, 1);
+      label("DORMS", cx, Y + 6, "board");
+      // Roof
+      P(ox, "#6e2a24", X - 2, Y - 13, WW + 4, 11);
+      for (let j = 0; j < 3; j++)
+        for (let i = (j % 2) * 2; i < WW + 3; i += 4)
+          P(
+            ox,
+            j % 2 ? "#a8423f" : "#b8524a",
+            X - 2 + i,
+            Y - 12 + j * 3,
+            Math.min(3, WW + 3 - i),
+            2,
+          );
+      P(ox, "#c86a5a", X - 2, Y - 13, WW + 4, 1);
+      P(ox, "#4a1c18", X - 2, Y - 3, WW + 4, 1);
+    }
     if (o.t === "fountain") {
       const cx = X + WW / 2;
       ell(bx, cx, Y + 26, 16, 5, "rgba(0,0,0,.2)");
@@ -2002,7 +2902,7 @@ export function createKit(W: number, H: number, seed: number) {
     H,
     rnd,
     pick,
-    bx,
+    bx: realBx,
     ox,
     P,
     circ,

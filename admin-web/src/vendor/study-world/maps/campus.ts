@@ -135,6 +135,8 @@ export function createCampusMap(): WorldMap {
   // Weekly leaderboards, next to the event notice board.
   thing("ranks", 38, 3, 3, 2);
   thing("bin", 32, 10);
+  // Dorm block entrance: press E here to go to your dorm room.
+  thing("dormdoor", 38, 26, 3, 2);
   k.rug(6, 22, 11, 23, ["#9c3d3d", "#c8a24a", "#8a3232"]);
   // Quiz deck O and X
   k.decor(() => {
