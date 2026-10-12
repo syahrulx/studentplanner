@@ -8,9 +8,12 @@ import { ErrorBox, Field, Modal, StatusBadge } from './ui';
  * Rooms are made by the website as people arrive ("Campus 1", "Campus 2"…,
  * "Campus Pro lounge 1"…; see serversFor() in its src/lib/study-world/rooms.ts),
  * so this lists the rooms that have real people in them right now. Private
- * rooms are never announced, so they never appear. Each room holds at most 50.
+ * rooms are never announced, so they never appear. Each room holds at most
+ * 25 people, and each map has at most 5 open rooms and 5 Pro lounges (website
+ * ROOM_LIMIT and MAX_ROOMS_PER_MAP).
  */
-const ROOM_LIMIT = 50;
+const ROOM_LIMIT = 25;
+const MAX_ROOMS = 5;
 const roomNumber = (room: string) => Number(room.match(/(\d+)\s*$/)?.[1] ?? 0);
 const byNumber = (a: string, b: string) => roomNumber(a) - roomNumber(b) || a.localeCompare(b);
 
@@ -67,7 +70,7 @@ export function MapsRoomsPanel() {
     <div className="space-y-4 p-4">
       <ErrorBox message={error} />
       <p className="px-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-        Live numbers are real people in each room right now. Each open room and Pro lounge also has 2 helper bots, which are not counted here.
+        Live numbers are real people in each room right now (up to {ROOM_LIMIT} per room, {MAX_ROOMS} open rooms and {MAX_ROOMS} Pro lounges per map). Each room also has helper bots, which are not counted here.
         {live.connected ? '' : ' Connecting to the live count…'}
       </p>
       {maps.map((m) => {
