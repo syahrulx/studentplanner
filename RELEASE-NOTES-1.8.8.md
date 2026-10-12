@@ -28,15 +28,16 @@ A bigger map, and animations that work offline.
 
 ## App Store — "What's New in This Version"
 
+<!-- 12 Oct: Apple rejected 1.8.8 under 2.3.10 (Accurate Metadata). The
+"Google Classroom on Android" section was removed: App Store text must not
+mention other platforms. Keep Android-only news in the Google Play text. -->
+
 ```
 Your profile card
 Tap a student's name or picture anywhere in Community and you get their card: photo, name, university, campus, course, what they are doing and what they are listening to. You decide what yours shows — six switches, or hide the lot in one tap. Hiding your picture shows your initials instead.
 
 Banners
 Your card gets a strip you can choose. Ten muted colours on Plus. Four animated designs on Pro: petals falling, drifting light, a scrolling grid, and a pixel sky. They are drawn by the app rather than loaded as pictures, so they are sharp on any screen and cost nothing to download.
-
-Google Classroom on Android
-Connecting Classroom used to depend on how you created your Rencana account. If you signed up with Apple or with an email address there was no way to connect it at all, and the app told you to sign in with Google — which you could not do. Android now asks Google properly, whoever you are.
 
 Snaps
 See who liked a snap, not just how many. Write a caption before you post. Tap a snap to move to the next one. Snaps you have already opened move aside and stop glowing, so the row shows what is left. Every snap now says whether it went to friends, your campus or your university. And there are more reactions than the six on the bar.
