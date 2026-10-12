@@ -129,6 +129,8 @@ export function createCampusMap(): WorldMap {
     ].forEach(([dx, dy]) => seat(x + dx, y + dy, "bench"));
   });
 
+  thing("bin", 15, 9);
+  thing("bin", 32, 10);
   k.rug(6, 22, 11, 23, ["#9c3d3d", "#c8a24a", "#8a3232"]);
   // Quiz deck O and X
   k.decor(() => {

@@ -146,11 +146,8 @@ export function SettingsPanel() {
         <Toggle checked={s.shop_enabled} onChange={(v) => set('shop_enabled', v)} label="Shop open" hint="When off, players can still change into items they own, but cannot unlock new ones." />
         <Toggle checked={s.chat_enabled} onChange={(v) => set('chat_enabled', v)} label="Room chat on" hint="When off, only emotes work." />
         <Toggle checked={s.reports_enabled} onChange={(v) => set('reports_enabled', v)} label="Players can send reports" />
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Starter coins (preview)" hint="Pretend coins a new player starts with in their browser.">
-            <input type="number" min={0} max={100000} value={s.starter_coins} onChange={(e) => set('starter_coins', Math.max(0, Math.floor(Number(e.target.value) || 0)))} className={FIELD} />
-          </Field>
-          <Field label="Announcement banner (optional)">
+        <div className="grid gap-3">
+          <Field label="Announcement banner (optional)" hint="New players start with 0 coins. Coins now live on the server: give or take them from a player's Wallet & bag.">
             <input value={s.announcement ?? ''} maxLength={300} onChange={(e) => set('announcement', e.target.value)} placeholder="New: Cat ears in the shop!" className={FIELD} />
           </Field>
         </div>

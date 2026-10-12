@@ -7,6 +7,7 @@ import { ReportsPanel } from '../components/studyWorld/ReportsPanel';
 import { ChatFilterPanel } from '../components/studyWorld/ChatFilterPanel';
 import { LogPanel, OverviewPanel, SettingsPanel } from '../components/studyWorld/SettingsPanels';
 import { MapsRoomsPanel } from '../components/studyWorld/MapsRoomsPanel';
+import { LeaderboardsPanel, WalletsPanel } from '../components/studyWorld/EconomyPanels';
 import { useLiveCounts } from '../lib/studyWorld';
 import { useWorldAlerts } from '../lib/studyWorldAlerts';
 
@@ -18,6 +19,8 @@ const OLD_TABS: Record<string, [string, string]> = {
   overview: ['home', 'home'],
   items: ['shop', 'items'],
   payments: ['shop', 'payments'],
+  wallets: ['shop', 'wallets'],
+  leaderboards: ['shop', 'leaderboards'],
   maps: ['world', 'maps'],
   settings: ['world', 'settings'],
   players: ['players', 'players'],
@@ -74,9 +77,11 @@ export function StudyWorldRoute() {
     {
       id: 'shop',
       label: 'Shop',
-      hint: 'Items, prices and what is on sale or coming soon',
+      hint: 'Items and prices, players’ coins and fish, and leaderboards',
       views: [
         { id: 'items', label: 'Items', content: <ItemsPanel /> },
+        { id: 'wallets', label: 'Wallets & bags', content: <WalletsPanel /> },
+        { id: 'leaderboards', label: 'Leaderboards', content: <LeaderboardsPanel /> },
         { id: 'payments', label: 'Coin packs & prices (demo)', content: <PaymentsPanel /> },
       ],
     },

@@ -18,8 +18,8 @@ const to = resolve('src/vendor/study-world');
 rmSync(to, { recursive: true, force: true });
 mkdirSync(join(to, 'maps'), { recursive: true });
 // Plain files with no React or Supabase imports. chat-filter.ts keeps the
-// admin's word preview identical to what players get.
-for (const file of ['avatar.ts', 'chat-filter.ts']) {
+// admin's word preview identical to what players get; fish-art.ts draws fish.
+for (const file of ['avatar.ts', 'chat-filter.ts', 'fish-art.ts']) {
   if (existsSync(join(from, file))) cpSync(join(from, file), join(to, file));
 }
 for (const file of readdirSync(join(from, 'maps'))) {

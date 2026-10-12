@@ -32,7 +32,8 @@ export type ThingType =
   | "globe"
   | "fountain"
   | "vending"
-  | "returns";
+  | "returns"
+  | "bin";
 export type Crop = { x: number; y: number; stage: number };
 export type Thing = {
   t: ThingType;
@@ -67,6 +68,8 @@ export type WorldMap = {
   quiz?: { o: TileRect; x: TileRect };
   /** Colour around the map when the screen is bigger than it. */
   bg: string;
+  /** Water tiles you can fish from (tileKey). */
+  water: Set<string>;
   npcs: number;
 };
 
@@ -216,6 +219,7 @@ export function createKit(W: number, H: number, seed: number) {
   const mats: [number, number][] = [];
   const flowerBeds: TileRect[] = [];
   const ponds: [number, number, number, number][] = [];
+  const water = new Set<string>();
   const add =
     (list: [number, number][]) =>
     (...points: [number, number][]) =>
@@ -249,6 +253,7 @@ export function createKit(W: number, H: number, seed: number) {
         if (dx * dx + dy * dy < 1) {
           G[y][x] = "w";
           solid[y][x] = true;
+          water.add(tileKey(x, y));
         }
       }
     ponds.push([
@@ -930,6 +935,15 @@ export function createKit(W: number, H: number, seed: number) {
       P(bx, "#c8a24a", X + 2, Y + 5, 1, 3);
       P(bx, "#c8a24a", X + 14, Y + 3, 1, 3);
     }
+    if (o.t === "bin") {
+      ell(bx, X + 8, Y + 15, 6, 1, "rgba(0,0,0,.2)");
+      P(bx, "#2f6b45", X + 3, Y + 2, 10, 13);
+      P(bx, "#3f8e5c", X + 4, Y + 3, 8, 11);
+      P(bx, "#2f6b45", X + 2, Y, 12, 3);
+      P(bx, "#4fa56c", X + 2, Y, 12, 1);
+      P(bx, "#e8f5ec", X + 6, Y + 6, 4, 4);
+      P(bx, "#2f6b45", X + 7, Y + 7, 2, 2);
+    }
     if (o.t === "fountain") {
       const cx = X + WW / 2;
       ell(bx, cx, Y + 26, 16, 5, "rgba(0,0,0,.2)");
@@ -947,7 +961,7 @@ export function createKit(W: number, H: number, seed: number) {
     }
   };
 
-  const finish = (meta: Omit<WorldMap, "w" | "h" | keyof Painted>): WorldMap => {
+  const finish = (meta: Omit<WorldMap, "w" | "h" | "water" | keyof Painted>): WorldMap => {
     paintGround();
     paintPonds();
     afterGround.forEach((fn) => fn());
@@ -955,7 +969,20 @@ export function createKit(W: number, H: number, seed: number) {
     seats.forEach(paintSeat);
     things.forEach(paintThing);
     afterThings.forEach((fn) => fn());
-    return { ...meta, w: W, h: H, base, over, solid, seats, things, crops, labels, sparkles };
+    return {
+      ...meta,
+      w: W,
+      h: H,
+      base,
+      over,
+      solid,
+      seats,
+      things,
+      crops,
+      labels,
+      sparkles,
+      water,
+    };
   };
 
   return {

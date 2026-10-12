@@ -49,6 +49,7 @@ export function createCafeMap(): WorldMap {
     k.P(k.bx, "#a8744a", 3 * TILE + 8, 20 * TILE + 1, 6 * TILE, 2);
   });
 
+  thing("bin", 29, 19);
   thing("arcade", 26, 14);
   thing("arcade", 28, 14);
   label("ARCADE", 27.5 * TILE, 12 * TILE + 12, "small");

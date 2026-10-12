@@ -49,6 +49,8 @@ export function createGardenMap(): WorldMap {
     seat(x, 18, "bench");
   });
   thing("notice", 23, 2, 3, 2);
+  thing("bin", 17, 24);
+  thing("bin", 19, 11);
   k.bush([2, 9], [17, 3], [26, 3], [19, 26], [41, 12], [26, 26]);
   k.tree([24, 8], [19, 21], [39, 27], [2, 16]);
 

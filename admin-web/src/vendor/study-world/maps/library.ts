@@ -54,6 +54,7 @@ export function createLibraryMap(): WorldMap {
     seat(x, y + 1, "lib");
     seat(x + 1, y + 1, "lib");
   });
+  thing("bin", 30, 22);
   thing("pot", 1, 22);
   thing("pot", 32, 22);
 

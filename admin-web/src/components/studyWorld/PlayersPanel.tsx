@@ -17,6 +17,7 @@ import {
 import { BTN_DANGER, BTN_DARK, BTN_LIGHT, CARD, FIELD, when } from './format';
 import { ErrorBox, Field, Modal } from './ui';
 import { AvatarArt } from './WorldArt';
+import { PlayerEconomySection } from './PlayerEconomy';
 
 const PAGE = 25;
 const LOOK_PARTS = ['hair', 'eyes', 'top', 'bottom', 'shoes', 'head', 'face', 'back', 'pet', 'effect'] as const;
@@ -478,6 +479,10 @@ export function PlayerDrawer({ userId, onClose, onChanged }: { userId: string; o
                     <div className="text-xs font-semibold text-slate-400">Design last saved {when(world.updated_at)}</div>
                   </Section>
                 ) : null}
+
+                <Section title="Wallet & bag">
+                  <PlayerEconomySection userId={userId} label={label} />
+                </Section>
 
                 <Section title="Rencana account">
                   <dl className="grid grid-cols-2 gap-3 rounded-2xl border border-slate-200 p-4 dark:border-slate-800">

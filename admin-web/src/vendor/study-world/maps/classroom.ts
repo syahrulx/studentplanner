@@ -68,6 +68,7 @@ export function createClassroomMap(): WorldMap {
   thing("locker", 2, 20, 5, 1);
   thing("vending", 26, 20);
   thing("notice", 21, 20, 3, 1);
+  thing("bin", 27, 20);
   label("GROUP STUDY", 15 * TILE, 16 * TILE + 10, "small");
 
   return k.finish({

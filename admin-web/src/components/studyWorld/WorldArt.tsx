@@ -12,6 +12,7 @@ import {
   type AvatarLook,
 } from '../../vendor/study-world/avatar';
 import { createWorldMap, isMapId } from '../../vendor/study-world/maps';
+import { FISH_GRID_H, FISH_GRID_W, buildFish, drawFishGlow, hasGlow, type FishArtKey } from '../../vendor/study-world/fish-art';
 
 /** Draws an avatar exactly as the website does (same code, copied in src/vendor). */
 export function AvatarArt({ look, scale = 4, animate = true }: { look: AvatarLook; scale?: number; animate?: boolean }) {
@@ -195,3 +196,40 @@ export function ItemPicture({
     </div>
   );
 }
+
+/** A fish, drawn by the website's own fish code. Ultra rare fish glow and shimmer. */
+export function FishArt({ species, scale = 3, animate = false }: { species: string; scale?: number; animate?: boolean }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const known = species in FISH_KEYS;
+  const pad = 4;
+  const width = (FISH_GRID_W + pad * 2) * scale;
+  const height = (FISH_GRID_H + pad * 2) * scale;
+
+  useEffect(() => {
+    const canvas = ref.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx || !known) return;
+    const key = species as FishArtKey;
+    const sprite = document.createElement('canvas');
+    sprite.width = FISH_GRID_W;
+    sprite.height = FISH_GRID_H;
+    let raf = 0;
+    const draw = (t: number) => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.imageSmoothingEnabled = false;
+      if (hasGlow(key)) drawFishGlow(ctx, key, width / 2, height / 2, (FISH_GRID_W / 2 + pad) * scale, t);
+      paintGrid(buildFish(key, t), sprite);
+      ctx.drawImage(sprite, 0, 0, FISH_GRID_W, FISH_GRID_H, pad * scale, pad * scale, FISH_GRID_W * scale, FISH_GRID_H * scale);
+      if (animate) raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [species, scale, animate, known, width, height]);
+
+  if (!known) return <div className="grid place-items-center text-2xl" style={{ width, height }}>🐟</div>;
+  return <canvas ref={ref} width={width} height={height} style={{ width, height, imageRendering: 'pixelated' }} />;
+}
+
+const FISH_KEYS: Record<FishArtKey, true> = {
+  minnow: true, tilapia: true, carp: true, koi: true, toman: true, gourami: true, starkoi: true, thunder: true, dragon: true,
+};
