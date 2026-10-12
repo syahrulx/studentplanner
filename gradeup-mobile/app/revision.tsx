@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Switch, TextInput } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, Switch, TextInput, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
@@ -98,7 +98,14 @@ export default function RevisionScreen() {
       singleDate: normalizedSingleDate,
     };
     setSaving(true);
-    await setRevisionSettings(settings);
+    try {
+      await setRevisionSettings(settings);
+    } catch {
+      // Stay on the screen with the student's choices intact so they can retry.
+      setSaving(false);
+      Alert.alert('Not saved', 'Could not save this study time. Check your connection and try again.');
+      return;
+    }
     setSaving(false);
     router.back();
   };

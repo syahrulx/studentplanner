@@ -118,6 +118,15 @@ export async function getNotesStrict(userId: string): Promise<Note[]> {
 
 
 export async function getFlashcards(userId: string): Promise<Flashcard[]> {
+  try {
+    return await getFlashcardsStrict(userId);
+  } catch {
+    return [];
+  }
+}
+
+/** Same query as getFlashcards, but preserves network/RLS failures for offline-aware callers. */
+export async function getFlashcardsStrict(userId: string): Promise<Flashcard[]> {
   const { data, error } = await supabase
     .from(CARDS_TABLE)
     .select('*')
@@ -125,7 +134,7 @@ export async function getFlashcards(userId: string): Promise<Flashcard[]> {
     // Deterministic order: newest first, id as a tiebreaker for equal timestamps.
     .order('created_at', { ascending: false })
     .order('id', { ascending: false });
-  if (error) return [];
+  if (error) throw new Error(error.message || 'Failed to load flashcards');
   return (data ?? []).map(rowToCard);
 }
 
