@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   listUniversities,
+  listBroadcastCampuses,
+  type BroadcastCampus,
   listUsers,
   previewBroadcast,
   sendBroadcast,
@@ -24,6 +26,7 @@ const CATEGORY_OPTIONS: Array<{ value: BroadcastCategory; label: string; hint: s
 type FormState = {
   audience: BroadcastAudience;
   universityId: string;
+  campuses: string[];
   userIdsText: string;
   title: string;
   body: string;
@@ -33,6 +36,92 @@ type FormState = {
 };
 
 const USER_PAGE_SIZE = 25;
+
+/** Case-insensitive "contains", ignoring extra spaces, for the type-to-search boxes. */
+const norm = (v: string) => v.toLowerCase().replace(/\s+/g, ' ').trim();
+const matches = (text: string, query: string) => !query.trim() || norm(text).includes(norm(query));
+
+/** Type part of a university's name (or its short id, e.g. "uitm") and pick from the matches. */
+function UniversitySearch({
+  universities,
+  value,
+  onChange,
+}: {
+  universities: UniversityRow[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const selected = universities.find((u) => u.id === value);
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const found = universities.filter((u) => matches(u.name, query) || matches(u.id, query)).slice(0, 30);
+
+  if (selected && !open) {
+    return (
+      <div className="mt-1 flex items-center gap-2 rounded-2xl border border-brand-500 bg-brand-50 px-4 py-2.5 text-sm font-bold text-slate-900 dark:bg-brand-950/30 dark:text-slate-100">
+        <span className="truncate">{selected.name}</span>
+        <button
+          type="button"
+          className="ml-auto text-xs font-black text-brand-600 underline"
+          onClick={() => {
+            setQuery('');
+            setOpen(true);
+          }}
+        >
+          Change
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative mt-1">
+      <TextInput
+        autoFocus={open}
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && found[0]) {
+            e.preventDefault();
+            onChange(found[0].id);
+            setOpen(false);
+          }
+          if (e.key === 'Escape') setOpen(false);
+        }}
+        placeholder="Type a university name, e.g. UiTM"
+        aria-label="Search universities"
+      />
+      {open ? (
+        <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-800 dark:bg-slate-900">
+          {found.length === 0 ? (
+            <div className="px-3 py-2 text-sm font-semibold text-slate-400">No university matches “{query}”.</div>
+          ) : (
+            found.map((u) => (
+              <button
+                key={u.id}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onChange(u.id);
+                  setOpen(false);
+                }}
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800"
+              >
+                <span className="truncate">{u.name}</span>
+                <span className="ml-auto shrink-0 text-[11px] font-bold uppercase text-slate-400">{u.id}</span>
+              </button>
+            ))
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function parseUserIds(raw: string): string[] {
   return raw
@@ -76,6 +165,7 @@ export function BroadcastRoute() {
   const [form, setForm] = useState<FormState>({
     audience: 'all',
     universityId: '',
+    campuses: [],
     userIdsText: '',
     title: '',
     body: '',
@@ -117,6 +207,34 @@ export function BroadcastRoute() {
       }
     })();
   }, []);
+
+  // Campus list for the chosen university (audience === 'campus').
+  const [campusList, setCampusList] = useState<BroadcastCampus[]>([]);
+  const [campusBusy, setCampusBusy] = useState(false);
+  const [campusErr, setCampusErr] = useState('');
+  const [campusQuery, setCampusQuery] = useState('');
+  useEffect(() => {
+    setCampusQuery('');
+    if (form.audience !== 'campus' || !form.universityId) {
+      setCampusList([]);
+      return;
+    }
+    let cancelled = false;
+    setCampusBusy(true);
+    setCampusErr('');
+    listBroadcastCampuses(form.universityId)
+      .then((list) => !cancelled && setCampusList(list))
+      .catch((e) => !cancelled && setCampusErr(e instanceof Error ? e.message : 'Could not load campuses'))
+      .finally(() => !cancelled && setCampusBusy(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [form.audience, form.universityId]);
+
+  // A changed audience makes an earlier preview count wrong.
+  useEffect(() => {
+    setPreview(null);
+  }, [form.audience, form.universityId, form.campuses]);
 
   // Reset paging whenever search/filter changes.
   useEffect(() => {
@@ -216,6 +334,7 @@ export function BroadcastRoute() {
   const canPreview =
     form.audience === 'all' ||
     (form.audience === 'university' && !!form.universityId) ||
+    (form.audience === 'campus' && !!form.universityId && form.campuses.length > 0) ||
     (form.audience === 'user_ids' && mergedUserIds.length > 0);
 
   const routeInvalid = form.route.trim() !== '' && !form.route.trim().startsWith('/');
@@ -234,7 +353,8 @@ export function BroadcastRoute() {
     try {
       const res = await previewBroadcast({
         audience: form.audience,
-        universityId: form.audience === 'university' ? form.universityId : undefined,
+        universityId: form.audience === 'university' || form.audience === 'campus' ? form.universityId : undefined,
+        campuses: form.audience === 'campus' ? form.campuses : undefined,
         userIds: form.audience === 'user_ids' ? mergedUserIds : undefined,
       });
       setPreview(res);
@@ -275,7 +395,8 @@ export function BroadcastRoute() {
       const route = form.route.trim();
       const res = await sendBroadcast({
         audience: form.audience,
-        universityId: form.audience === 'university' ? form.universityId : undefined,
+        universityId: form.audience === 'university' || form.audience === 'campus' ? form.universityId : undefined,
+        campuses: form.audience === 'campus' ? form.campuses : undefined,
         userIds: form.audience === 'user_ids' ? mergedUserIds : undefined,
         title: form.title.trim(),
         body: form.body.trim(),
@@ -315,6 +436,7 @@ export function BroadcastRoute() {
                 >
                   <option value="all">Everyone (all users with push enabled)</option>
                   <option value="university">By university</option>
+                  <option value="campus">By campus</option>
                   <option value="user_ids">Select specific users</option>
                 </Select>
                 <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
@@ -322,6 +444,8 @@ export function BroadcastRoute() {
                     ? 'Sends to every eligible user.'
                     : form.audience === 'university'
                       ? 'Sends to everyone at the selected university.'
+                      : form.audience === 'campus'
+                        ? 'Sends to students at the campuses you tick, in one university.'
                       : 'Pick individuals or “Select all matching” in the list below.'}
                 </div>
               </div>
@@ -345,21 +469,67 @@ export function BroadcastRoute() {
               </div>
             </div>
 
-            {form.audience === 'university' ? (
+            {form.audience === 'university' || form.audience === 'campus' ? (
               <div className="mt-5">
                 <Label>University</Label>
-                <Select
-                  className="mt-1"
+                <UniversitySearch
+                  universities={universities}
                   value={form.universityId}
-                  onChange={(e) => setForm((f) => ({ ...f, universityId: e.target.value }))}
-                >
-                  <option value="">— select a university —</option>
-                  {universities.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name}
-                    </option>
-                  ))}
-                </Select>
+                  onChange={(id) => setForm((f) => ({ ...f, universityId: id, campuses: [] }))}
+                />
+              </div>
+            ) : null}
+
+            {form.audience === 'campus' && form.universityId ? (
+              <div className="mt-5">
+                <div className="flex items-center justify-between gap-3">
+                  <Label>Campuses</Label>
+                  <div className="flex items-center gap-2 text-xs font-black text-slate-600 dark:text-slate-300">
+                    {form.campuses.length} selected ·{' '}
+                    {campusList.filter((c) => form.campuses.includes(c.campus)).reduce((n, c) => n + c.count, 0).toLocaleString()} students
+                    <button type="button" className="text-brand-600 underline" onClick={() => setForm((f) => ({ ...f, campuses: [...new Set([...f.campuses, ...campusList.filter((c) => c.count > 0 && matches(c.campus, campusQuery)).map((c) => c.campus)])] }))}>{campusQuery.trim() ? 'All shown' : 'All'}</button>
+                    <button type="button" className="text-brand-600 underline" onClick={() => setForm((f) => ({ ...f, campuses: [] }))}>None</button>
+                  </div>
+                </div>
+                {campusBusy ? <div className="mt-2 text-sm font-semibold text-slate-400">Loading campuses…</div> : null}
+                {campusErr ? <div className="mt-2 text-sm font-bold text-rose-600">{campusErr}</div> : null}
+                {!campusBusy && !campusErr && campusList.length === 0 ? (
+                  <div className="mt-2 text-sm font-semibold text-slate-400">No student at this university has set a campus yet.</div>
+                ) : null}
+                {campusList.length > 6 ? (
+                  <TextInput
+                    className="mt-2"
+                    value={campusQuery}
+                    onChange={(e) => setCampusQuery(e.target.value)}
+                    placeholder="Type to find a campus, e.g. Arau"
+                    aria-label="Search campuses"
+                  />
+                ) : null}
+                <div className="mt-2 grid max-h-72 gap-1.5 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
+                  {campusList.filter((c) => matches(c.campus, campusQuery)).map((c) => {
+                    const on = form.campuses.includes(c.campus);
+                    return (
+                      <label key={c.campus} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold ${on ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/30' : 'border-slate-200 dark:border-slate-800'} ${c.count === 0 ? 'opacity-50' : ''}`}>
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          disabled={c.count === 0}
+                          onChange={(e) =>
+                            setForm((f) => ({
+                              ...f,
+                              campuses: e.target.checked ? [...f.campuses, c.campus] : f.campuses.filter((x) => x !== c.campus),
+                            }))
+                          }
+                        />
+                        <span className="truncate">{c.campus}</span>
+                        <span className="ml-auto text-xs font-black text-slate-500">{c.count.toLocaleString()}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  Campus names are shown exactly as students saved them. Some may appear twice with different spelling — tick both to reach everyone.
+                </div>
               </div>
             ) : null}
 

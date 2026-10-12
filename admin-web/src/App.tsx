@@ -20,6 +20,7 @@ import { AcademicCalendarsRoute } from './routes/AcademicCalendarsRoute';
 import { CommunicationsRoute } from './routes/CommunicationsRoute';
 import { InstitutionsRoute } from './routes/InstitutionsRoute';
 import { ConfessionsRoute } from './routes/ConfessionsRoute';
+import { StudyWorldRoute } from './routes/StudyWorldRoute';
 import { AuthProvider } from './state/AuthProvider';
 
 export default function App() {
@@ -48,6 +49,7 @@ export default function App() {
             <Route path="authorities" element={<Navigate to="/institutions?tab=authorities" replace />} />
             <Route path="services" element={<ServicesRoute />} />
             <Route path="confessions" element={<ConfessionsRoute />} />
+            <Route path="study-world" element={<StudyWorldRoute />} />
             <Route path="campuses" element={<Navigate to="/institutions?tab=campuses" replace />} />
             <Route path="organizations" element={<Navigate to="/institutions?tab=organisations" replace />} />
             <Route path="communications" element={<CommunicationsRoute />} />

@@ -3,10 +3,13 @@
 // Auth: JWT (admin_users row) OR Bearer ADMIN_WEB_DEV_SECRET (same as other admin_* fns).
 //
 // Actions:
-//   { action: "preview", audience, userIds?, universityId? }
+//   { action: "preview", audience, userIds?, universityId?, campuses? }
 //     → { count: number }
 //
-//   { action: "send", audience, userIds?, universityId?, title, body,
+//   { action: "campuses", universityId }
+//     → { campuses: { campus: string, count: number }[] }  (campus text as saved on profiles)
+//
+//   { action: "send", audience, userIds?, universityId?, campuses?, title, body,
 //       category?: "reaction" | "shared_task" | "circle" | "friend",
 //       route?: string, params?: Record<string,string>, collapseKey?: string }
 //     → response from community-push ({ sent, batches, results })
@@ -17,7 +20,8 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import { authorizeAdminRequest, getServiceClient } from '../_shared/adminAuth.ts';
 import { buildCorsHeaders } from '../_shared/cors.ts';
 
-type Audience = 'all' | 'user_ids' | 'university';
+// 'campus' = one university, limited to the given profiles.campus values.
+type Audience = 'all' | 'user_ids' | 'university' | 'campus';
 type Category = 'reaction' | 'shared_task' | 'circle' | 'friend';
 
 // Per-admin rate limit: how many successful sends are allowed per window.
@@ -43,6 +47,7 @@ async function resolveRecipients(
   userIds: string[] | undefined,
   universityId: string | undefined,
   pushOnly: boolean,
+  campuses: string[] = [],
 ): Promise<string[]> {
   const allIds: string[] = [];
   const pageSize = 1000;
@@ -59,6 +64,9 @@ async function resolveRecipients(
     } else if (audience === 'university') {
       if (!universityId) return [];
       query = query.eq('university_id', universityId);
+    } else if (audience === 'campus') {
+      if (!universityId || campuses.length === 0) return [];
+      query = query.eq('university_id', universityId).in('campus', campuses);
     }
     // audience === 'all' applies no extra filter.
 
@@ -84,6 +92,34 @@ async function resolveRecipients(
   }
 
   return allIds;
+}
+
+// How many students at a university saved each campus name (exact saved text).
+async function campusCounts(
+  admin: ReturnType<typeof getServiceClient>,
+  universityId: string,
+): Promise<{ campus: string; count: number }[]> {
+  const counts = new Map<string, number>();
+  const pageSize = 1000;
+  for (let page = 0; ; page++) {
+    const { data, error } = await admin
+      .from('profiles')
+      .select('campus')
+      .eq('university_id', universityId)
+      .not('campus', 'is', null)
+      .order('id')
+      .range(page * pageSize, page * pageSize + pageSize - 1);
+    if (error) throw new Error(error.message);
+    const rows = data ?? [];
+    for (const row of rows as { campus: string | null }[]) {
+      const campus = (row.campus ?? '').trim() ? row.campus! : null;
+      if (campus) counts.set(campus, (counts.get(campus) ?? 0) + 1);
+    }
+    if (rows.length < pageSize) break;
+  }
+  return [...counts.entries()]
+    .map(([campus, count]) => ({ campus, count }))
+    .sort((a, b) => b.count - a.count);
 }
 
 async function recentBroadcastCount(
@@ -128,13 +164,28 @@ serve(async (req: Request) => {
       ? (payload.universityId as string)
       : undefined;
 
-  if (!['all', 'user_ids', 'university'].includes(audience)) {
+  const campuses = Array.isArray(payload.campuses)
+    ? [...new Set((payload.campuses as unknown[]).filter(
+        (c): c is string => typeof c === 'string' && c.length > 0 && c.length <= 200,
+      ))].slice(0, 200)
+    : [];
+
+  if (action === 'campuses') {
+    if (!universityId) return json(400, { error: 'missing_university' });
+    try {
+      return json(200, { campuses: await campusCounts(admin, universityId) });
+    } catch (err) {
+      return json(500, { error: (err as Error).message });
+    }
+  }
+
+  if (!['all', 'user_ids', 'university', 'campus'].includes(audience)) {
     return json(400, { error: 'invalid_audience' });
   }
 
   try {
     // Everyone in the audience receives an in-app notification…
-    const recipients = await resolveRecipients(admin, audience, userIds, universityId, false);
+    const recipients = await resolveRecipients(admin, audience, userIds, universityId, false, campuses);
 
     if (action === 'preview') {
       return json(200, { count: recipients.length });
@@ -147,7 +198,7 @@ serve(async (req: Request) => {
       if (recipients.length === 0) return json(200, { sent: 0, reason: 'no_recipients' });
 
       // …but only push-eligible users get a remote Expo push.
-      const pushRecipients = await resolveRecipients(admin, audience, userIds, universityId, true);
+      const pushRecipients = await resolveRecipients(admin, audience, userIds, universityId, true, campuses);
 
       // Rate-limit per admin (not applied to dev-secret bypass so automated
       // tooling stays unblocked; tighten if needed).
@@ -271,6 +322,7 @@ serve(async (req: Request) => {
             via_dev_secret: viaDevSecret,
             audience,
             universityId: universityId ?? null,
+            campuses: audience === 'campus' ? campuses : null,
             recipient_count: recipients.length,
             push_recipient_count: pushRecipients.length,
             title,

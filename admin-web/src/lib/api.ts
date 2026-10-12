@@ -1548,14 +1548,38 @@ export type ExtractedCalendarData = {
   }>;
 };
 
-export type BroadcastAudience = 'all' | 'user_ids' | 'university';
+export type BroadcastAudience = 'all' | 'user_ids' | 'university' | 'campus';
 export type BroadcastCategory = 'reaction' | 'shared_task' | 'circle' | 'friend';
 
 export type BroadcastPreviewArgs = {
   audience: BroadcastAudience;
   userIds?: string[];
   universityId?: string;
+  /** audience 'campus': exact campus names as saved on profiles (from listBroadcastCampuses). */
+  campuses?: string[];
 };
+
+export type BroadcastCampus = { campus: string; count: number };
+
+/**
+ * Campuses at a university with how many students saved each one. Names come
+ * from profiles.campus exactly as saved, so a broadcast matches them exactly.
+ * Official campuses (campuses table) with no students yet are listed with 0.
+ */
+export async function listBroadcastCampuses(universityId: string): Promise<BroadcastCampus[]> {
+  const headers = await adminInvokeHeaders();
+  const [{ data, error }, official] = await Promise.all([
+    invokeEdgeFunction('admin_community_push', { action: 'campuses', universityId }, headers),
+    supabase.from('campuses').select('name').eq('university_id', universityId),
+  ]);
+  const saved = unwrapFunctionData<{ campuses: BroadcastCampus[] }>(data, error).campuses ?? [];
+  const seen = new Set(saved.map((c) => c.campus.trim().toLowerCase()));
+  const empty = (official.data ?? [])
+    .map((row: { name: string }) => row.name)
+    .filter((name) => name && !seen.has(name.trim().toLowerCase()))
+    .map((campus) => ({ campus, count: 0 }));
+  return [...saved, ...empty];
+}
 
 export async function previewBroadcast(opts: BroadcastPreviewArgs): Promise<{ count: number }> {
   const headers = await adminInvokeHeaders();

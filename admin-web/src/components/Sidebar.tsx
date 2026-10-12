@@ -1,8 +1,10 @@
 import { NavLink } from 'react-router-dom';
 import { cn } from '../ui/cn';
+import { useWorldAlerts } from '../lib/studyWorldAlerts';
 import { MotionSidebarItem } from '../ui/motion';
 import {
   IconCalendar,
+  IconCircles,
   IconClipboard,
   IconFileText,
   IconGrid,
@@ -15,7 +17,7 @@ import {
 
 type NavItem = 
   | { header: string }
-  | { to: string; label: string; Icon: React.ElementType };
+  | { to: string; label: string; Icon: React.ElementType; alerts?: 'studyWorld' };
 
 const nav: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', Icon: IconGrid },
@@ -31,6 +33,7 @@ const nav: NavItem[] = [
   { to: '/events', label: 'Events', Icon: IconClipboard },
   { to: '/services', label: 'Services', Icon: IconBriefcase },
   { to: '/confessions', label: 'Confessions', Icon: IconFileText },
+  { to: '/study-world', label: 'Study World', Icon: IconCircles, alerts: 'studyWorld' },
 
   { header: 'App Config' },
   { to: '/task-categories', label: 'Task Categories', Icon: IconClipboard },
@@ -44,6 +47,9 @@ const nav: NavItem[] = [
 ];
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
+  const world = useWorldAlerts();
+  // Reports and chat words waiting for an admin decision.
+  const worldTodo = world.openReports + world.pendingWords;
   return (
     <aside className="h-full w-[280px] shrink-0 overflow-y-auto overscroll-contain border-r border-slate-200 bg-white/80 px-3 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/40">
       <div className="px-2 pb-3">
@@ -86,6 +92,14 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               >
                 <n.Icon className="h-5 w-5 opacity-90" />
                 <span className="truncate">{n.label}</span>
+                {n.alerts === 'studyWorld' && worldTodo > 0 ? (
+                  <span
+                    className="ml-auto rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-black text-white"
+                    title={`${world.openReports} report(s) and ${world.pendingWords} chat word(s) to check`}
+                  >
+                    {worldTodo > 99 ? '99+' : worldTodo}
+                  </span>
+                ) : null}
               </NavLink>
             </MotionSidebarItem>
           );
