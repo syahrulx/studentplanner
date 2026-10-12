@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, TextInput, Platform } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import type { Course } from '@/src/types';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 const PAD = 20;
 const RADIUS = 16;
@@ -45,7 +46,7 @@ export default function AddSubjectScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardAvoidingScreen
       style={[styles.container, { backgroundColor: theme.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
@@ -106,7 +107,7 @@ export default function AddSubjectScreen() {
           <Text style={styles.addBtnText}>Add subject</Text>
         </Pressable>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingScreen>
   );
 }
 

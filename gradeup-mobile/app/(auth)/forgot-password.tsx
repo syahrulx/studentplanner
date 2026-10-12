@@ -5,7 +5,6 @@ import {
   TextInput,
   Pressable,
   StyleSheet,
-  KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
 } from 'react-native';
@@ -13,6 +12,7 @@ import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { supabase } from '@/src/lib/supabase';
 import { COLORS } from '@/src/constants';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 // Same HTTPS bridge page used for signup email verification — it already
 // correctly reopens the app via the `rencana://` deep link after Supabase
@@ -70,7 +70,7 @@ export default function ForgotPassword() {
   }
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingScreen style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.container}>
         <Text style={styles.title}>Forgot password</Text>
         <Text style={styles.body}>
@@ -112,7 +112,7 @@ export default function ForgotPassword() {
           <Text style={styles.backLinkText}>Back to login</Text>
         </Pressable>
       </View>
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingScreen>
   );
 }
 

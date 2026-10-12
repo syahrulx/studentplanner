@@ -5,7 +5,6 @@ import {
   TextInput,
   Pressable,
   StyleSheet,
-  KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
 } from 'react-native';
@@ -13,6 +12,7 @@ import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { supabase } from '@/src/lib/supabase';
 import { COLORS } from '@/src/constants';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -114,7 +114,7 @@ export default function ResetPassword() {
   }
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingScreen style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.container}>
         <Text style={styles.title}>Set a new password</Text>
         <Text style={styles.body}>Choose a new password for your account.</Text>
@@ -166,7 +166,7 @@ export default function ResetPassword() {
           {loading ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.buttonText}>Update password</Text>}
         </Pressable>
       </View>
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingScreen>
   );
 }
 

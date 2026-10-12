@@ -10,7 +10,6 @@ import {
   Alert,
   Modal,
   TextInput,
-  KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -43,6 +42,7 @@ import { pickAvatarImage } from '@/src/lib/pickAvatarImage';
 import { fetchCampuses, type Campus } from '@/src/lib/eventsApi';
 import { fetchCampusFaculties, addCampusFaculty } from '@/src/lib/campusRoomsApi';
 import { COUNTRIES, getCountryByCode } from '@/src/lib/countries';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 /** The banner strip above the name. */
 const HERO_BANNER_H = 104;
@@ -780,7 +780,7 @@ export default function Profile() {
         animationType="fade"
         onRequestClose={() => setEditModalVisible(false)}
       >
-        <KeyboardAvoidingView
+        <KeyboardAvoidingScreen
           style={styles.modalBackdrop}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
@@ -819,7 +819,7 @@ export default function Profile() {
               </Pressable>
             </View>
           </View>
-        </KeyboardAvoidingView>
+        </KeyboardAvoidingScreen>
       </Modal>
 
       {/* Campus List Modal */}
@@ -829,7 +829,7 @@ export default function Profile() {
         animationType="fade"
         onRequestClose={() => setCampusListModalVisible(false)}
       >
-        <KeyboardAvoidingView
+        <KeyboardAvoidingScreen
           style={styles.modalBackdrop}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
@@ -890,7 +890,7 @@ export default function Profile() {
               </Pressable>
             </View>
           </View>
-        </KeyboardAvoidingView>
+        </KeyboardAvoidingScreen>
       </Modal>
 
       {/* Country Modal */}
@@ -948,7 +948,7 @@ export default function Profile() {
         animationType="fade"
         onRequestClose={() => setFacultyListModalVisible(false)}
       >
-        <KeyboardAvoidingView
+        <KeyboardAvoidingScreen
           style={styles.modalBackdrop}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
@@ -1024,7 +1024,7 @@ export default function Profile() {
               <Text style={[styles.facCancelText, { color: theme.textSecondary }]}>{T('cancel')}</Text>
             </Pressable>
           </View>
-        </KeyboardAvoidingView>
+        </KeyboardAvoidingScreen>
       </Modal>
     </ScrollView>
   );

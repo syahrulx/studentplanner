@@ -9,7 +9,6 @@ import {
   Modal,
   TextInput,
   Alert,
-  KeyboardAvoidingView,
   ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -22,6 +21,7 @@ import { isDarkTheme, type ThemePalette } from '@/constants/Themes';
 import { useTranslations } from '@/src/i18n';
 import type { Flashcard } from '@/src/types';
 import { cardFaces, dueCounts, formatInterval, isDue } from '@/src/lib/fsrs';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 function createStyles(theme: ThemePalette) {
   const scrim = isDarkTheme(theme.id) ? 'rgba(0,0,0,0.72)' : 'rgba(15,23,42,0.45)';
@@ -474,7 +474,7 @@ export default function FlashcardDeckPreview() {
       </View>
 
       <Modal visible={!!editor} animationType="slide" transparent onRequestClose={closeEditor}>
-        <KeyboardAvoidingView
+        <KeyboardAvoidingScreen
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.modalOverlay}
         >
@@ -525,7 +525,7 @@ export default function FlashcardDeckPreview() {
               </Pressable>
             </View>
           </View>
-        </KeyboardAvoidingView>
+        </KeyboardAvoidingScreen>
       </Modal>
     </View>
   );

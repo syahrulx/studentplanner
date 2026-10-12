@@ -6,7 +6,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
   Alert,
@@ -27,6 +26,7 @@ import * as servicesApi from '@/src/lib/servicesApi';
 import { uploadPostImage } from '@/src/lib/eventsApi';
 import { supabase } from '@/src/lib/supabase';
 import type { ServicePost, OfferDmMessage } from '@/src/lib/servicesApi';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 export default function OfferDmScreen() {
   const { offerId } = useLocalSearchParams<{ offerId: string }>();
@@ -344,7 +344,7 @@ export default function OfferDmScreen() {
         ) : null}
       </View>
 
-      <KeyboardAvoidingView style={s.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingScreen style={s.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           ref={scrollRef}
           style={[s.messagesList, { backgroundColor: theme.backgroundSecondary }]}
@@ -456,7 +456,7 @@ export default function OfferDmScreen() {
               </Pressable>
             </View>
           ) : null)}
-      </KeyboardAvoidingView>
+      </KeyboardAvoidingScreen>
 
       <Modal visible={!!fullscreenImage} transparent animationType="fade" onRequestClose={() => setFullscreenImage(null)}>
         <View style={s.modalOverlay}>

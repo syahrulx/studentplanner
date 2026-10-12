@@ -10,8 +10,7 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
-  KeyboardAvoidingView,
-} from 'react-native';
+  } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import * as ImagePicker from 'expo-image-picker';
@@ -23,6 +22,7 @@ import { LocationUniCampusBlock } from '@/components/LocationUniCampusBlock';
 import * as eventsApi from '@/src/lib/eventsApi';
 import type { PostType } from '@/src/lib/eventsApi';
 import ThemedDateTimePicker from '@/components/ThemedDateTimePicker';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -240,7 +240,7 @@ export default function CreatePostScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardAvoidingScreen
       style={[styles.root, { backgroundColor: theme.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
@@ -583,7 +583,7 @@ export default function CreatePostScreen() {
         </View>
 
       </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingScreen>
   );
 }
 

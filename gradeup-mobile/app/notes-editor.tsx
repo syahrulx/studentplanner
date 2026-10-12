@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, Platform, Linking, ActivityIndicator, Keyboard, KeyboardAvoidingView, Dimensions, Image } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, Platform, Linking, ActivityIndicator, Keyboard, Dimensions, Image } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -14,6 +14,7 @@ import { ImportProgressBar } from '@/components/ImportProgressBar';
 
 import { useTheme } from '@/hooks/useTheme';
 import type { ThemePalette } from '@/constants/Themes';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 type BannerState =
   | { kind: 'idle' }
@@ -420,7 +421,7 @@ export default function NotesEditor() {
           )}
         </View>
       ) : (
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingScreen style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView
             style={s.scroll}
             contentContainerStyle={[s.scrollContent, { paddingBottom: keyboardVisible ? 80 : 120 }]}
@@ -542,7 +543,7 @@ export default function NotesEditor() {
               {words} word{words !== 1 ? 's' : ''} · {chars} char{chars !== 1 ? 's' : ''}
             </Text>
           </View>
-        </KeyboardAvoidingView>
+        </KeyboardAvoidingScreen>
       )}
     </View>
   );

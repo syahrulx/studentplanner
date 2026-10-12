@@ -12,8 +12,7 @@ import {
   ScrollView,
   Animated,
   Easing,
-  KeyboardAvoidingView,
-} from 'react-native';
+  } from 'react-native';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import Feather from '@expo/vector-icons/Feather';
@@ -24,6 +23,7 @@ import { maxSnapsPerDay, isAtLeastPlus } from '@/src/lib/flashcardGenerationLimi
 import { uploadSnapImage, postSnap, getMySnapsToday, getMyStreak } from '@/src/lib/snapApi';
 import { captureError } from '@/src/lib/monitoring';
 import type { SnapStreak, SnapAudience } from '@/src/types';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 export default function SnapCamera() {
   const { user } = useApp();
@@ -364,7 +364,7 @@ export default function SnapCamera() {
         </View>
 
         {/* Bottom bar */}
-        <KeyboardAvoidingView
+        <KeyboardAvoidingScreen
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={s.previewBottom}
         >
@@ -440,7 +440,7 @@ export default function SnapCamera() {
               </>
             )}
           </Pressable>
-        </KeyboardAvoidingView>
+        </KeyboardAvoidingScreen>
 
         {/* ─── STREAK CELEBRATION ─── */}
         {showCelebration && (

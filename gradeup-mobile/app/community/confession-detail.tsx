@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   Alert,
   TextInput,
-  KeyboardAvoidingView,
   Platform,
   Animated,
 } from 'react-native';
@@ -28,6 +27,7 @@ import { ConfessionHeader } from '@/src/components/confessions/ConfessionHeader'
 import { ConfessionShareCard } from '@/src/components/confessions/ConfessionShareCard';
 import { friendlyAlias, isOpAlias } from '@/src/components/confessions/aliases';
 import { shareExportCanvas } from '@/components/ViewShotCompat';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 const MAX_COMMENT = 300;
 
@@ -373,7 +373,7 @@ export default function ConfessionDetailScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardAvoidingScreen
       style={[s.container, { backgroundColor: theme.background, paddingTop: insets.top }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={0}
@@ -538,7 +538,7 @@ export default function ConfessionDetailScreen() {
         confession={confession}
         universityShort={(user as any)?.universityId ? String((user as any).universityId).toUpperCase() : undefined}
       />
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingScreen>
   );
 }
 

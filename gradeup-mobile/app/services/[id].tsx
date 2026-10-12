@@ -13,7 +13,6 @@ import {
   TextInput,
   ActionSheetIOS,
   Linking,
-  KeyboardAvoidingView,
   Keyboard,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -40,6 +39,7 @@ import {
   recordSurveyResponse,
 } from '@/src/lib/servicesApi';
 import type { ServicePost, ServiceReview, ServiceOffer, OpenListingFeedbackSummary } from '@/src/lib/servicesApi';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatDateLong(iso: string) {
@@ -1932,7 +1932,7 @@ export default function ServiceDetailScreen() {
         onRequestClose={() => !surveySubmitting && setSurveyConfirmOpen(false)}
       >
         <Pressable style={styles.modalOverlay} onPress={() => !surveySubmitting && setSurveyConfirmOpen(false)}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%' }}>
+          <KeyboardAvoidingScreen behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%' }}>
             <Pressable style={[styles.sheet, { backgroundColor: theme.card }]} onPress={(e) => e.stopPropagation()}>
               <View style={styles.grabber} />
               <Text style={[styles.sheetTitle, { color: theme.text }]}>Did you complete the survey? 📋</Text>
@@ -2019,14 +2019,14 @@ export default function ServiceDetailScreen() {
                 <Text style={[{ fontSize: 14, color: theme.textSecondary }]}>Not yet — I'll come back</Text>
               </Pressable>
             </Pressable>
-          </KeyboardAvoidingView>
+          </KeyboardAvoidingScreen>
         </Pressable>
       </Modal>
 
 
       <Modal visible={reportOpen} transparent animationType="slide" onRequestClose={() => !acting && setReportOpen(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => !acting && setReportOpen(false)}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%' }}>
+          <KeyboardAvoidingScreen behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%' }}>
             <Pressable style={[styles.sheet, { backgroundColor: theme.card }]} onPress={(e) => e.stopPropagation()}>
               <View style={styles.grabber} />
               <Text style={[styles.sheetTitle, { color: theme.text }]}>Report this service</Text>
@@ -2114,14 +2114,14 @@ export default function ServiceDetailScreen() {
                 </Pressable>
               </View>
             </Pressable>
-          </KeyboardAvoidingView>
+          </KeyboardAvoidingScreen>
         </Pressable>
       </Modal>
 
       {/* Review modal */}
       <Modal visible={reviewOpen} transparent animationType="slide" onRequestClose={() => { Keyboard.dismiss(); setReviewOpen(false); }}>
         <Pressable style={styles.modalOverlay} onPress={() => { Keyboard.dismiss(); setReviewOpen(false); }}>
-          <KeyboardAvoidingView
+          <KeyboardAvoidingScreen
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             style={{ width: '100%' }}
             keyboardVerticalOffset={Platform.OS === 'ios' ? insets.bottom + 8 : 0}
@@ -2188,14 +2188,14 @@ export default function ServiceDetailScreen() {
                 </Pressable>
               </ScrollView>
             </Pressable>
-          </KeyboardAvoidingView>
+          </KeyboardAvoidingScreen>
         </Pressable>
       </Modal>
 
       {/* Offer modal */}
       <Modal visible={offerOpen} transparent animationType="slide" onRequestClose={() => { Keyboard.dismiss(); setOfferOpen(false); }}>
         <Pressable style={styles.modalOverlay} onPress={() => { Keyboard.dismiss(); setOfferOpen(false); }}>
-          <KeyboardAvoidingView
+          <KeyboardAvoidingScreen
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             style={{ width: '100%' }}
             keyboardVerticalOffset={Platform.OS === 'ios' ? insets.bottom + 8 : 0}
@@ -2278,14 +2278,14 @@ export default function ServiceDetailScreen() {
                 </Pressable>
               </ScrollView>
             </Pressable>
-          </KeyboardAvoidingView>
+          </KeyboardAvoidingScreen>
         </Pressable>
       </Modal>
 
       {/* Delivery submission modal */}
       <Modal visible={deliveryOpen} transparent animationType="slide" onRequestClose={() => { Keyboard.dismiss(); setDeliveryOpen(false); }}>
         <Pressable style={styles.modalOverlay} onPress={() => { Keyboard.dismiss(); setDeliveryOpen(false); }}>
-          <KeyboardAvoidingView
+          <KeyboardAvoidingScreen
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             style={{ width: '100%' }}
             keyboardVerticalOffset={Platform.OS === 'ios' ? insets.bottom + 8 : 0}
@@ -2376,7 +2376,7 @@ export default function ServiceDetailScreen() {
                 </Pressable>
               </ScrollView>
             </Pressable>
-          </KeyboardAvoidingView>
+          </KeyboardAvoidingScreen>
         </Pressable>
       </Modal>
 

@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
-  KeyboardAvoidingView,
   Platform,
   Switch,
 } from 'react-native';
@@ -28,6 +27,7 @@ import { supabase } from '@/src/lib/supabase';
 import { isTaskPastDueNow } from '@/src/utils/date';
 import { termStatus } from '@/src/lib/calendarTimeline';
 import { getTrialState, planRowSubtitle, trialBadgeLabel } from '@/src/lib/subscriptionStatus';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 const PAD = 20;
 const RADIUS = 14;
@@ -660,7 +660,7 @@ export default function Settings() {
       </ScrollView>
 
       <Modal visible={themePickerOpen} animationType="fade" transparent onRequestClose={() => setThemePickerOpen(false)}>
-        <KeyboardAvoidingView style={styles.syncBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingScreen style={styles.syncBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setThemePickerOpen(false)} />
           <View style={[styles.syncSheet, { backgroundColor: theme.card }]}>
             <Text style={[styles.syncTitle, { color: theme.text }]}>{T('themeAppearance')}</Text>
@@ -700,7 +700,7 @@ export default function Settings() {
               </Pressable>
             </View>
           </View>
-        </KeyboardAvoidingView>
+        </KeyboardAvoidingScreen>
       </Modal>
     </>
   );

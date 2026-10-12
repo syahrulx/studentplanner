@@ -11,7 +11,6 @@ import {
   Switch,
   Modal,
   TextInput,
-  KeyboardAvoidingView,
   ActivityIndicator,
   Animated,
   Easing,
@@ -36,6 +35,7 @@ import * as communityApi from '@/src/lib/communityApi';
 import type { SharedTask } from '@/src/types';
 import { studyingStatusDetailText } from '@/src/lib/timetableCurrentSlot';
 import NowPlayingCard from '@/components/NowPlayingCard';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 
 function getActivityLabel(type?: string): string {
@@ -609,7 +609,7 @@ export default function FriendProfileScreen() {
         transparent
         onRequestClose={() => !reportBusy && setReportOpen(false)}
       >
-        <KeyboardAvoidingView
+        <KeyboardAvoidingScreen
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={s.reportBackdrop}
         >
@@ -692,7 +692,7 @@ export default function FriendProfileScreen() {
               </Pressable>
             </View>
           </View>
-        </KeyboardAvoidingView>
+        </KeyboardAvoidingScreen>
       </Modal>
     </ScrollView>
   );

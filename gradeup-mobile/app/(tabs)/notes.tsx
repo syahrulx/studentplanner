@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet, Platform, Alert, Modal, TextInput, KeyboardAvoidingView, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ScrollView, StyleSheet, Platform, Alert, Modal, TextInput, ActivityIndicator } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -15,6 +15,7 @@ import { setGeneratedQuizQuestions } from '@/src/lib/studyApi';
 import { remapClassroomCourse } from '@/src/lib/googleClassroom';
 import * as taskDb from '@/src/lib/taskDb';
 import * as coursesDb from '@/src/lib/coursesDb';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 const ACCENT_PALETTE = [
   '#3b82f6', '#8b5cf6', '#06b6d4', '#f59e0b', '#10b981', '#ec4899', '#ef4444', '#6366f1',
@@ -1920,7 +1921,7 @@ export default function StudyHub() {
         animationType="fade"
         onRequestClose={() => setRenameTarget(null)}
       >
-        <KeyboardAvoidingView
+        <KeyboardAvoidingScreen
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
@@ -1961,7 +1962,7 @@ export default function StudyHub() {
               </View>
             </Pressable>
           </Pressable>
-        </KeyboardAvoidingView>
+        </KeyboardAvoidingScreen>
       </Modal>
 
       {/* Re-link Classroom subject picker */}

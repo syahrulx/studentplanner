@@ -9,7 +9,6 @@ import {
   Modal,
   ActivityIndicator,
   TextInput,
-  KeyboardAvoidingView,
   FlatList,
   Switch,
   useWindowDimensions,
@@ -42,6 +41,7 @@ import {
 import type { Task } from '@/src/types';
 import SubjectPickerSheet from '@/components/SubjectPickerSheet';
 import ThemedDateTimePicker from '@/components/ThemedDateTimePicker';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 const NAVY = '#003366';
 const BG = '#f8fafc';
@@ -429,7 +429,7 @@ export default function TaskDetails() {
   );
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardAvoidingScreen
       style={[s.container, { backgroundColor: theme.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
@@ -1124,7 +1124,7 @@ export default function TaskDetails() {
           </Pressable>
         </Pressable>
       </Modal>
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingScreen>
   );
 }
 
