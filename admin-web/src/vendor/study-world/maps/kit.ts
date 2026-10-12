@@ -34,7 +34,13 @@ export type ThingType =
   | "vending"
   | "returns"
   | "bin";
-export type Crop = { x: number; y: number; stage: number };
+export type Crop = {
+  x: number;
+  y: number;
+  stage: number;
+  /** Watered: grows to the next stage at this time (ms, this computer). */
+  readyAt?: number | null;
+};
 export type Thing = {
   t: ThingType;
   x: number;
@@ -204,7 +210,9 @@ export function createKit(W: number, H: number, seed: number) {
     fill(x0, y, x1, y, "s");
     for (let x = x0; x <= x1; x++) {
       if (gaps.includes(x)) continue;
-      const crop = { x, y, stage: Math.floor(rnd() * 4) };
+      rnd(); // keeps the decoration pattern the same as before
+      // Plants are personal: their real stage comes from the server.
+      const crop = { x, y, stage: 0, readyAt: null };
       crops.push(crop);
       things.push({ t: "crop", x, y, w: 1, h: 1, crop });
       block(x, y);

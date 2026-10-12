@@ -8,6 +8,7 @@ import { ChatFilterPanel } from '../components/studyWorld/ChatFilterPanel';
 import { LogPanel, OverviewPanel, SettingsPanel } from '../components/studyWorld/SettingsPanels';
 import { MapsRoomsPanel } from '../components/studyWorld/MapsRoomsPanel';
 import { LeaderboardsPanel, WalletsPanel } from '../components/studyWorld/EconomyPanels';
+import { QuizPanel } from '../components/studyWorld/QuizPanel';
 import { useLiveCounts } from '../lib/studyWorld';
 import { useWorldAlerts } from '../lib/studyWorldAlerts';
 
@@ -23,6 +24,7 @@ const OLD_TABS: Record<string, [string, string]> = {
   leaderboards: ['shop', 'leaderboards'],
   maps: ['world', 'maps'],
   settings: ['world', 'settings'],
+  quiz: ['world', 'quiz'],
   players: ['players', 'players'],
   bans: ['players', 'bans'],
   reports: ['safety', 'reports'],
@@ -88,10 +90,11 @@ export function StudyWorldRoute() {
     {
       id: 'world',
       label: 'World',
-      hint: 'Maps, rooms, who is inside, and open/close switches',
+      hint: 'Maps, rooms, who is inside, quiz questions, and open/close switches',
       badge: live.total,
       views: [
         { id: 'maps', label: 'Maps & rooms', content: <MapsRoomsPanel /> },
+        { id: 'quiz', label: 'Quiz questions', content: <QuizPanel /> },
         { id: 'settings', label: 'Switches', content: <SettingsPanel /> },
       ],
     },
