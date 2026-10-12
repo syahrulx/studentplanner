@@ -9,6 +9,7 @@ import { LogPanel, OverviewPanel, SettingsPanel } from '../components/studyWorld
 import { MapsRoomsPanel } from '../components/studyWorld/MapsRoomsPanel';
 import { LeaderboardsPanel, WalletsPanel } from '../components/studyWorld/EconomyPanels';
 import { QuizPanel } from '../components/studyWorld/QuizPanel';
+import { EventsPanel, LibraryPanel } from '../components/studyWorld/ContentPanels';
 import { useLiveCounts } from '../lib/studyWorld';
 import { useWorldAlerts } from '../lib/studyWorldAlerts';
 
@@ -24,7 +25,9 @@ const OLD_TABS: Record<string, [string, string]> = {
   leaderboards: ['shop', 'leaderboards'],
   maps: ['world', 'maps'],
   settings: ['world', 'settings'],
-  quiz: ['world', 'quiz'],
+  quiz: ['content', 'quiz'],
+  library: ['content', 'library'],
+  events: ['content', 'events'],
   players: ['players', 'players'],
   bans: ['players', 'bans'],
   reports: ['safety', 'reports'],
@@ -90,12 +93,21 @@ export function StudyWorldRoute() {
     {
       id: 'world',
       label: 'World',
-      hint: 'Maps, rooms, who is inside, quiz questions, and open/close switches',
+      hint: 'Maps, rooms, who is inside, and open/close switches',
       badge: live.total,
       views: [
         { id: 'maps', label: 'Maps & rooms', content: <MapsRoomsPanel /> },
-        { id: 'quiz', label: 'Quiz questions', content: <QuizPanel /> },
         { id: 'settings', label: 'Switches', content: <SettingsPanel /> },
+      ],
+    },
+    {
+      id: 'content',
+      label: 'Content',
+      hint: 'Quiz questions, Library reading and notice-board events',
+      views: [
+        { id: 'quiz', label: 'Quiz questions', content: <QuizPanel /> },
+        { id: 'library', label: 'Library', content: <LibraryPanel /> },
+        { id: 'events', label: 'Events', content: <EventsPanel /> },
       ],
     },
     { id: 'log', label: 'Log', hint: 'Every admin change', views: [{ id: 'log', label: 'Log', content: <LogPanel /> }] },
@@ -127,7 +139,7 @@ export function StudyWorldRoute() {
         </span>
       </div>
 
-      <nav className="grid grid-cols-3 gap-2 sm:grid-cols-6" aria-label="Study World sections">
+      <nav className="grid grid-cols-4 gap-2 sm:grid-cols-7" aria-label="Study World sections">
         {sections.map((s) => {
           const active = s.id === section.id;
           return (
