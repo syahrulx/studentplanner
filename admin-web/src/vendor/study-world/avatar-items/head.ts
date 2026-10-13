@@ -183,6 +183,79 @@ const bigStar = (p: Painter, lit: boolean) => {
   }
 };
 
+/** "r,g,b" of a bright colour at hue h (for glows that follow an LED). */
+const hueRgb = (h: number) => {
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12;
+    return Math.round(255 * (0.62 - 0.38 * Math.max(-1, Math.min(k - 3, 9 - k, 1))));
+  };
+  return `${f(0)},${f(8)},${f(4)}`;
+};
+
+/** Hue of the neko headset LEDs: a rainbow that flows along the strip. */
+const ledHue = (t: number, i: number) => (t / 6 + i * 14) % 360;
+
+/** Steel for the knight helm. */
+const STEEL = { c: "#c3ccd6", l: "#eef3f8", s: "#8b96a3", d: "#5d6773", slit: "#1b1f27" };
+
+/**
+ * Knight helm plume: a red feather crest that arcs over the top and drapes
+ * down one side (screen right facing front; behind the head in the
+ * three-quarter view). The lower end sways and the tip lags behind.
+ */
+const plume = (p: Painter) => {
+  const { t } = p;
+  const flip = p.back || p.fx > 0;
+  const put = (x: number, y: number, c: string) => p.px(flip ? 23 - x : x, y, c);
+  const red = "#d8323c";
+  const light = "#ff6b6b";
+  const dark = "#9a1f26";
+  const s = Math.round(Math.sin(t / 320));
+  const s2 = Math.round(1.4 * Math.sin(t / 320 - 0.7));
+  // [y, firstX, lastX, sway]
+  const body: [number, number, number, number][] = [
+    [-5, 11, 15, 0],
+    [-4, 10, 17, 0],
+    [-3, 10, 18, 0],
+    [-2, 17, 19, s],
+    [-1, 18, 20, s],
+    [0, 19, 20, s2],
+    [1, 20, 20, s2],
+  ];
+  body.forEach(([y, a, b, d]) => {
+    for (let x = a; x <= b; x++) {
+      // Feather barbs: every third pixel a shade darker.
+      const barb = (x + y * 2 + 30) % 3 === 0;
+      put(x + d, y, barb ? dark : red);
+    }
+  });
+  // Light along the top of the arc, shade under it.
+  [11, 12, 13].forEach((x) => put(x, -5, light));
+  put(10, -4, light);
+  put(16, -4, light);
+  [13, 14].forEach((x) => put(x, -3, dark));
+  put(17 + s, -2, dark);
+  put(20 + s2, 1, dark);
+  // A sheen that runs along the feathers now and then.
+  const spine = [
+    [11, -4],
+    [12, -5],
+    [13, -5],
+    [14, -5],
+    [15, -4],
+    [16, -3],
+    [17, -3],
+    [18 + s, -2],
+    [19 + s, -1],
+  ];
+  const k = Math.floor(t / 70) % (spine.length + 18);
+  if (k < spine.length) put(spine[k][0], spine[k][1], "#ffc4c4");
+  // Gold socket holding the plume.
+  p.R(10, -2, 4, 1, STEEL.s);
+  p.R(11, -2, 2, 1, p.gold);
+  p.px(11, -2, "#fff1b8");
+};
+
 /** New head items (see types.ts for how drawing works). */
 export const HEAD: CategoryItems = {
   items: [
@@ -199,6 +272,10 @@ export const HEAD: CategoryItems = {
     { id: "bunny", name: "Bunny ears", tier: "plus" },
     { id: "starcrown", name: "Star crown", tier: "pro" },
     { id: "horns", name: "Devil horns", tier: "pro" },
+    { id: "songkok2", name: "Songkok Emas", tier: "coins", price: 150 },
+    { id: "champband", name: "Champion Headband", tier: "coins", price: 160 },
+    { id: "nekoheadset", name: "Neko Headset", tier: "coins", price: 250 },
+    { id: "knighthelm", name: "Knight Helm", tier: "coins", price: 260 },
   ],
   draw: {
     hijab: {
@@ -507,6 +584,248 @@ export const HEAD: CategoryItems = {
       fxFront: (_c, k) => {
         const a = Math.max(0, Math.sin(k.t / 260)) * 0.35;
         [6.5, 17.5].forEach((x) => k.glow(k.X(x), k.Y(-1.5), 1.4 * k.s, "255,140,110", a));
+      },
+    },
+    // Black velvet songkok with a gold embroidered band and a gold motif.
+    songkok2: {
+      draw: (p) => {
+        const { R, px, fx, gold } = p;
+        const v = "#1d1d26";
+        const vS = "#111117";
+        const vH = "#363648";
+        const gD = "#c99a1e";
+        const gL = "#fff1b8";
+        // Oval top and the velvet body.
+        R(6, -3, 12, 1, "#2a2a37");
+        R(5, -2, 14, 5, v);
+        R(mx(p, 8, 4), -3, 4, 1, "#47475b");
+        // Velvet sheen down one side, shade down the other.
+        R(mx(p, 7), -2, 1, 4, vH);
+        px(mx(p, 8), -2, vH);
+        px(mx(p, 6), -1, "#2a2a37");
+        R(18, -2, 1, 5, vS);
+        // Gold band round the bottom: embroidered stitches over a darker edge.
+        R(5, 3, 14, 1, (x) => ((x + 1) % 3 === 0 ? gL : gold));
+        R(5, 4, 14, 1, gD);
+        px(18, 3, gD);
+        px(18, 4, "#9c7414");
+        if (p.back) return;
+        // Small gold motif at the front: a diamond with a bright centre.
+        const c = 11 + fx;
+        R(c, -1, 2, 1, gold);
+        R(c - 1, 0, 4, 1, gold);
+        R(c, 1, 2, 1, gD);
+        px(c, 0, gL);
+        px(c + 1, 0, "#e24b4a");
+        px(c - 1, 0, gD);
+        px(c + 2, 0, gD);
+        px(c, -1, gL);
+      },
+    },
+    // Sporty terry sweatband with a little flame tag on one side.
+    champband: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t } = p;
+        const red = "#e2412f";
+        const redL = "#ff7d6b";
+        const redS = "#a8261c";
+        const white = "#fbf8f2";
+        R(5, 3, 14, 3, red);
+        R(5, 4, 14, 1, white);
+        R(5, 5, 14, 1, redS);
+        R(mx(p, 9, 3), 3, 3, 1, redL);
+        // Shade on the far side.
+        px(18, 3, redS);
+        px(18, 4, "#d9d3c7");
+        // Navy badge on the side with a gold edge, a flame stitched on it.
+        const m = (x: number, y: number, w: number, h: number, c: string) =>
+          R(mx(p, x, w), y, w, h, c);
+        m(3, 2, 5, 4, "#1f2a4d");
+        m(3, 2, 5, 1, "#33416f");
+        m(7, 3, 1, 2, "#151d38");
+        m(3, 6, 5, 1, p.gold);
+        m(7, 6, 1, 1, "#c99a1e");
+        // The flame flickers: its tip dances and the colours shift.
+        const flick = Math.sin(t / 110);
+        const sway = Math.round(Math.sin(t / 170));
+        const hot = flick > 0.2;
+        m(4, 5, 3, 1, "#e2412f");
+        m(5, 5, 1, 1, hot ? "#ff9b3d" : "#ff7a2f");
+        m(4, 4, 3, 1, "#ff7a2f");
+        m(5, 4, 1, 1, hot ? "#fff1a0" : "#ffd84d");
+        m(5, 3, 1, 1, hot ? "#ffd84d" : "#ffb13d");
+        m(5 + sway, 3, 1, 1, "#ffb13d");
+        m(5 + sway, 2, 1, 1, hot ? "#fff6c8" : "#ffd84d");
+        if (flick > 0.6) m(5 + Math.max(0, sway), 1, 1, 1, "#ffe36a");
+      },
+    },
+    // White over-ear headset with cat ears; the LED strips run a rainbow.
+    nekoheadset: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t, fx } = p;
+        const shell = "#f6f3fb";
+        const shellS = "#cfc6e0";
+        const shellD = "#a99cc4";
+        const pad = "#3b3350";
+        const led = (i: number) => p.hsl(ledHue(t, i), 95, 62);
+        // Band over the head.
+        R(6, 0, 12, 1, shell);
+        R(7, 0, 3, 1, "#ffffff");
+        R(16, 0, 2, 1, shellS);
+        R(5, 1, 1, 6, shell);
+        R(18, 1, 1, 6, shellS);
+        // Cat ears on the band; an LED strip lines the inside.
+        [false, true].forEach((right) => {
+          const e = (x: number) => (right ? 23 - x : x);
+          const inner = (x: number, y: number, i: number) =>
+            px(e(x), y, p.back ? shellS : led(i + (right ? 4 : 0)));
+          px(e(7), -4, shell);
+          px(e(6), -3, shell);
+          px(e(8), -3, right ? shellS : shell);
+          px(e(5), -2, shell);
+          px(e(9), -2, right ? shellD : shellS);
+          R(5, -1, 5, 1, shell);
+          R(14, -1, 5, 1, shell);
+          inner(7, -3, 0);
+          inner(6, -2, 1);
+          inner(7, -2, 2);
+          inner(8, -2, 3);
+        });
+        px(9, -1, shellS);
+        px(18, -1, shellS);
+        if (fx && !p.back) {
+          // Three-quarter view: the near cup faces us with an LED ring,
+          // the far one peeks out behind the head.
+          R(4, 7, 4, 6, shell);
+          [
+            [5, 7],
+            [6, 7],
+            [7, 8],
+            [7, 9],
+            [7, 10],
+            [7, 11],
+            [6, 12],
+            [5, 12],
+            [4, 11],
+            [4, 10],
+            [4, 9],
+            [4, 8],
+          ].forEach(([x, y], i) => px(x, y, led(i)));
+          R(5, 8, 2, 4, shell);
+          px(5, 8, "#ffffff");
+          R(6, 9, 1, 3, shellS);
+          R(5, 6, 2, 1, shellS);
+          R(19, 7, 2, 5, shellS);
+          px(20, 9, led(6));
+          px(20, 10, led(7));
+          return;
+        }
+        // Cups: cushion against the head, LED strip on the outside.
+        [false, true].forEach((right) => {
+          const e = (x: number) => (right ? 23 - x : x);
+          R(right ? 18 : 3, 7, 3, 6, shell);
+          px(e(5), 7, pad);
+          px(e(5), 12, pad);
+          R(e(5), 8, 1, 4, pad);
+          for (let y = 8; y <= 11; y++) px(e(3), y, led(y + (right ? 6 : 0)));
+          px(e(4), 7, right ? shellS : "#ffffff");
+          px(e(4), 12, shellS);
+          px(e(3), 7, right ? shellD : shellS);
+          px(e(3), 12, right ? shellD : shellS);
+          if (right) R(19, 8, 1, 4, shellS);
+        });
+      },
+      fxFront: (_c, k) =>
+        [7.5, 16.5].forEach((x, i) =>
+          k.glow(k.X(x), k.Y(-2), 3 * k.s, hueRgb(ledHue(k.t, i * 4 + 2)), 0.22),
+        ),
+    },
+    // Silver knight helm with a raised visor, cheek guards and a red plume.
+    knighthelm: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t, fx } = p;
+        const { c, l, s, d, slit } = STEEL;
+        if (p.back) {
+          // The helm covers the back of the head down to a flared neck guard.
+          rows(
+            p,
+            [
+              [-1, 7, 16],
+              [0, 6, 17],
+              ...Array.from({ length: 9 }, (_, i) => [1 + i, 5, 18]),
+              [10, 4, 19],
+            ],
+            c,
+          );
+          R(4, 11, 16, 1, s);
+          R(5, 6, 14, 1, s);
+          R(11, -1, 1, 7, l);
+          R(12, -1, 1, 7, s);
+          R(6, 1, 1, 4, l);
+          R(18, 1, 1, 9, s);
+          [7, 16].forEach((x) => px(x, 6, p.gold));
+          [6, 10, 13, 17].forEach((x) => px(x, 10, d));
+          plume(p);
+          return;
+        }
+        // Dome.
+        rows(
+          p,
+          [
+            [-1, 7, 16],
+            [0, 6, 17],
+            [1, 5, 18],
+            [2, 5, 18],
+          ],
+          c,
+        );
+        px(8, -1, l);
+        R(7, 0, 2, 1, l);
+        R(6, 1, 1, 2, l);
+        px(17, 0, s);
+        R(18, 1, 1, 2, s);
+        // Raised ridge down the middle.
+        const rx = 11 + (fx ? 1 : 0);
+        R(rx, -1, 1, 4, l);
+        R(rx + 1, -1, 1, 4, s);
+        // A glint sweeps across the dome every few seconds.
+        const g = Math.floor(t / 55) % 60;
+        if (g < 14) {
+          px(5 + g, 1, "#ffffff");
+          if (g > 1 && g < 13) px(6 + g, 0, "#ffffff");
+        }
+        // Visor pushed up on the forehead: two eye slits and a nose bar.
+        R(5, 3, 14, 1, l);
+        R(5, 4, 14, 2, c);
+        R(5, 6, 14, 1, s);
+        R(18, 3, 1, 4, s);
+        R(7 + fx, 4, 4, 1, slit);
+        R(13 + fx, 4, Math.min(4, 18 - (13 + fx)), 1, slit);
+        R(7 + fx, 5, 4, 1, d);
+        R(13 + fx, 5, Math.min(4, 18 - (13 + fx)), 1, d);
+        px(5, 5, p.gold);
+        px(18, 5, "#c99a1e");
+        // Cheek guards.
+        if (fx) {
+          R(4, 6, 3, 7, c);
+          R(4, 6, 1, 7, s);
+          px(5, 7, l);
+          px(5, 9, p.gold);
+          R(5, 13, 2, 1, s);
+          R(19, 6, 1, 6, d);
+        } else {
+          R(4, 6, 2, 7, c);
+          R(4, 6, 1, 7, s);
+          px(5, 7, l);
+          px(5, 13, s);
+          R(18, 6, 2, 7, c);
+          R(19, 6, 1, 7, d);
+          px(18, 13, d);
+        }
+        plume(p);
       },
     },
   },

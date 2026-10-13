@@ -59,6 +59,7 @@ export const BOTTOM: CategoryItems = {
     { id: "kain", name: "Kain", tier: "free" },
     { id: "plaid", name: "Plaid skirt", tier: "coins", price: 50 },
     { id: "ripped", name: "Ripped jeans", tier: "coins", price: 60 },
+    { id: "techcargo", name: "Techwear Cargo", tier: "coins", price: 160 },
     { id: "pleated", name: "Pleated skirt", tier: "plus" },
     { id: "hakama", name: "Hakama", tier: "plus" },
     { id: "neonpants", name: "Neon stripes", tier: "plus" },
@@ -170,6 +171,52 @@ export const BOTTOM: CategoryItems = {
         px(14, 25, thread);
         [8, 10].forEach((x) => px(x, 28 - lUp, thread));
         px(14, 28 - rUp, thread);
+      },
+    },
+    techcargo: {
+      draw: (p) => {
+        const { R, px, frame, lUp, rUp } = p;
+        const B = "#24252c";
+        const BS = "#17181d";
+        const BL = "#3a3c46";
+        const strap = "#41444f";
+        const metal = "#c3cad3";
+        const metalS = "#8d97a5";
+        const tab = "#ff7a2a";
+        p.legs(B, BS);
+        // Belt with a quick-release buckle.
+        R(8, 24, 8, 1, BS);
+        // Tapered ankles cinched with a strap and buckle.
+        R(8, 28 - lUp, 3, 1, strap);
+        R(13, 28 - rUp, 3, 1, strap);
+        px(10, 28 - lUp, metalS);
+        px(13, 28 - rUp, metalS);
+        // Cargo pockets on the outer thighs: flap on top, orange pull tab.
+        R(8, 26 - lUp, 2, 2, BL);
+        R(8, 26 - lUp, 2, 1, strap);
+        R(14, 26 - rUp, 2, 2, p.shade(BL, -0.15));
+        R(14, 26 - rUp, 2, 1, strap);
+        px(15, 27 - rUp, tab);
+        // Straps swing behind the step: -1 / +1 on the stepping frames.
+        const sw = frame === 0 ? -1 : frame === 2 ? 1 : 0;
+        // A strap hanging off the left hip, ending in a buckle.
+        px(7, 24, strap);
+        px(7, 25, strap);
+        px(sw < 0 ? 6 : 7, 26, strap);
+        px(7 + sw, 27, metal);
+        if (p.back) {
+          // Back yoke and flap pockets.
+          R(9, 25, 2, 1, BL);
+          R(13, 25, 2, 1, BL);
+          px(11, 24, tab);
+          return;
+        }
+        R(11, 24, 2, 1, metal);
+        px(12, 24, metalS);
+        // A loose strap slung between the thighs.
+        px(10, 25, strap);
+        px(13, 25, strap);
+        R(11 + sw, 26, 2, 1, strap);
       },
     },
     pleated: {

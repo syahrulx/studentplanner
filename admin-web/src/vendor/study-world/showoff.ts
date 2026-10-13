@@ -25,6 +25,12 @@ export const FRAMES: ShowoffItem[] = [
   { id: "leaf", name: "Leafy", tier: "free" },
   { id: "gold", name: "Gold", tier: "coins", price: 120 },
   { id: "ribbon", name: "Ribbon", tier: "coins", price: 120 },
+  { id: "wood", name: "Wood Grain", tier: "coins", price: 150 },
+  { id: "batik", name: "Batik", tier: "coins", price: 180 },
+  { id: "bobatea", name: "Bubble Tea", tier: "coins", price: 220 },
+  { id: "glitch", name: "Glitch", tier: "coins", price: 350 },
+  { id: "aurora", name: "Aurora Ribbon", tier: "coins", price: 500 },
+  { id: "dragonscale", name: "Dragon Scale", tier: "coins", price: 650 },
   { id: "sakura", name: "Sakura", tier: "plus" },
   { id: "neon", name: "Neon", tier: "plus" },
   { id: "galaxy", name: "Galaxy", tier: "pro" },
@@ -39,6 +45,11 @@ export const BUBBLES: ShowoffItem[] = [
   { id: "mint", name: "Mint", tier: "free" },
   { id: "pastel", name: "Pastel", tier: "coins", price: 60 },
   { id: "comic", name: "Comic", tier: "coins", price: 80 },
+  { id: "sticky", name: "Sticky Note", tier: "coins", price: 150 },
+  { id: "manga", name: "Manga Panel", tier: "coins", price: 200 },
+  { id: "terminal", name: "Retro Terminal", tier: "coins", price: 250 },
+  { id: "starlight", name: "Starlight", tier: "coins", price: 400 },
+  { id: "fire", name: "Fire", tier: "coins", price: 500 },
   { id: "heart", name: "Sweetheart", tier: "plus" },
   { id: "cloud", name: "Cloud", tier: "plus" },
   { id: "pixelgold", name: "Pixel gold", tier: "pro" },
@@ -52,6 +63,10 @@ export const ENTRANCES: ShowoffItem[] = [
   { id: "none", name: "None", tier: "free" },
   { id: "poof", name: "Poof", tier: "free" },
   { id: "sparkle", name: "Sparkle burst", tier: "coins", price: 100 },
+  { id: "confetti", name: "Confetti Cannon", tier: "coins", price: 250 },
+  { id: "wau", name: "Wau Takeoff", tier: "coins", price: 380 },
+  { id: "teleport", name: "Teleport Beam", tier: "coins", price: 450 },
+  { id: "dragon", name: "Dragon Arrival", tier: "coins", price: 600 },
   { id: "petals", name: "Petal rain", tier: "plus" },
   { id: "bolt", name: "Lightning drop", tier: "pro" },
   { id: "portal", name: "Portal", tier: "pro" },
@@ -258,6 +273,264 @@ export function drawNameFrame(
       if (Math.sin(t / 220) > 0.4) px(g, "#ffffff", cx - 1, y - 8, 2, 2);
       return "#ffe58a";
     }
+    // ─── Coin frames ───
+    case "wood": {
+      // A carved plank: warm gradient, wavy grain, a knot and two nails.
+      round(g, L, y, w, h, 4);
+      const wg = g.createLinearGradient(0, y, 0, y + h);
+      wg.addColorStop(0, "#9a6434");
+      wg.addColorStop(1, "#6b4020");
+      g.fillStyle = wg;
+      g.fill();
+      g.lineWidth = 1.5;
+      g.strokeStyle = "#3a210c";
+      g.stroke();
+      g.save();
+      round(g, L, y, w, h, 4);
+      g.clip();
+      g.strokeStyle = "rgba(48,26,8,.6)";
+      g.lineWidth = 1;
+      g.beginPath();
+      for (let i = 0; i < 3; i++) {
+        const gy = y + 3.5 + (i * (h - 7)) / 2;
+        g.moveTo(L, gy);
+        for (let gx = L + 4; gx <= L + w + 4; gx += 4)
+          g.lineTo(gx, gy + Math.sin((gx - L) * 0.11 + i * 2.3) * 1.3);
+      }
+      const kx = L + w * 0.7;
+      const ky = y + h * 0.55;
+      g.moveTo(kx + 3, ky);
+      g.ellipse(kx, ky, 3, 1.4, 0, 0, Math.PI * 2);
+      g.stroke();
+      g.restore();
+      px(g, "rgba(255,225,175,.35)", L + 3, y + 1.5, w - 6, 1);
+      const nail = (nx: number) => {
+        px(g, "#2a1708", nx, y + h / 2 - 1, 3, 3);
+        px(g, "#e8e1d2", nx, y + h / 2 - 1, 2, 2);
+      };
+      nail(L + 3);
+      nail(L + w - 6);
+      return "#fff1d6";
+    }
+    case "batik": {
+      // Indigo cloth, gold edge with pucuk rebung (bamboo-shoot) teeth, canting
+      // dots and a little bunga (flower) at each end.
+      const gold = "#d9a93a";
+      const my = Math.round(y + h / 2);
+      g.fillStyle = gold;
+      g.beginPath();
+      for (let tx = L + h / 2 - 1; tx + 4 <= L + w - h / 2 + 1; tx += 6) {
+        g.moveTo(tx, y + 0.5);
+        g.lineTo(tx + 2, y - 3);
+        g.lineTo(tx + 4, y + 0.5);
+        g.moveTo(tx, y + h - 0.5);
+        g.lineTo(tx + 2, y + h + 3);
+        g.lineTo(tx + 4, y + h - 0.5);
+      }
+      g.fill();
+      round(g, L, y, w, h, h / 2);
+      g.fill();
+      round(g, L + 1.5, y + 1.5, w - 3, h - 3, h / 2 - 1.5);
+      g.fillStyle = "#1c2565";
+      g.fill();
+      g.fillStyle = "rgba(233,189,82,.55)";
+      for (let dx = L + h / 2; dx < L + w - h / 2; dx += 4) {
+        g.fillRect(Math.round(dx), Math.round(y + 3), 1, 1);
+        g.fillRect(Math.round(dx + 2), Math.round(y + h - 4), 1, 1);
+      }
+      const flower = (fx: number) => {
+        const c = Math.round(fx);
+        px(g, "#e9bd52", c, my - 3, 1, 2);
+        px(g, "#e9bd52", c, my + 2, 1, 2);
+        px(g, "#e9bd52", c - 2, my, 1, 1);
+        px(g, "#e9bd52", c + 2, my, 1, 1);
+        px(g, "#fff3c8", c, my, 1, 1);
+      };
+      flower(L + 5);
+      flower(L + w - 6);
+      return "#ffe7a3";
+    }
+    case "bobatea": {
+      // Milk tea with a pink straw, pearls at the bottom, and pearls that
+      // float up out of the cup and pop.
+      g.fillStyle = "#ff7fa8";
+      g.beginPath();
+      g.moveTo(L + w - 13, y + 3);
+      g.lineTo(L + w - 7, y - 7);
+      g.lineTo(L + w - 4, y - 5.5);
+      g.lineTo(L + w - 9, y + 3);
+      g.fill();
+      // Pearls sitting along the bottom, half hidden behind the cup.
+      g.fillStyle = "#3a2214";
+      g.beginPath();
+      for (let bx = L + h / 2 - 1; bx < L + w - h / 2 + 2; bx += 5) {
+        g.moveTo(bx + 2, y + h - 0.5);
+        g.arc(bx, y + h - 0.5, 2, 0, Math.PI * 2);
+      }
+      g.fill();
+      round(g, L, y, w, h, h / 2);
+      const tg = g.createLinearGradient(0, y, 0, y + h);
+      tg.addColorStop(0, "#f7e7cf");
+      tg.addColorStop(0.45, "#e8c9a0");
+      tg.addColorStop(1, "#d3a777");
+      g.fillStyle = tg;
+      g.fill();
+      g.lineWidth = 1.5;
+      g.strokeStyle = "#7a4a26";
+      g.stroke();
+      const pearl = (bx: number, by: number, r: number) => {
+        g.beginPath();
+        g.arc(bx, by, r, 0, Math.PI * 2);
+        g.fillStyle = "#3a2214";
+        g.fill();
+        g.lineWidth = 0.75;
+        g.strokeStyle = "rgba(247,231,207,.8)";
+        g.stroke();
+        px(g, "rgba(255,255,255,.6)", bx - r * 0.6, by - r * 0.6, 1, 1);
+      };
+      for (let i = 0; i < 3; i++) {
+        const ph = (t / 1600 + i / 3) % 1;
+        const bx = L + w * (0.25 + i * 0.25) + Math.sin(t / 300 + i * 2) * 2;
+        if (ph < 0.78) {
+          g.globalAlpha = Math.min(1, ph * 6);
+          pearl(bx, y + 1 - (ph / 0.78) * 9, 1.8);
+        } else {
+          const q = (ph - 0.78) / 0.22;
+          g.globalAlpha = 1 - q;
+          g.lineWidth = 1;
+          g.strokeStyle = "#f7e7cf";
+          g.beginPath();
+          g.arc(bx, y - 8, 1.5 + q * 3, 0, Math.PI * 2);
+          g.stroke();
+        }
+        g.globalAlpha = 1;
+      }
+      return "#4a2a14";
+    }
+    case "glitch": {
+      // Calm dark tag that, every ~1.5s, splits into red/cyan copies with
+      // sideways-shifted slices for a moment.
+      const cyc = t % 1500;
+      const on = cyc < 170 || (cyc > 250 && cyc < 290);
+      const j = Math.floor(t / 45);
+      if (on) {
+        const o = 2 + (j % 2);
+        round(g, L - o, y + 1, w, h, h / 2);
+        g.fillStyle = "rgba(255,40,90,.75)";
+        g.fill();
+        round(g, L + o, y - 1, w, h, h / 2);
+        g.fillStyle = "rgba(0,229,255,.75)";
+        g.fill();
+      }
+      fill("#0c0e16", on ? "#ffffff" : "rgba(170,190,255,.8)", 1.5);
+      for (let sy = y + 2; sy < y + h - 1; sy += 3)
+        px(g, "rgba(255,255,255,.05)", L + 3, sy, w - 6, 1);
+      // Corner brackets: cyan on the left, pink on the right.
+      px(g, "#7df9ff", L + 5, y + 3, 1, h - 6);
+      px(g, "#7df9ff", L + 5, y + 3, 2, 1);
+      px(g, "#7df9ff", L + 5, y + h - 4, 2, 1);
+      px(g, "#ff4d8d", L + w - 6, y + 3, 1, h - 6);
+      px(g, "#ff4d8d", L + w - 7, y + 3, 2, 1);
+      px(g, "#ff4d8d", L + w - 7, y + h - 4, 2, 1);
+      if (on) {
+        for (let i = 0; i < 3; i++) {
+          const sy = y + 1 + ((j * 5 + i * 6) % (h - 3));
+          const off = (((j * 7 + i * 5) % 9) - 4) * 1.5;
+          const sw = w * (0.3 + ((i + j) % 3) * 0.2);
+          const sx = L + ((i * 31 + j * 17) % Math.max(1, Math.round(w - sw))) + off;
+          px(g, "#0c0e16", sx, sy, sw, 2);
+          px(g, "#ff2a5a", sx - 2, sy, 2, 2);
+          px(g, "#00e5ff", sx + sw, sy, 2, 2);
+        }
+      }
+      return on && j % 2 ? "#7df9ff" : "#f2f6ff";
+    }
+    case "aurora": {
+      // Night-sky tag; northern-lights colours flow along the glowing border
+      // and out into two wavy ribbon tails.
+      const flow = t / 900;
+      const hueAt = (q: number) => 205 + 85 * Math.sin(flow - q * 4.5);
+      const grad = g.createLinearGradient(L - 10, y, L + w + 10, y);
+      for (let i = 0; i <= 4; i++) grad.addColorStop(i / 4, `hsl(${hueAt(i / 4)},90%,62%)`);
+      const mid = hueAt(0.5);
+      round(g, L, y, w, h, h / 2);
+      g.fillStyle = "#081127";
+      g.fill();
+      const curtain = g.createLinearGradient(0, y, 0, y + h);
+      curtain.addColorStop(0, `hsla(${mid},85%,55%,.32)`);
+      curtain.addColorStop(0.7, `hsla(${mid},85%,55%,0)`);
+      g.fillStyle = curtain;
+      g.fill();
+      g.save();
+      g.shadowColor = `hsl(${mid},90%,60%)`;
+      g.shadowBlur = 7;
+      g.lineWidth = 2;
+      g.strokeStyle = grad;
+      g.stroke();
+      g.lineCap = "round";
+      for (const dir of [-1, 1]) {
+        const sx = dir < 0 ? L + 1 : L + w - 1;
+        g.beginPath();
+        g.moveTo(sx, y + h / 2);
+        for (let i = 1; i <= 4; i++)
+          g.lineTo(
+            sx + dir * i * 2.2,
+            y + h / 2 + Math.sin(t / 220 + i * 1.3 + dir) * 2.2 + i * 0.6,
+          );
+        g.stroke();
+      }
+      g.restore();
+      return "#eafff7";
+    }
+    case "dragonscale": {
+      // Two bone horns, emerald scales, a gold rim and a shine that sweeps by.
+      const mx = (xx: number, dir: number) => (dir < 0 ? xx : L + w - (xx - L));
+      for (const dir of [-1, 1]) {
+        g.beginPath();
+        g.moveTo(mx(L + 4, dir), y + 3);
+        g.quadraticCurveTo(mx(L - 4, dir), y - 1, mx(L + 1, dir), y - 9);
+        g.quadraticCurveTo(mx(L + 3, dir), y - 2, mx(L + 10, dir), y + 3);
+        g.closePath();
+        g.fillStyle = "#efe2bd";
+        g.fill();
+        g.lineWidth = 1;
+        g.strokeStyle = "#5c4a22";
+        g.stroke();
+      }
+      fill("#0f3a28", "#d4a73a", 2);
+      g.save();
+      round(g, L, y, w, h, h / 2);
+      g.clip();
+      g.strokeStyle = "rgba(120,215,150,.32)";
+      g.lineWidth = 1;
+      g.beginPath();
+      for (let row = 0, sy = y + 1; sy < y + h + 3; row++, sy += 4)
+        for (let sx = L + (row % 2 ? 3 : 0); sx < L + w + 3; sx += 6) {
+          g.moveTo(sx + 3, sy);
+          g.arc(sx, sy, 3, 0, Math.PI);
+        }
+      g.stroke();
+      const sweep = (t / 5) % (w * 2.5);
+      if (sweep < w + 12) {
+        g.fillStyle = "rgba(210,255,225,.45)";
+        g.beginPath();
+        g.moveTo(L + sweep, y);
+        g.lineTo(L + sweep + 6, y);
+        g.lineTo(L + sweep - 2, y + h);
+        g.lineTo(L + sweep - 8, y + h);
+        g.closePath();
+        g.fill();
+        g.fillStyle = "rgba(255,255,255,.35)";
+        g.fillRect(L + sweep + 8, y, 2, h);
+      }
+      g.restore();
+      // Ruby studs at each end.
+      for (const gx of [L + 4, L + w - 7]) {
+        px(g, "#7a1410", gx, y + h / 2 - 1.5, 3, 3);
+        px(g, "#ff4a3d", gx, y + h / 2 - 1.5, 2, 2);
+      }
+      return "#f0ffe8";
+    }
     // ─── Admin sets (preview) ───
     case "adm_root": {
       // Terminal: black, green border, ">_" on the left, blinking cursor on the
@@ -428,6 +701,204 @@ export function drawBubble(
           px(g, "#fff6c8", L + 5 + (i * (w - 10)) / 3, y + 2 + (i % 2) * (h - 5), 2, 2);
       return "#e6e2ff";
     }
+    // ─── Coin bubbles ───
+    case "sticky": {
+      // A slightly tilted yellow sticky note held on by a strip of tape.
+      g.save();
+      g.translate(x, y + h / 2);
+      g.rotate(-0.04);
+      g.translate(-x, -(y + h / 2));
+      g.fillStyle = "rgba(0,0,0,.22)";
+      g.fillRect(L + 1.5, y + 2, w, h);
+      g.fillStyle = "#ffe766";
+      g.fillRect(L, y, w, h);
+      g.fillStyle = "#f3d44a";
+      g.fillRect(L, y, w, 2);
+      g.beginPath();
+      g.moveTo(L + w, y + h - 5);
+      g.lineTo(L + w - 5, y + h);
+      g.lineTo(L + w - 5, y + h - 5);
+      g.closePath();
+      g.fillStyle = "#e0bd32";
+      g.fill();
+      g.beginPath();
+      g.moveTo(x - 4, y + h - 0.5);
+      g.lineTo(x + 3, y + h - 0.5);
+      g.lineTo(x - 2, y + h + 5);
+      g.closePath();
+      g.fillStyle = "#ffe766";
+      g.fill();
+      g.restore();
+      g.save();
+      g.translate(x, y);
+      g.rotate(0.08);
+      g.fillStyle = "rgba(225,238,245,.78)";
+      g.fillRect(-10, -3.5, 20, 6);
+      g.fillStyle = "rgba(255,255,255,.55)";
+      g.fillRect(-10, -3.5, 20, 1);
+      g.restore();
+      return "#4a3a00";
+    }
+    case "manga": {
+      // Square comic panel, thick black border, speed lines bursting out.
+      const step = Math.floor(t / 110);
+      const n = 20;
+      const cy = y + h / 2;
+      g.beginPath();
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + ((i * 7 + step) % 3) * 0.05;
+        const ca = Math.cos(a);
+        const sa = Math.sin(a);
+        if (sa > 0.8) continue; // leave room for the tail
+        const len = 3 + ((i * 5 + step * 3) % 4) * 1.5;
+        const r0x = w / 2 + 3;
+        const r0y = h / 2 + 3;
+        g.moveTo(x + ca * r0x, cy + sa * r0y);
+        g.lineTo(x + ca * (r0x + len), cy + sa * (r0y + len));
+      }
+      g.lineCap = "round";
+      g.lineWidth = 2.5;
+      g.strokeStyle = "rgba(255,255,255,.85)";
+      g.stroke();
+      g.lineWidth = 1;
+      g.strokeStyle = "#111111";
+      g.stroke();
+      g.lineCap = "butt";
+      g.fillStyle = "#ffffff";
+      g.fillRect(L, y, w, h);
+      g.lineWidth = 2;
+      g.strokeStyle = "#111111";
+      g.strokeRect(L, y, w, h);
+      // Screentone dots in the corner.
+      for (let i = 0; i < 3; i++)
+        for (let j2 = 0; j2 <= i; j2++)
+          px(g, "#b9b9b9", L + w - 4 - j2 * 2, y + h - 4 - (i - j2) * 2, 1, 1);
+      g.beginPath();
+      g.moveTo(x - 5, y + h - 1);
+      g.lineTo(x + 2, y + h + 7);
+      g.lineTo(x + 3, y + h - 1);
+      g.closePath();
+      g.fillStyle = "#ffffff";
+      g.fill();
+      g.beginPath();
+      g.moveTo(x - 5, y + h + 1);
+      g.lineTo(x + 2, y + h + 7);
+      g.lineTo(x + 3, y + h + 1);
+      g.lineWidth = 2;
+      g.stroke();
+      return "#111111";
+    }
+    case "terminal": {
+      // Amber CRT: bezel, dark screen, scanlines, a rolling glow and a cursor.
+      round(g, L - 1, y - 1, w + 2, h + 2, 4);
+      g.fillStyle = "#3a2e22";
+      g.fill();
+      round(g, L + 1, y + 1, w - 2, h - 2, 3);
+      g.fillStyle = "#140d04";
+      g.fill();
+      for (let sy = y + 2; sy < y + h - 1; sy += 2)
+        px(g, "rgba(255,176,0,.07)", L + 1, sy, w - 2, 1);
+      const band = y + 1 + ((t / 45) % (h - 4));
+      px(g, "rgba(255,190,60,.1)", L + 1, band, w - 2, 2);
+      // ">" prompt and blinking block cursor in the side padding.
+      const my = Math.round(y + h / 2);
+      px(g, "#ffb000", L + 2, my - 2, 1, 1);
+      px(g, "#ffb000", L + 3, my - 1, 1, 1);
+      px(g, "#ffb000", L + 2, my, 1, 1);
+      if (Math.floor(t / 530) % 2 === 0) px(g, "#ffb000", L + w - 5, y + 4, 2, h - 8);
+      tail("#3a2e22");
+      return "#ffb000";
+    }
+    case "starlight": {
+      // Deep blue night bubble with a soft glow and stars drifting inside.
+      round(g, L, y, w, h, 8);
+      const sg = g.createLinearGradient(0, y, 0, y + h);
+      sg.addColorStop(0, "#0a1440");
+      sg.addColorStop(1, "#1b2c78");
+      g.save();
+      g.shadowColor = "rgba(120,150,255,.85)";
+      g.shadowBlur = 7;
+      g.fillStyle = sg;
+      g.fill();
+      g.restore();
+      g.lineWidth = 1.2;
+      g.strokeStyle = "#8aa2ff";
+      g.stroke();
+      tail("#1b2c78");
+      const span = Math.max(4, w - 8);
+      for (let i = 0; i < 9; i++) {
+        const off = (i * 23 + t / (70 + i * 9)) % span;
+        const sx = L + 4 + off;
+        // Rows: along the top, along the bottom, and dimmer ones in the middle.
+        const band = i % 3;
+        const sy =
+          (band === 0 ? y + 2.5 : band === 1 ? y + h - 3.5 : y + h / 2) +
+          Math.sin(t / 600 + i) * 0.8;
+        const tw = Math.sin(t / 260 + i * 2.1);
+        if (tw < -0.3) continue;
+        const edge = Math.min(1, off / 6, (span - off) / 6);
+        g.globalAlpha = Math.max(0, Math.min(1, 0.45 + tw * 0.55) * edge * (band === 2 ? 0.5 : 1));
+        const c = i % 4 === 0 ? "#fff3b0" : "#ffffff";
+        px(g, c, sx, sy, 1, 1);
+        if (tw > 0.75 && band === 0) {
+          px(g, c, sx - 1, sy, 3, 1);
+          px(g, c, sx, sy - 1, 1, 3);
+        }
+      }
+      g.globalAlpha = 1;
+      const arm = 1 + Math.round((0.5 + 0.5 * Math.sin(t / 380)) * 2);
+      const bx = Math.round(L + w - 5);
+      const by = Math.round(y);
+      px(g, "#fff6c8", bx - arm, by, arm * 2 + 1, 1);
+      px(g, "#fff6c8", bx, by - arm, 1, arm * 2 + 1);
+      return "#eef1ff";
+    }
+    case "fire": {
+      // Ember bubble with flames flickering along the top and sparks rising.
+      const flames = (grow: number, color: string) => {
+        g.fillStyle = color;
+        g.beginPath();
+        for (let fx = L + 4, i = 0; fx < L + w - 3; fx += 5, i++) {
+          const f = 0.55 + 0.45 * Math.sin(t / 85 + i * 1.9) * Math.sin(t / 140 + i * 0.7);
+          const fh = (3 + f * 5) * grow;
+          const sway = Math.sin(t / 120 + i) * 1.2;
+          g.moveTo(fx - 3.2 * grow, y + 3);
+          g.quadraticCurveTo(fx - 2 * grow, y - fh * 0.4, fx + sway, y - fh);
+          g.quadraticCurveTo(fx + 2 * grow, y - fh * 0.4, fx + 3.2 * grow, y + 3);
+        }
+        g.fill();
+      };
+      g.save();
+      g.shadowColor = "rgba(255,110,20,.9)";
+      g.shadowBlur = 8;
+      flames(1, "#ff5a14");
+      g.restore();
+      flames(0.6, "#ffd23f");
+      round(g, L, y, w, h, 8);
+      const fg = g.createLinearGradient(0, y, 0, y + h);
+      fg.addColorStop(0, "#3b0a04");
+      fg.addColorStop(1, "#7a1c06");
+      g.fillStyle = fg;
+      g.fill();
+      g.lineWidth = 1.5;
+      g.strokeStyle = "#ff7a1a";
+      g.stroke();
+      tail("#7a1c06");
+      for (let i = 0; i < 4; i++) {
+        const ph = (t / 900 + i / 4) % 1;
+        g.globalAlpha = 1 - ph;
+        px(
+          g,
+          i % 2 ? "#ffb347" : "#ffe08a",
+          L + w * (0.15 + 0.23 * i) + Math.sin(t / 200 + i * 3) * 2,
+          y - 3 - ph * 12,
+          1,
+          1,
+        );
+      }
+      g.globalAlpha = 1;
+      return "#ffe2b0";
+    }
     // ─── Admin sets (preview) ───
     case "adm_root": {
       // A terminal window: title bar with three dots, green text.
@@ -488,6 +959,385 @@ export function drawBubble(
 
 /** How long an entrance effect plays. */
 export const ENTRANCE_MS = 2200;
+
+// ─── Coin entrances ─────────────────────────────────────────────────────────
+
+/** Small pixel art, grouped by colour so each colour is one fill. */
+type PixelArt = { w: number; layers: [string, number[]][] };
+function pixelArt(rows: string[], pal: Record<string, string>): PixelArt {
+  const by = new Map<string, number[]>();
+  rows.forEach((row, yy) =>
+    [...row].forEach((ch, xx) => {
+      const c = pal[ch];
+      if (!c) return;
+      let a = by.get(c);
+      if (!a) by.set(c, (a = []));
+      a.push(xx, yy);
+    }),
+  );
+  return { w: rows[0].length, layers: [...by.entries()] };
+}
+function drawArt(g: Ctx, art: PixelArt, x: number, y: number, s: number, flip = false) {
+  for (const [c, pts] of art.layers) {
+    g.fillStyle = c;
+    g.beginPath();
+    for (let i = 0; i < pts.length; i += 2) {
+      const ax = flip ? art.w - 1 - pts[i] : pts[i];
+      g.rect(x + ax * s, y + pts[i + 1] * s, s + 0.4, s + 0.4);
+    }
+    g.fill();
+  }
+}
+
+const CONFETTI = ["#ff4d6d", "#ffd23f", "#3ddc97", "#4cc9f0", "#b388ff", "#ff9f1c"];
+
+/** Two party poppers fire confetti up and over you; it flutters down. */
+function drawConfetti(g: Ctx, cx: number, fy: number, s: number, p: number, k: number) {
+  const fade = k > 0.75 ? (1 - k) / 0.25 : 1;
+  for (const side of [-1, 1]) {
+    const ox = cx + side * 20 * s;
+    const oy = fy - 2 * s;
+    const tilt = -side * 0.5;
+    const mx = ox + Math.sin(tilt) * 8 * s;
+    const my = oy - Math.cos(tilt) * 8 * s;
+    if (p < 800) {
+      g.globalAlpha = Math.min(1, (800 - p) / 300);
+      g.save();
+      g.translate(ox, oy);
+      g.rotate(tilt);
+      g.fillStyle = "#ffd23f";
+      g.beginPath();
+      g.moveTo(0, s);
+      g.lineTo(-3 * s, -8 * s);
+      g.lineTo(3 * s, -8 * s);
+      g.closePath();
+      g.fill();
+      g.fillStyle = "#ff4d6d";
+      g.fillRect(-2.2 * s, -5.5 * s, 4.4 * s, 1.4 * s);
+      g.fillRect(-1.2 * s, -2.5 * s, 2.4 * s, 1.2 * s);
+      g.restore();
+    }
+    if (p < 260) {
+      g.globalAlpha = 1 - p / 260;
+      g.fillStyle = "#fff6c8";
+      g.beginPath();
+      g.arc(mx, my, (2 + p / 35) * s, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.globalAlpha = fade;
+    for (let i = 0; i < 30; i++) {
+      const seed = (i * 73 + (side > 0 ? 29 : 0)) % 97;
+      const tt = p / 1000 - (i % 4) * 0.03;
+      if (tt < 0) continue;
+      const v = 85 + (seed % 55);
+      const th = 0.05 + ((seed % 23) / 23) * 0.85;
+      const vx = -side * Math.sin(th) * v * 0.55;
+      const vy = -Math.cos(th) * v;
+      // Linear drag: shoots up fast, then drifts down slowly.
+      const e = 1 - Math.exp(-2.2 * tt);
+      const X = mx + ((vx * e) / 2.2 + Math.sin(tt * 7 + seed) * 2 * Math.min(1, tt)) * s;
+      const Y = my + (20 * tt + ((vy - 20) * e) / 2.2) * s;
+      const flip = Math.abs(Math.cos(tt * 9 + seed));
+      g.fillStyle = CONFETTI[(i + seed) % CONFETTI.length];
+      g.fillRect(X - flip * 1.25 * s, Y - s, Math.max(0.6, flip * 2.5) * s, 2 * s);
+    }
+  }
+}
+
+const WAU = pixelArt(
+  [
+    ".........K.........",
+    "........KYK........",
+    "........KYK........",
+    "KK......KYK......KK",
+    "KRK....KRYRK....KRK",
+    "KRRKK.KRRYRRK.KKRRK",
+    ".KRRRKKRWYWRKKRRRK.",
+    ".KRRRRRRWYWRRRRRRK.",
+    "..KRRRRRRYRRRRRRK..",
+    "...KKRRRRYRRRRKK...",
+    ".....KKKRYRKKK.....",
+    "........KYK........",
+    "...K....KYK....K...",
+    "..KTK..KTYTK..KTK..",
+    "..KTTKKTTYTTKKTTK..",
+    "...KTTTTTGTTTTTK...",
+    "....KKTTTTTTTKK....",
+    "......KKKKKKK......",
+  ],
+  { K: "#2a1b18", Y: "#ffd23f", R: "#e63946", W: "#ffffff", T: "#1fa2a8", G: "#ffd23f" },
+);
+
+/** A wau bulan (moon kite) swoops low past you and soars off, string trailing. */
+function drawWau(g: Ctx, cx: number, fy: number, s: number, p: number, k: number) {
+  const u = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
+  const at = (q: number) => {
+    const a = (1 - q) * (1 - q);
+    const b = 2 * q * (1 - q);
+    const c = q * q;
+    return [
+      a * (cx - 38 * s) + b * (cx - 2 * s) + c * (cx + 30 * s),
+      a * (fy - 34 * s) + b * (fy + 18 * s) + c * (fy - 78 * s),
+    ];
+  };
+  const fade = Math.min(1, k / 0.08, (1 - k) / 0.15);
+  // Gusts of wind at your feet as you appear.
+  if (k < 0.45) {
+    g.globalAlpha = (1 - k / 0.45) * 0.8;
+    g.strokeStyle = "#ffffff";
+    g.lineWidth = Math.max(1, s * 0.6);
+    g.beginPath();
+    for (let i = 0; i < 3; i++) {
+      const r = (6 + i * 4 + k * 20) * s;
+      const a0 = k * 6 + i * 2;
+      g.moveTo(cx + Math.cos(a0) * r, fy - 3 * s + Math.sin(a0) * r * 0.35);
+      g.ellipse(cx, fy - 3 * s, r, r * 0.35, 0, a0, a0 + 1.6);
+    }
+    g.stroke();
+  }
+  const [kx, ky] = at(u);
+  const [px2, py2] = at(Math.max(0, u - 0.02));
+  // Tilts a little into the swoop (small angles keep the pixel art crisp).
+  const ang =
+    Math.max(-0.25, Math.min(0.25, Math.atan2(kx - px2, py2 - ky + 0.001) * 0.4)) +
+    Math.sin(p / 160) * 0.05;
+  const ks = s * 1.2;
+  // String trailing back along the path, with a gentle wave.
+  g.globalAlpha = fade * 0.9;
+  g.strokeStyle = "rgba(255,255,255,.9)";
+  g.lineWidth = Math.max(1, s * 0.4);
+  g.beginPath();
+  g.moveTo(kx - Math.sin(ang) * 9 * ks, ky + Math.cos(ang) * 9 * ks);
+  for (let j = 1; j <= 10; j++) {
+    const [sx, sy] = at(Math.max(0, u - j * 0.03));
+    g.lineTo(sx + Math.sin(p / 140 + j) * j * 0.4 * s, sy + 9 * ks + j * 1.2 * s);
+  }
+  g.stroke();
+  g.globalAlpha = fade;
+  g.save();
+  g.translate(kx, ky);
+  g.rotate(ang);
+  drawArt(g, WAU, -9.5 * ks, -9 * ks, ks);
+  // Little rumbai tassels fluttering from the wing tips.
+  for (const tx of [-9.5, 8.5]) {
+    const wv = Math.sin(p / 90 + tx) * ks;
+    g.fillStyle = "#ffd23f";
+    g.fillRect(tx * ks + wv * 0.4, -3 * ks, ks, 2 * ks);
+    g.fillStyle = "#e63946";
+    g.fillRect(tx * ks + wv, -1 * ks, ks, 2 * ks);
+  }
+  g.restore();
+}
+
+/** A sci-fi beam: you assemble from glowing slices, rings pulse at your feet. */
+function drawTeleport(g: Ctx, cx: number, fy: number, s: number, p: number, k: number) {
+  const top = fy - 90 * s;
+  const beam = k < 0.7 ? 1 : Math.max(0, 1 - (k - 0.7) / 0.2);
+  const reach = Math.min(1, k / 0.1);
+  // Glowing pad under your feet.
+  g.globalAlpha = Math.min(1, k / 0.05) * (k < 0.8 ? 1 : (1 - k) / 0.2);
+  g.fillStyle = "rgba(110,235,255,.3)";
+  g.strokeStyle = "#6ff0ff";
+  g.lineWidth = Math.max(1, s * 0.7);
+  g.beginPath();
+  g.ellipse(cx, fy, 11 * s, 3.6 * s, 0, 0, Math.PI * 2);
+  g.fill();
+  g.stroke();
+  if (beam > 0) {
+    const bw = (10 + Math.sin(p / 60) * 0.8) * s * beam;
+    const by1 = top + (fy - top) * reach;
+    const bg = g.createLinearGradient(cx - bw, 0, cx + bw, 0);
+    bg.addColorStop(0, "rgba(80,220,255,0)");
+    bg.addColorStop(0.5, "rgba(170,245,255,.55)");
+    bg.addColorStop(1, "rgba(80,220,255,0)");
+    // Drawn in steps so it fades out towards the top; dims once you're in.
+    const dim = beam * (k < 0.55 ? 1 : 0.55);
+    const seg = (by1 - top) / 14;
+    for (let i = 0; i < 14; i++) {
+      g.globalAlpha = dim * Math.min(1, (i + 1) / 9);
+      g.fillStyle = bg;
+      g.fillRect(cx - bw, top + i * seg, bw * 2, seg + 0.5);
+      g.fillStyle = "rgba(255,255,255,.7)";
+      g.fillRect(cx - s * beam, top + i * seg, 2 * s * beam, seg + 0.5);
+    }
+    for (let i = 0; i < 10; i++) {
+      const ph = (p / 700 + i / 10) % 1;
+      g.globalAlpha = (1 - ph) * beam;
+      g.fillStyle = i % 2 ? "#ffffff" : "#8ff6ff";
+      g.fillRect(cx + (((i * 7) % 9) - 4) * 1.8 * s, fy - ph * 70 * s, s, s);
+    }
+  }
+  // The avatar "assembles": slices covering it vanish from the feet up.
+  const rows = 18;
+  for (let r = 0; r < rows; r++) {
+    const order = (rows - 1 - r + ((r * 7) % 5) * 0.9) / (rows + 4);
+    const rv = 0.12 + order * 0.5;
+    if (k > rv + 0.07) continue;
+    const gone = k > rv ? (k - rv) / 0.07 : 0;
+    const jit = gone ? 0 : (((r * 13 + Math.floor(p / 50)) % 7) - 3) * s;
+    const wid = (17 + ((r * 5) % 5)) * s * (1 - gone);
+    g.globalAlpha = 0.92 * (1 - gone * 0.5);
+    g.fillStyle = gone ? "#ffffff" : r % 2 ? "#7ff0ff" : "#3fc8f0";
+    g.fillRect(cx - wid / 2 + jit, fy - 36 * s + r * 2 * s, wid, 1.6 * s);
+  }
+  // Rings pulse out from the pad.
+  g.lineWidth = Math.max(1, s * 0.8);
+  for (const born of [0, 0.22, 0.44, 0.66]) {
+    const q = (k - born) / 0.3;
+    if (q < 0 || q > 1) continue;
+    g.globalAlpha = 1 - q;
+    g.strokeStyle = born === 0.66 ? "#ffffff" : "#6ff0ff";
+    g.beginPath();
+    g.ellipse(cx, fy, (6 + q * 18) * s, (2 + q * 6) * s, 0, 0, Math.PI * 2);
+    g.stroke();
+  }
+}
+
+const DRAGON_PAL = {
+  R: "#e2483a",
+  D: "#8a1f1a",
+  Y: "#ffcf5a",
+  T: "#ffcf5a",
+  M: "#7a1f3d",
+  L: "#ff8a65",
+  E: "#ffffff",
+  H: "#f3e6c0",
+};
+const DRAGON = [
+  pixelArt(
+    [
+      "......MM........",
+      ".....MLLM.......",
+      "....MLLLM.......",
+      "....MLLLLM..HH..",
+      ".....MLLRRDRRRH.",
+      "......DRRRRRRERR",
+      "T....DRRRRRRRRDD",
+      "RD..DRRRRYYRD...",
+      ".RRRRRYYYYRD....",
+      "...DRRDDRRD.....",
+      "...DD...DD......",
+    ],
+    DRAGON_PAL,
+  ),
+  pixelArt(
+    [
+      "................",
+      "................",
+      "................",
+      "............HH..",
+      "..........DRRRH.",
+      "......DRRRRRRERR",
+      "T....DRRRRRRRRDD",
+      "RD..DRMLLLLMRD..",
+      ".RRRRRMLLLLMD...",
+      "...DRRDMLLMD....",
+      "...DD...MMD.....",
+    ],
+    DRAGON_PAL,
+  ),
+];
+
+/** A little dragon circles you, breathes fire at your feet, and flies off. */
+function drawDragon(g: Ctx, cx: number, fy: number, s: number, p: number, k: number) {
+  const cy = fy - 18 * s;
+  const rx = 24 * s;
+  const ry = 9 * s;
+  const thEnd = -Math.PI / 4;
+  const endX = cx + Math.cos(thEnd) * rx;
+  const endY = cy + Math.sin(thEnd) * ry - 6 * s;
+  let dx: number;
+  let dy: number;
+  let face = -1;
+  let size = 1;
+  let alpha = 1;
+  if (k < 0.5) {
+    const e = 1 - (1 - k / 0.5) ** 2;
+    const th = thEnd - 3 * Math.PI * (1 - e);
+    const m = 1 + 1.6 * (1 - e) ** 2;
+    dx = cx + Math.cos(th) * rx * m;
+    dy = cy + Math.sin(th) * ry * m - (1 - e) * 30 * s - 6 * s * e;
+    face = Math.sin(th) <= 0 ? 1 : -1;
+    size = 0.85 + 0.15 * Math.sin(th);
+    alpha = Math.min(1, k / 0.06);
+  } else if (k < 0.66) {
+    dx = endX;
+    dy = endY + Math.sin(p / 150) * 1.5 * s;
+  } else {
+    const q = (k - 0.66) / 0.34;
+    dx = endX + q * q * 50 * s;
+    dy = endY - q * q * 60 * s;
+    face = 1;
+    alpha = 1 - q;
+  }
+  // Ring of fire at your feet, expanding and fading.
+  if (k > 0.58) {
+    const q = (k - 0.58) / 0.42;
+    const e = 1 - (1 - q) ** 3;
+    const frx = (8 + 30 * e) * s;
+    const fry = frx * 0.36;
+    g.globalAlpha = (1 - q) * 0.22;
+    g.fillStyle = "#ff7a1a";
+    g.beginPath();
+    g.ellipse(cx, fy, frx, fry, 0, 0, Math.PI * 2);
+    g.fill();
+    g.globalAlpha = Math.min(1, (1 - q) * 1.6);
+    for (const [grow, color] of [
+      [1, "#ff5a14"],
+      [0.55, "#ffd23f"],
+    ] as const) {
+      g.fillStyle = color;
+      g.beginPath();
+      for (let i = 0; i < 26; i++) {
+        const a = (i / 26) * Math.PI * 2;
+        const bx = cx + Math.cos(a) * frx;
+        const by = fy + Math.sin(a) * fry;
+        // Skip the back of the ring where it would cover your legs.
+        if (Math.sin(a) < 0 && Math.abs(bx - cx) < 9 * s) continue;
+        const flick = 0.6 + 0.4 * Math.sin(p / 70 + i * 2.3);
+        const fh = (4 + 4 * flick) * s * (1 - q * 0.5) * grow;
+        const fw = 2.2 * s * (1 - q * 0.3) * grow;
+        g.moveTo(bx - fw, by);
+        g.quadraticCurveTo(bx - fw * 0.6, by - fh * 0.5, bx + Math.sin(p / 90 + i) * s, by - fh);
+        g.quadraticCurveTo(bx + fw * 0.6, by - fh * 0.5, bx + fw, by);
+      }
+      g.fill();
+    }
+    for (let i = 0; i < 8; i++) {
+      const ph = (q * 2 + i / 8) % 1;
+      const a = i * 0.8;
+      g.globalAlpha = (1 - ph) * (1 - q);
+      g.fillStyle = i % 2 ? "#ffb347" : "#ffe08a";
+      g.fillRect(cx + Math.cos(a) * frx * 0.9, fy + Math.sin(a) * fry - ph * 16 * s, s, s);
+    }
+  }
+  const art = DRAGON[Math.floor(p / 110) % 2];
+  const ss = s * size * 1.25;
+  const ax = dx - (art.w * ss) / 2;
+  const ay = dy - 5.5 * ss;
+  // Fire breath from the mouth down to your feet.
+  if (k > 0.48 && k < 0.66) {
+    const env = Math.min(1, (k - 0.48) / 0.04, (0.66 - k) / 0.04);
+    const mx = ax + 0.5 * ss;
+    const my = ay + 5.5 * ss;
+    const tx = cx + 2 * s;
+    const ty = fy - 3 * s;
+    for (let i = 0; i < 14; i++) {
+      const ph = (p / 260 + i / 14) % 1;
+      const r = (1 + ph * 2.5) * s;
+      g.globalAlpha = env * (1 - ph * 0.4);
+      g.fillStyle = ph < 0.3 ? "#fff3a0" : ph < 0.65 ? "#ffb02e" : "#ff5a1f";
+      g.fillRect(
+        mx + (tx - mx) * ph + Math.sin(p / 40 + i * 2) * ph * 2 * s - r / 2,
+        my + (ty - my) * ph - r / 2,
+        r,
+        r,
+      );
+    }
+  }
+  g.globalAlpha = alpha;
+  drawArt(g, art, ax, ay, ss, face < 0);
+}
 
 /**
  * Draws an entrance effect around feet point (cx, fy), s = screen pixel size,
@@ -557,6 +1407,10 @@ export function drawEntrance(g: Ctx, id: string, cx: number, fy: number, s: numb
     g.ellipse(cx, fy - 1 * s, 8 * s * open, 2.5 * s * open, 0, 0, Math.PI * 2);
     g.stroke();
   }
+  if (id === "confetti") drawConfetti(g, cx, fy, s, p, k);
+  if (id === "wau") drawWau(g, cx, fy, s, p, k);
+  if (id === "teleport") drawTeleport(g, cx, fy, s, p, k);
+  if (id === "dragon") drawDragon(g, cx, fy, s, p, k);
   // ─── Admin sets (preview) ───
   if (id === "adm_root") {
     // Code rain falls around you, then a scan line sweeps up as you appear.

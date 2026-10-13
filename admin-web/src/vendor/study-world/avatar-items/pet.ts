@@ -19,6 +19,30 @@ const shift =
 /** True for a short moment every `every` ms (blinks, flaps, tongue flicks). */
 const now = (t: number, every: number, len: number, offset = 0) => (t + offset) % every < len;
 
+/** A rounded blob centred on x = 7, sitting on row `bottom` (w must be even). */
+function blob(Q: Q, w: number, h: number, bottom: number, c: string) {
+  const x = 7 - w / 2;
+  const top = bottom - h + 1;
+  Q(x + 2, top, w - 4, 1, c);
+  Q(x + 1, top + 1, w - 2, 1, c);
+  Q(x, top + 2, w, h - 3, c);
+  Q(x + 1, bottom, w - 2, 1, c);
+  return { x, top };
+}
+
+/** Squash-and-stretch hop: [width (even), height, lift] at time t, one hop every `every` ms. */
+function hopShape(t: number, every: number, offset = 0): [number, number, number] {
+  const p = (t + offset) % every;
+  const end = every - 600;
+  if (p < end) return [10, 7, 0];
+  if (p < end + 100) return [12, 5, 0];
+  if (p < end + 190) return [8, 9, 1];
+  if (p < end + 360) return [10, 8, 3];
+  if (p < end + 440) return [8, 9, 1];
+  if (p < end + 530) return [12, 5, 0];
+  return [12, 6, 0];
+}
+
 export const PET: CategoryItems = {
   items: [
     { id: "puppy", name: "Puppy", tier: "free" },
@@ -31,6 +55,9 @@ export const PET: CategoryItems = {
     { id: "owl", name: "Owl", tier: "plus" },
     { id: "phoenix", name: "Phoenix", tier: "pro" },
     { id: "unicorn", name: "Unicorn", tier: "pro" },
+    { id: "mochi", name: "Chibi Mochi", tier: "coins", price: 300 },
+    { id: "slime", name: "Pixel Slime", tier: "coins", price: 350 },
+    { id: "robobuddy", name: "Robo Buddy", tier: "coins", price: 380 },
   ],
   draw: {
     puppy: {
@@ -336,6 +363,150 @@ export const PET: CategoryItems = {
         Q(7, 5, 1, 1, rb(3));
         Q(7, 6, 1, 1, rb(4));
         if (now(t, 1400, 450)) Q(13, 2, 1, 1, "#fff6c8");
+      },
+    },
+    mochi: {
+      animated: true,
+      // Round pastel mochi with a sakura leaf: squashes, stretches and boings on every hop.
+      pet: (Q, t) => {
+        const [w, h, up] = hopShape(t, 1800);
+        const pink = "#ffd3e2";
+        const { x, top } = blob(Q, w, h, 12 - up, pink);
+        Q(x + 1, 12 - up, w - 2, 1, "#f4afc8");
+        Q(x, top + h - 2, 1, 1, "#f4afc8");
+        Q(x + w - 1, top + h - 2, 1, 1, "#f4afc8");
+        Q(x + 2, top + 1, 2, 1, "#fff6fa");
+        Q(x + 1, top + 2, 1, 1, "#fff6fa");
+        // Sakura leaf and a tiny blossom on top.
+        Q(x + 3, top - 1, 3, 1, "#7ccf6a");
+        Q(x + 4, top - 2, 2, 1, "#5fb352");
+        Q(x + w - 4, top - 1, 1, 1, "#ff8fb8");
+        // Face sits towards the front (right); eyes squeeze shut on a squash.
+        const ey = top + Math.floor(h / 2) - (h > 6 ? 1 : 0);
+        const e1 = x + w - 6;
+        const e2 = x + w - 3;
+        if (h < 6 || now(t, 3400, 140, 900)) {
+          Q(e1 - 1, ey, 2, 1, EYE);
+          Q(e2, ey, 2, 1, EYE);
+        } else {
+          Q(e1, ey, 1, 2, EYE);
+          Q(e2, ey, 1, 2, EYE);
+          Q(e1, ey, 1, 1, "#7a4a5a");
+          Q(e2, ey, 1, 1, "#7a4a5a");
+        }
+        Q(e1 + 1, ey + 2, 2, 1, "#c2566e");
+        if (h > 7) Q(e1 + 1, ey + 3, 2, 1, "#ff8fa8");
+        Q(e1 - 2, ey + 2, 2, 1, BLUSH);
+        Q(e2 + 1, ey + 2, 1, 1, BLUSH);
+      },
+    },
+    slime: {
+      animated: true,
+      // Jelly-green slime that wobbles, bounces, shines and has a bubble rising inside.
+      pet: (Q, t) => {
+        const [w0, h0, up] = hopShape(t, 2200, 500);
+        // A soft jiggle between hops: a little wider/shorter, then narrower/taller.
+        const jig = up || h0 !== 7 ? 0 : Math.round(Math.sin(t / 170));
+        const w = w0 + jig * 2;
+        const h = h0 - jig;
+        const bottom = 12 - up;
+        const lean = up ? 0 : Math.round(Math.sin(t / 240) * 0.8);
+        const x = 7 - w / 2;
+        const top = bottom - h + 1;
+        const rim = "#9cf08c";
+        const body = "#5fd36a";
+        const core = "#47bb58";
+        // Dome: narrow on top (leaning with the wobble), wide puddle base.
+        Q(x + 3 + lean, top, w - 6, 1, rim);
+        Q(x + 1 + lean, top + 1, w - 2, 1, body);
+        Q(x, top + 2, w, h - 2, body);
+        Q(x - 1, bottom, w + 2, 1, body);
+        Q(x + 2, top + 3, w - 4, h - 4, core);
+        Q(x + 1, bottom - 1, w - 2, 1, core);
+        Q(x - 1, bottom, 1, 1, rim);
+        Q(x + w, bottom, 1, 1, rim);
+        Q(x, top + 2, 1, h - 3, rim);
+        // Shine.
+        Q(x + 2 + lean, top + 1, 2, 1, "#f2ffe9");
+        Q(x + 1, top + 2, 1, 2, "#f2ffe9");
+        // A bubble drifting up through the jelly.
+        const ph = (t % 1700) / 1700;
+        const by = Math.round(bottom - 1 - ph * (h - 3));
+        Q(x + 3, by, 1, 1, ph > 0.85 ? "#9cf08c" : "#d8ffcc");
+        if (ph < 0.5) Q(x + 2, by + 2, 1, 1, "#8fe684");
+        // Face towards the front.
+        const ey = top + 2 + (h > 6 ? 1 : 0);
+        const e1 = x + w - 6;
+        const e2 = x + w - 3;
+        if (now(t, 3000, 140, 1500) || h < 6) {
+          Q(e1, ey + 1, 2, 1, "#1f4d2a");
+          Q(e2, ey + 1, 2, 1, "#1f4d2a");
+        } else {
+          Q(e1, ey, 1, 2, "#1f4d2a");
+          Q(e2, ey, 1, 2, "#1f4d2a");
+          Q(e1, ey, 1, 1, "#ffffff");
+          Q(e2, ey, 1, 1, "#ffffff");
+        }
+        Q(e1 + 1, ey + 2, 2, 1, "#2f7a3a");
+        Q(e2 + 1, ey + 2, 1, 1, "#ff9fb0");
+        // Little drip that stretches when it lands.
+        if (h === 5) Q(x - 2, bottom, 1, 1, body);
+      },
+    },
+    robobuddy: {
+      animated: true,
+      // Tiny hovering robot: face screen with changing expressions, antenna light and a jet.
+      pet: (Q0, t) => {
+        const Q = shift(Q0, 0, Math.sin(t / 260) > 0 ? 0 : 1);
+        const metal = "#e3e9f2";
+        const dark = "#9aa6b8";
+        const screen = "#1d2636";
+        const glow = "#5ff3ff";
+        // Antenna with a blinking light.
+        Q(5, 1, 1, 2, dark);
+        Q(5, 0, 1, 1, Math.floor(t / 500) % 2 ? "#ff5a7a" : "#ffd84d");
+        // Head.
+        Q(3, 3, 8, 1, metal);
+        Q(2, 4, 10, 6, metal);
+        Q(3, 10, 8, 1, dark);
+        Q(2, 9, 10, 1, "#c7d0dc");
+        Q(3, 4, 2, 1, "#ffffff");
+        // Ear bolts.
+        Q(1, 6, 1, 2, dark);
+        Q(12, 6, 1, 2, dark);
+        // Screen face (looking right).
+        Q(4, 5, 7, 4, screen);
+        const mood = Math.floor(t / 1300) % 6;
+        const blink = now(t, 2600, 140, 300);
+        if (blink) {
+          Q(6, 7, 1, 1, glow);
+          Q(9, 7, 1, 1, glow);
+        } else if (mood === 2) {
+          // Happy ^ ^ with a big smile.
+          Q(5, 7, 1, 1, glow);
+          Q(6, 6, 1, 1, glow);
+          Q(7, 7, 1, 1, glow);
+          Q(8, 7, 1, 1, glow);
+          Q(9, 6, 1, 1, glow);
+          Q(10, 7, 1, 1, glow);
+        } else if (mood === 4) {
+          // Love: two pink hearts.
+          Q(5, 6, 1, 1, "#ff6fae");
+          Q(7, 6, 1, 1, "#ff6fae");
+          Q(6, 7, 1, 1, "#ff6fae");
+          Q(8, 6, 1, 1, "#ff6fae");
+          Q(10, 6, 1, 1, "#ff6fae");
+          Q(9, 7, 1, 1, "#ff6fae");
+        } else {
+          const look = mood === 5 ? 0 : 1;
+          Q(5 + look, 6, 1, 2, glow);
+          Q(8 + look, 6, 1, 2, glow);
+        }
+        // Thruster and a flickering jet.
+        Q(5, 11, 4, 1, dark);
+        const f = Math.floor(t / 90) % 3;
+        Q(6, 12, 2, 1, f === 0 ? "#ffd84d" : "#7fe7ff");
+        if (f !== 2) Q0(6 + (f % 2), 13, 1, 1, "#ff9b3d");
       },
     },
   },

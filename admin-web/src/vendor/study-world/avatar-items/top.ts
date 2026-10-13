@@ -62,6 +62,10 @@ export const TOP: CategoryItems = {
     { id: "flannel", name: "Flannel", tier: "free" },
     { id: "jersey", name: "Jersey", tier: "coins", price: 60 },
     { id: "denim", name: "Denim jacket", tier: "coins", price: 80 },
+    { id: "puffer", name: "Streetwear Puffer", tier: "coins", price: 150 },
+    { id: "songket", name: "Baju Melayu Songket", tier: "coins", price: 180 },
+    { id: "kebaya", name: "Batik Kebaya", tier: "coins", price: 180 },
+    { id: "magicalgirl", name: "Magical Girl Dress", tier: "coins", price: 250 },
     { id: "labcoat", name: "Lab coat", tier: "plus" },
     { id: "leather", name: "Leather jacket", tier: "plus" },
     { id: "sailor", name: "Sailor top", tier: "plus" },
@@ -271,6 +275,270 @@ export const TOP: CategoryItems = {
         px(15, 19, copper);
         px(10, 21, copper);
         px(13, 21, copper);
+      },
+    },
+    puffer: {
+      draw: (p) => {
+        const { R, px, tc } = p;
+        const c = tc;
+        const cL = p.shade(c, 0.22);
+        const cS = p.shade(c, -0.2);
+        const cD = p.shade(c, -0.4);
+        const gloss = p.shade(c, 0.6);
+        const zip = "#c9d0d8";
+        // Puff rows: a lit top, the body, then a stitched seam (every 3 rows).
+        const quilt = (x: number, y: number) => {
+          const k = (y - 17) % 3;
+          const col = k === 0 ? cL : k === 1 ? c : cS;
+          return x === 16 || x >= 18 ? p.shade(col, -0.16) : col;
+        };
+        // Chunky sleeves, one pixel wider on the outside, pinched at the seams.
+        R(5, 16, 2, 6, quilt);
+        R(17, 16, 2, 6, quilt);
+        [17, 18, 20, 21].forEach((y) => {
+          px(4, y, quilt(4, y));
+          px(19, y, quilt(19, y));
+        });
+        R(5, 16, 2, 1, c);
+        R(17, 16, 2, 1, p.shade(c, -0.16));
+        // Ribbed cuffs and bare hands.
+        R(5, 22, 2, 1, cD);
+        R(17, 22, 2, 1, cD);
+        R(5, 23, 2, 1, p.sk);
+        R(17, 23, 2, 1, p.sk);
+        // Quilted body with a ribbed hem.
+        R(7, 16, 10, 7, quilt);
+        R(7, 23, 10, 1, cD);
+        // Funnel collar standing up around the neck.
+        R(6, 15, 12, 1, cS);
+        R(7, 16, 10, 1, cL);
+        R(16, 16, 1, 1, c);
+        // Glossy shine on the puffs.
+        px(8, 17, gloss);
+        px(9, 17, cL);
+        px(8, 20, gloss);
+        px(4, 17, gloss);
+        px(5, 20, gloss);
+        px(17, 17, cL);
+        if (p.back) {
+          px(11, 16, trimOn(c));
+          px(12, 16, trimOn(c));
+          px(14, 20, gloss);
+          return;
+        }
+        const m = mid(p);
+        // Zip up the middle with a pull tab, hand-pocket slits and a chest tag.
+        R(11 + m, 16, 1, 7, (_x, y) => (y % 2 ? zip : "#8d97a5"));
+        px(12 + m, 17, zip);
+        px(12 + m, 18, "#8d97a5");
+        px(9, 21, cD);
+        px(14 + m, 21, cD);
+        px(14 + m, 18, trimOn(c));
+      },
+    },
+    songket: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, tc, gold, t } = p;
+        const goldS = "#c99a1e";
+        const goldL = "#fff1b0";
+        const light = p.shade(tc, 0.16);
+        // Sampin cloth: deep maroon, or navy when the baju is red.
+        const base = isReddish(tc) ? "#1b3263" : "#6e1733";
+        const baseS = p.shade(base, -0.3);
+        const dot = p.shade(base, 0.35);
+        p.torso(tc);
+        p.armsLong(tc);
+        R(5, 17, 1, 4, light);
+        // Gold-edged cuffs.
+        R(5, 22, 2, 1, gold);
+        R(17, 22, 1, 1, gold);
+        R(18, 22, 1, 1, goldS);
+        // Stand collar (cekak musang) piped in gold.
+        R(9, 16, 6, 1, gold);
+        if (!p.back) {
+          const m = mid(p);
+          R(11, 16, 2, 1, p.skS);
+          px(10, 16, goldS);
+          px(13, 16, goldS);
+          // Front placket with three gold studs.
+          R(11 + m, 17, 2, 4, light);
+          R(11 + m, 17, 1, 4, p.shade(tc, 0.28));
+          [17, 19].forEach((y) => px(12 + m, y, gold));
+          px(12 + m, 18, goldS);
+        }
+        // A glint of light runs along the gold threads every few seconds.
+        const g = Math.floor(t / 70) % 48;
+        const shine = (x: number, y: number) => g < 16 && Math.abs(x - (5 + g) + (y - 21)) < 1;
+        // Songket weave: gold diamonds with a bright centre on the dark cloth.
+        const weave = (x: number, y: number) => {
+          let col = base;
+          const d = (x - 8 + 40) % 4;
+          if (y === 21 || y === 25) col = x % 2 ? gold : goldS;
+          else if (y === 23) col = d === 0 ? goldL : d === 2 ? base : gold;
+          else if (d === 0) col = gold;
+          else if (d === 2 && y === 22) col = dot;
+          if (shine(x, y) && (col === gold || col === goldS)) col = goldL;
+          return x === 16 ? p.shade(col, -0.22) : col;
+        };
+        R(7, 21, 10, 5, weave);
+        // The wrap's overlapping edge.
+        if (!p.back) R(13, 22, 1, 3, baseS);
+      },
+    },
+    kebaya: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, tc, t } = p;
+        const tS = p.shade(tc, -0.22);
+        const petal = lum(tc) > 170 ? p.shade(tc, -0.42) : p.shade(tc, 0.55);
+        const core = isReddish(tc) ? p.gold : "#d8455a";
+        const leaf = p.shade(tc, -0.35);
+        const lace = "#fbf3e2";
+        const laceS = "#e2d6bf";
+        // Batik flowers in a staggered 5×4 repeat, with a little leaf.
+        const batik = (x: number, y: number) => {
+          const row = Math.floor((y - 16) / 4);
+          const u = (x + row * 3 + 40) % 5;
+          const v = (y - 16) % 4;
+          if (v === 1 && u === 1) return core;
+          if ((v === 1 && (u === 0 || u === 2)) || ((v === 0 || v === 2) && u === 1)) return petal;
+          if (v === 3 && u === 3) return leaf;
+          return tc;
+        };
+        patternTorso(p, batik);
+        patternArms(p, batik);
+        // Fitted waist shading and lace cuffs.
+        R(7, 20, 1, 3, (x, y) => p.shade(batik(x, y), -0.12));
+        R(5, 22, 2, 1, (x) => (x % 2 ? lace : laceS));
+        R(17, 22, 2, 1, (x) => (x % 2 ? laceS : lace));
+        // Hip-length body ending in a scalloped lace hem.
+        R(7, 23, 10, 1, batik);
+        R(16, 23, 1, 1, tS);
+        R(7, 24, 10, 1, (x) => (x % 2 ? lace : laceS));
+        [7, 9, 11, 13, 15].forEach((x) => px(x + 1, 25, x === 15 ? laceS : lace));
+        if (p.back) {
+          R(9, 16, 6, 1, tS);
+          return;
+        }
+        const m = mid(p);
+        // V neckline edged in lace, front opening with kerongsang brooches.
+        R(10, 16, 4, 1, p.skS);
+        R(11 + m, 17, 1, 1, p.skS);
+        px(9, 16, lace);
+        px(14, 16, lace);
+        px(10 + m, 17, lace);
+        px(12 + m, 17, lace);
+        R(11 + m, 18, 1, 6, lace);
+        const twinkle = Math.floor(t / 110) % 30;
+        [18, 20, 22].forEach((y, i) => {
+          px(11 + m, y, twinkle === i * 2 ? "#ffffff" : p.gold);
+          px(12 + m, y, i === 1 ? "#d8455a" : "#c99a1e");
+        });
+      },
+    },
+    magicalgirl: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t, hsl } = p;
+        // Dress colour (pink if the chosen colour is too pale to show).
+        const main = lum(p.tc) > 215 ? "#f08aa8" : p.tc;
+        const mainS = p.shade(main, -0.22);
+        const mainL = p.shade(main, 0.35);
+        const W = "#fff6fb";
+        const WS = "#e9d6e4";
+        const rib = isReddish(main) && lum(main) < 160 ? "#ff8fc8" : "#e8245e";
+        const ribS = p.shade(rib, -0.28);
+        const ribL = p.shade(rib, 0.4);
+        // White bodice with shading on the far side.
+        p.torso(W);
+        R(16, 16, 1, 6, WS);
+        // Puffy sleeves, a white band, bare arms and long white gloves.
+        R(4, 16, 3, 3, main);
+        R(17, 16, 3, 3, main);
+        px(4, 16, mainL);
+        px(5, 16, mainL);
+        px(4, 17, mainL);
+        px(18, 16, mainL);
+        R(4, 18, 3, 1, mainS);
+        R(17, 18, 3, 1, p.shade(mainS, -0.12));
+        R(19, 16, 1, 2, mainS);
+        R(5, 19, 2, 1, rib);
+        R(17, 19, 2, 1, ribS);
+        R(5, 20, 2, 2, p.sk);
+        R(17, 20, 2, 2, p.sk);
+        R(18, 20, 1, 2, p.skS);
+        R(5, 22, 2, 2, W);
+        R(17, 22, 2, 2, W);
+        R(18, 22, 1, 2, WS);
+        // Waist band, then a flared skirt in the dress colour.
+        R(7, 21, 10, 1, mainS);
+        R(7, 22, 10, 2, main);
+        R(6, 24, 12, 1, main);
+        R(5, 25, 14, 1, W);
+        R(16, 22, 1, 2, mainS);
+        R(17, 24, 1, 1, mainS);
+        [9, 12, 15].forEach((x) => R(x, 22, 1, 3, mainS));
+        px(8, 22, mainL);
+        px(6, 24, mainL);
+        // The hem twinkles: glitter on the skirt, rainbow lights on the frill.
+        for (let x = 5; x < 19; x++) {
+          const s = Math.sin(t / 170 + x * 2.3);
+          if (s > 0.82) px(x, 25, hsl((x * 40 + t / 6) % 360, 90, 72));
+          else if (x % 2 === 0) px(x, 25, WS);
+          const g = Math.sin(t / 130 + x * 1.7 + 1);
+          if (x > 5 && x < 18 && g > 0.9) px(x, 24, "#ffffff");
+          if (x > 6 && x < 17 && Math.sin(t / 210 + x * 3.1) > 0.93) px(x, 23, "#fff6a8");
+        }
+        if (p.back) {
+          // A big bow at the back of the waist with long tails.
+          R(8, 20, 3, 2, rib);
+          R(13, 20, 3, 2, rib);
+          R(11, 20, 2, 2, ribS);
+          px(8, 20, ribL);
+          R(10, 22, 1, 3, rib);
+          R(13, 22, 1, 3, ribS);
+          R(8, 16, 8, 1, main);
+          return;
+        }
+        const m = mid(p);
+        // Neckline with a collar trim in the dress colour.
+        R(10, 16, 4, 1, p.skS);
+        R(8, 16, 2, 1, main);
+        R(14, 16, 2, 1, main);
+        // The big chest ribbon: two loops, a jewel knot and tails.
+        R(8 + m, 17, 2, 3, rib);
+        R(14 + m, 17, 2, 3, rib);
+        R(10 + m, 18, 4, 1, rib);
+        px(10 + m, 17, rib);
+        px(13 + m, 17, rib);
+        px(8 + m, 17, ribL);
+        px(9 + m, 18, ribS);
+        px(14 + m, 18, ribS);
+        R(8 + m, 19, 2, 1, ribS);
+        R(14 + m, 19, 2, 1, ribS);
+        // Jewel in the knot: a heart that catches the light.
+        const shine = Math.floor(t / 90) % 24 < 3;
+        R(11 + m, 18, 2, 1, "#ffd84d");
+        px(11 + m, 17, shine ? "#ffffff" : "#fff1a6");
+        px(12 + m, 17, "#ffd84d");
+        px(11 + m, 19, "#e0a92a");
+        px(12 + m, 19, "#e0a92a");
+        // Ribbon tails over the skirt.
+        R(10 + m, 20, 1, 2, rib);
+        R(13 + m, 20, 1, 2, ribS);
+        px(9 + m, 22, rib);
+        px(14 + m, 22, ribS);
+      },
+      fxFront: (_c, k) => {
+        if (k.seated) return;
+        // Tiny star sparkles drifting up off the hem.
+        k.particles(4, 1700, (i, ph) => {
+          const x = k.X([6, 15, 9, 17][i]) + (i % 2 ? 1 : -1) * ph * 2 * k.s;
+          const y = k.Y(25.5) - ph * 6 * k.s;
+          const col = ["#fff6a8", "#ffffff", "#ffc4e6", "#bfe6ff"][i];
+          k.star(Math.round(x), Math.round(y), k.s / 2, col, Math.sin(ph * Math.PI) * 0.9);
+        });
       },
     },
     labcoat: {

@@ -26,6 +26,8 @@ export const SHOES: CategoryItems = {
     { id: "hightops", name: "High-tops", tier: "free" },
     { id: "rainboots", name: "Rain boots", tier: "coins", price: 40 },
     { id: "platform", name: "Platforms", tier: "coins", price: 60 },
+    { id: "hoversneakers", name: "Hoverboard Sneakers", tier: "coins", price: 220 },
+    { id: "mechaboots", name: "Mecha Boots", tier: "coins", price: 300 },
     { id: "lightup", name: "Light-up sneakers", tier: "plus" },
     { id: "skates", name: "Roller skates", tier: "plus" },
     { id: "ballet", name: "Ballet flats", tier: "plus" },
@@ -107,6 +109,111 @@ export const SHOES: CategoryItems = {
         feetX(k).forEach((x, i) =>
           k.glow(x, k.Y(31), 4 * k.s, LIGHTS_RGB[(step + i * 2) % LIGHTS_RGB.length], 0.45),
         );
+      },
+    },
+    hoversneakers: {
+      animated: true,
+      shoe: (p, x, y) => {
+        const up = lifted(p, x);
+        const w = p.sc === WHITE ? "#cfc9bd" : WHITE;
+        // The glow breathes, and flares on the foot that is pushing off.
+        const pulse = (Math.sin(p.t / 260) + 1) / 2;
+        const glow = p.hsl(186, 100, 52 + pulse * 18 + (up ? 12 : 0));
+        const glowD = p.hsl(192, 100, 34 + pulse * 10 + (up ? 8 : 0));
+        // Chunky upper: laces, inner-side shadow, a heel tab light.
+        p.R(x, y - 1, 4, 2, p.sc);
+        p.R(isLeft(x) ? x + 3 : x, y - 1, 1, 2, p.scD);
+        p.px(x + 1, y - 1, w);
+        p.px(x + 2, y - 1, w);
+        p.px(x + 1, y, p.scL);
+        p.px(outer(x), y - 1, glow);
+        // Thick white sole with a light window, then the hover pad underneath.
+        p.R(x, y + 1, 4, 1, "#eef3f8");
+        p.px(outer(x), y + 1, "#c3cad3");
+        p.R(x + 1, y + 1, 2, 1, glow);
+        p.R(x, y + 2, 4, 1, glowD);
+        p.R(x + 1, y + 2, 2, 1, up || pulse > 0.6 ? "#e8ffff" : glow);
+      },
+      fxFront: (c, k) => {
+        if (k.seated) return;
+        const pulse = (Math.sin(k.t / 260) + 1) / 2;
+        feetX(k).forEach((x) => {
+          k.glow(x, k.Y(32), 5 * k.s, "79,230,255", 0.25 + pulse * 0.2);
+          // A thin beam of light under each pad.
+          c.globalAlpha = 0.25 + pulse * 0.25;
+          c.fillStyle = "#8ff6ff";
+          c.fillRect(x - k.s, k.Y(32), 2 * k.s, k.s / 2);
+        });
+        c.globalAlpha = 1;
+      },
+    },
+    mechaboots: {
+      animated: true,
+      shoe: (p, x, y) => {
+        const steel = "#9aa5b4";
+        const steelL = "#dce4ee";
+        const steelS = "#677283";
+        const dark = "#2f343d";
+        const sole = "#1f2228";
+        // Column i counted from the outer side of the boot (-1 sticks out).
+        const at = (i: number) => (isLeft(x) ? x + i : x + 3 - i);
+        // Both boots vent together for a moment every few seconds.
+        const vent = p.t % 3600 < 650;
+        const led = (Math.sin(p.t / 300) + 1) / 2;
+        // Knee rim, a shin band in the shoe colour, then the shin plate.
+        p.R(x, y - 3, 4, 1, steel);
+        p.px(at(1), y - 3, steelL);
+        p.px(at(3), y - 3, steelS);
+        p.R(x, y - 2, 4, 1, p.sc);
+        p.px(at(1), y - 2, p.scL);
+        p.px(at(3), y - 2, p.scD);
+        p.R(x, y - 1, 4, 1, steel);
+        p.px(at(3), y - 1, steelS);
+        // Two vent slits on the outer side; they glow hot when venting.
+        p.px(at(0), y - 2, vent ? "#fff1d0" : dark);
+        p.px(at(0), y - 1, vent ? "#ffb347" : "#4a2a26");
+        // A status light on the shin (a piston from behind).
+        p.px(at(2), y - 1, p.back ? steelS : p.hsl(186, 100, 52 + led * 30));
+        // Chunky foot armour, one pixel wider on the outside.
+        p.R(x, y, 4, 1, steel);
+        p.px(at(-1), y, steelS);
+        p.px(at(1), y, steelL);
+        p.px(at(3), y, steelS);
+        // Heavy tread sole.
+        p.R(x, y + 1, 4, 1, sole);
+        p.px(at(-1), y + 1, sole);
+        p.px(at(2), y + 1, dark);
+      },
+      fxFront: (c, k) => {
+        if (k.seated) return;
+        const s = k.s;
+        const ms = k.t % 3600;
+        // A soft glow round each shin light.
+        const led = (Math.sin(k.t / 300) + 1) / 2;
+        [k.X(9) + s / 2, k.X(14) + s / 2].forEach((x) =>
+          k.glow(x, k.Y(28.5), 2.5 * s, "79,230,255", 0.12 + led * 0.18),
+        );
+        if (ms >= 900) return;
+        // A little puff of steam out of the side vents, in chunky pixels.
+        const q = ms / 900;
+        (
+          [
+            [k.X(7), -1],
+            [k.X(17), 1],
+          ] as const
+        ).forEach(([vx, dir]) => {
+          for (let i = 0; i < 3; i++) {
+            const d = Math.min(1, q * 1.4 - i * 0.2);
+            if (d <= 0) continue;
+            const size = Math.round(1 + d * 1.5) * s;
+            const x = vx + dir * Math.round(d * 3 + i) * s - (dir < 0 ? size : 0);
+            const y = k.Y(27.5) - Math.round(d * 1.5 + i * 0.5) * s - size / 2;
+            c.globalAlpha = Math.max(0, 0.9 * (1 - q) - i * 0.15);
+            c.fillStyle = i === 0 ? "#ffffff" : "#e3e9f0";
+            c.fillRect(Math.round(x), Math.round(y), size, size);
+          }
+        });
+        c.globalAlpha = 1;
       },
     },
     skates: {

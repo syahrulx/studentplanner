@@ -33,6 +33,52 @@ const ring = (p: Painter, x: number, c: string, hi: string) => {
   dot(p, x + 1, 12, c);
 };
 
+/** Blend two #hex colours: k = 0 gives a, k = 1 gives b. */
+const mix = (a: string, b: string, k: number) => {
+  if (a[0] !== "#" || b[0] !== "#") return b;
+  const A = parseInt(a.slice(1), 16);
+  const B = parseInt(b.slice(1), 16);
+  const ch = (s: number) => Math.round(((A >> s) & 255) * (1 - k) + ((B >> s) & 255) * k);
+  return `#${((1 << 24) + (ch(16) << 16) + (ch(8) << 8) + ch(0)).toString(16).slice(1)}`;
+};
+
+/** A #hex colour from hue, saturation and lightness (0–360, 0–100, 0–100). */
+const hslHex = (h: number, s: number, l: number) => {
+  const a = (s / 100) * Math.min(l / 100, 1 - l / 100);
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12;
+    return Math.round(255 * (l / 100 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))));
+  };
+  return `#${((1 << 24) + (f(0) << 16) + (f(8) << 8) + f(4)).toString(16).slice(1)}`;
+};
+
+/**
+ * One fluttering scarf tail running left from (x0, y0): a wave travels down
+ * it and grows towards the tip. Two pixels thick, narrowing to one at the end.
+ */
+const scarfTail = (
+  p: Painter,
+  x0: number,
+  y0: number,
+  len: number,
+  droop: number,
+  phase: number,
+  col: { c: string; s: string; l: string },
+) => {
+  let prev = y0;
+  for (let i = 0; i < len; i++) {
+    const a = p.t / 140 - i * 0.75 + phase;
+    const y = y0 + Math.round(i * droop + Math.sin(a) * 1.4 * (i / len));
+    const x = x0 - i;
+    // Keep the tail joined up when the wave jumps more than a pixel.
+    for (let yy = Math.min(prev, y) + 1; yy < Math.max(prev, y); yy++) p.px(x, yy, col.c);
+    const tip = i === len - 1;
+    p.px(x, y, Math.cos(a) > 0.2 ? col.l : col.c);
+    if (!tip) p.px(x, y + 1, Math.cos(a) > 0.2 ? col.c : col.s);
+    prev = y;
+  }
+};
+
 export const FACE: CategoryItems = {
   items: [
     { id: "roundglasses", name: "Round glasses", tier: "free" },
@@ -46,6 +92,8 @@ export const FACE: CategoryItems = {
     { id: "catwhiskers", name: "Whiskers", tier: "plus" },
     { id: "holo", name: "Holo glasses", tier: "pro" },
     { id: "kitsunemask", name: "Fox mask", tier: "pro" },
+    { id: "ninjascarf", name: "Ninja Scarf", tier: "coins", price: 220 },
+    { id: "holomask", name: "Holo Mask", tier: "coins", price: 280 },
   ],
   draw: {
     // Round tortoiseshell frames with a little bridge.
@@ -305,6 +353,106 @@ export const FACE: CategoryItems = {
         p.px(ox + 2, oy + 9, Rd);
         p.px(ox + 2, oy + 10, G);
         p.px(ox + 2, oy + 11, Rk);
+      },
+    },
+
+    // Ninja scarf pulled up over the nose, knotted behind with long tails
+    // that stream out and flutter.
+    ninjascarf: {
+      animated: true,
+      draw: (p) => {
+        const f = p.fx;
+        const col = { c: "#c8283a", s: "#8e1a28", l: "#ec4a5a" };
+        const { c, s, l } = col;
+        // The wrap over the lower face (face shape: rows 12–15) and the neck.
+        p.R(5, 12, 14, 2, c);
+        p.R(6, 14, 12, 1, c);
+        p.R(7, 15, 10, 1, c);
+        p.R(6, 12, 12, 1, l);
+        p.R(7, 16, 10, 1, s);
+        p.R(8, 16, 8, 1, (x) => (x % 3 ? c : s));
+        // Over the nose, then soft folds falling from it.
+        p.R(11 + f, 12, 2, 1, "#ff7a86");
+        dot(p, 10 + f, 14, s);
+        dot(p, 9 + f, 15, s);
+        dot(p, 14 + f, 14, s);
+        dot(p, 15 + f, 15, s);
+        // Shade on the far side.
+        p.R(18, 12, 1, 2, s);
+        p.px(17, 14, s);
+        p.px(16, 15, s);
+        // Knot behind the neck and two tails trailing off it.
+        const kx = f ? 4 : 5;
+        const ky = f ? 13 : 14;
+        p.R(kx - 1, ky, 2, 2, c);
+        p.px(kx - 1, ky, l);
+        p.px(kx, ky + 1, s);
+        scarfTail(p, kx - 2, ky + 1, f ? 5 : 4, f ? 0.6 : 0.9, 1.9, col);
+        scarfTail(p, kx - 2, ky - 1, f ? 6 : 5, f ? 0.15 : 0.35, 0, col);
+      },
+    },
+
+    // See-through sci-fi visor across the eyes: a tint that drifts between
+    // cyan and violet, a scan line rolling down and a shimmer sweeping across.
+    holomask: {
+      animated: true,
+      draw: (p) => {
+        const f = p.fx;
+        const { t } = p;
+        const tint = hslHex(190 + 24 * Math.sin(t / 900), 95, 62);
+        const glass = mix(p.sk, tint, 0.62);
+        const rim = "#e6f6ff";
+        const rimS = "#93adc0";
+        const scan = 8 + (Math.floor(t / 85) % 7);
+        const pos = ((t / 24) % 56) - 10;
+        const a = 7 + f;
+        const b = 15 + f;
+        const eye = (x: number, y: number) => {
+          for (const e of [a, b]) {
+            if (x === e && y === 10) return mix("#ffffff", tint, 0.45);
+            if (x >= e && x <= e + 1 && y === 9) return mix(p.ink, tint, 0.5);
+            if (x >= e && x <= e + 1 && y >= 10 && y <= 11) return mix(p.ec, tint, 0.48);
+          }
+          return null;
+        };
+        const lens = (x: number, y: number) => {
+          let c = eye(x, y) ?? glass;
+          const d = Math.abs(x - f + (y - 8) * 0.7 - pos);
+          if (d < 1) c = mix(c, "#ffffff", 0.55);
+          else if (d < 2) c = mix(c, "#ffffff", 0.22);
+          if (y === scan) c = mix(c, "#f2ffff", 0.5);
+          dot(p, x, y, c);
+        };
+        // Lens: three rows across the eyes, a lower edge dipping round the nose.
+        const left = f ? 7 : 5;
+        for (let y = 9; y <= 11; y++) for (let x = left; x <= 18; x++) lens(x, y);
+        for (let x = left + 1; x <= 17 + (f ? 1 : 0); x++)
+          if (x < 11 + f || x > 12 + f) lens(x, 12);
+        // Frame along the top, emitters at the temples that pulse.
+        p.R(left, 8, 19 - left, 1, rim);
+        p.px(18, 8, rimS);
+        const pulse = Math.sin(t / 240) > 0 ? "#ffffff" : tint;
+        if (f) {
+          p.R(5, 8, 2, 4, rimS);
+          p.px(5, 8, rim);
+          p.px(6, 9, pulse);
+          p.px(6, 10, tint);
+        } else {
+          p.R(4, 8, 1, 4, rimS);
+          p.R(19, 8, 1, 4, rimS);
+          p.px(4, 9, pulse);
+          p.px(19, 9, pulse);
+        }
+        // A HUD bracket locks onto the far eye now and then.
+        if (t % 2600 < 700 && (t % 2600 < 350 || Math.floor(t / 90) % 2)) {
+          const hud = "#d4feff";
+          [
+            [b - 1, 9],
+            [b + 2, 9],
+            [b - 1, 11],
+            [b + 2, 11],
+          ].forEach(([x, y]) => dot(p, x, y, hud));
+        }
       },
     },
   },
