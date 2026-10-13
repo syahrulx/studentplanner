@@ -573,6 +573,7 @@ export function ConfessionsRoute() {
                             aria-label={`Delete ${w.pattern} for good`}
                             disabled={busy}
                             onClick={async () => {
+                              if (!window.confirm(`Delete the blocked word "${w.pattern}" for good? Confessions using it will no longer be blocked, and you would need to add it again by hand.`)) return;
                               setBusy(true);
                               try { await deleteConfessionBlockedWord(w.id); await loadWords(); }
                               catch (e) { setError(e instanceof Error ? e.message : 'Could not delete that word.'); }

@@ -277,12 +277,19 @@ function CampusEditor({
         <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Puncak Alam" />
       </Field>
       <Field label="University">
-        <Select value={universityId} onChange={(e) => setUniversityId(e.target.value)}>
+        {/* Saving an existing campus only updates its name (updateCampus), so the
+            university can't be changed here; it used to look changeable but wasn't. */}
+        <Select value={universityId} disabled={Boolean(initial.id)} onChange={(e) => setUniversityId(e.target.value)}>
           <option value="" disabled>Select university</option>
           {universities.map(u => (
             <option key={u.id} value={u.id}>{u.id.toUpperCase()} - {u.name}</option>
           ))}
         </Select>
+        {initial.id ? (
+          <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+            A campus stays with its university. To put it under another one, add it there as a new campus.
+          </p>
+        ) : null}
       </Field>
     </SidePanel>
   );

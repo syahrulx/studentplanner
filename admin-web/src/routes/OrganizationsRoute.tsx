@@ -117,7 +117,13 @@ export function OrganizationsRoute() {
                         onClick={async () => {
                           const ok = confirm(`Delete ${u.name}?`);
                           if (!ok) return;
-                          await deleteOrganization(u.id);
+                          setErr('');
+                          try {
+                            await deleteOrganization(u.id);
+                          } catch (e) {
+                            setErr(`Could not delete ${u.name}: ${e instanceof Error ? e.message : 'unknown error'}. Nothing was removed.`);
+                            return;
+                          }
                           if (editing?.id === u.id) setEditing(null);
                           await refresh();
                         }}
