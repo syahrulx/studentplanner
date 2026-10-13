@@ -341,85 +341,90 @@ function CrosswordSection() {
     <div className="space-y-5">
       {loadError && <Notice tone="danger">{loadError}</Notice>}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
-        <MotionPanel>
-          <Panel title="Crossword rules">
-            <RuleList
-              items={[
-                ['Puzzles', combined.length],
-                ['Per day', '2 (in order)'],
-                ['Base points', '100'],
-                ['Hidden bonus', '+25 if guessed'],
-                ['Streak bonus', '+5/day (max +35)'],
-                ['Hints', '2 per puzzle'],
-                ['Grid', 'Admin-defined (5–15)'],
-                ['Ranking', 'Total points'],
-              ]}
-            />
-            <Footnote>
-              Hidden bonus word: players tap “Find the hidden word”, read the hint and type a guess. It never appears on the board.
-              A correct guess adds +25 points; otherwise the puzzle still completes normally.
-            </Footnote>
-          </Panel>
-        </MotionPanel>
-        <MotionPanel>
-          <GameLeaderboard unit="pts" load={loadCrosswordLb} />
-        </MotionPanel>
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start">
-        {/* Puzzle list */}
-        <MotionPanel>
-          <Panel
-            title="Levels"
-            actions={<Button type="button" size="sm" onClick={openNewEditor}>+ Add level</Button>}
-            padded={false}
-          >
-            <div className="max-h-[70vh] overflow-y-auto p-2">
-              {filteredGroups.map((group) => (
-                <div key={group.label}>
-                  <div className={'sticky top-0 z-10 bg-white px-3 pb-1.5 pt-3 dark:bg-slate-900 ' + SUB_LABEL}>
-                    {group.label} · {group.puzzles.length}
-                  </div>
-                  {group.puzzles.map((p) => {
-                    const isAdmin = isAdminPuzzle(p.id);
-                    return (
-                      <LevelButton
-                        key={p.id}
-                        active={selected?.id === p.id}
-                        onClick={() => setSelectedId(p.id)}
-                        label={
-                          <>
-                            #{p.id} · {p.title}
-                            {isAdmin && <span className="ml-1.5 opacity-60" title="Admin-created, can be edited" aria-label="Admin-created">★</span>}
-                          </>
-                        }
-                        meta={`${p.clues.length}w`}
-                      />
-                    );
-                  })}
+      {/* Rules and levels on the left; the top-10 list runs down the right
+          so it never leaves a gap under the rules. */}
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
+        <div className="min-w-0 space-y-5">
+            <MotionPanel>
+              <Panel title="Crossword rules">
+                <RuleList
+                  items={[
+                    ['Puzzles', combined.length],
+                    ['Per day', '2 (in order)'],
+                    ['Base points', '100'],
+                    ['Hidden bonus', '+25 if guessed'],
+                    ['Streak bonus', '+5/day (max +35)'],
+                    ['Hints', '2 per puzzle'],
+                    ['Grid', 'Admin-defined (5–15)'],
+                    ['Ranking', 'Total points'],
+                  ]}
+                />
+                <Footnote>
+                  Hidden bonus word: players tap “Find the hidden word”, read the hint and type a guess. It never appears on the board.
+                  A correct guess adds +25 points; otherwise the puzzle still completes normally.
+                </Footnote>
+              </Panel>
+            </MotionPanel>
+          <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start">
+            {/* Puzzle list */}
+            <MotionPanel>
+              <Panel
+                title="Levels"
+                actions={<button type="button" onClick={openNewEditor} className="inline-flex h-8 items-center rounded-xl bg-brand-600 px-3 text-xs font-black text-white hover:bg-brand-700">+ Add level</button>}
+                padded={false}
+              >
+                <div className="max-h-[70vh] overflow-y-auto p-2">
+                  {filteredGroups.map((group) => (
+                    <div key={group.label}>
+                      <div className={'sticky top-0 z-10 bg-white px-3 pb-1.5 pt-3 dark:bg-slate-900 ' + SUB_LABEL}>
+                        {group.label} · {group.puzzles.length}
+                      </div>
+                      {group.puzzles.map((p) => {
+                        const isAdmin = isAdminPuzzle(p.id);
+                        return (
+                          <LevelButton
+                            key={p.id}
+                            active={selected?.id === p.id}
+                            onClick={() => setSelectedId(p.id)}
+                            label={
+                              <>
+                                #{p.id} · {p.title}
+                                {isAdmin && <span className="ml-1.5 opacity-60" title="Admin-created, can be edited" aria-label="Admin-created">★</span>}
+                              </>
+                            }
+                            meta={`${p.clues.length}w`}
+                          />
+                        );
+                      })}
+                    </div>
+                  ))}
+                  {loadingAdmin && (
+                    <div className="px-3 py-3 text-center text-xs font-semibold text-slate-400 dark:text-slate-500">Loading admin levels…</div>
+                  )}
+                  {filteredCount === 0 && !loadingAdmin && (
+                    <div className="px-3 py-6 text-center text-sm font-semibold text-slate-400 dark:text-slate-500">No puzzles match your search.</div>
+                  )}
                 </div>
-              ))}
-              {loadingAdmin && (
-                <div className="px-3 py-3 text-center text-xs font-semibold text-slate-400 dark:text-slate-500">Loading admin levels…</div>
-              )}
-              {filteredCount === 0 && !loadingAdmin && (
-                <div className="px-3 py-6 text-center text-sm font-semibold text-slate-400 dark:text-slate-500">No puzzles match your search.</div>
-              )}
-            </div>
-          </Panel>
-        </MotionPanel>
+              </Panel>
+            </MotionPanel>
 
-        {/* Detail: grid + answers */}
-        <MotionPanel>
-          {selected && (
-            <PuzzleDetail
-              puzzle={selected}
-              isAdminPuzzle={isAdminPuzzle(selected.id)}
-              onEdit={() => openEditEditor(selected.id)}
-            />
-          )}
-        </MotionPanel>
+            {/* Detail: grid + answers */}
+            <MotionPanel>
+              {selected && (
+                <PuzzleDetail
+                  puzzle={selected}
+                  isAdminPuzzle={isAdminPuzzle(selected.id)}
+                  onEdit={() => openEditEditor(selected.id)}
+                />
+              )}
+            </MotionPanel>
+          </div>
+        </div>
+        <div className="xl:sticky xl:top-4">
+            <MotionPanel>
+              <GameLeaderboard unit="pts" load={loadCrosswordLb} />
+            </MotionPanel>
+        </div>
       </div>
 
       {editorOpen && (
@@ -549,53 +554,58 @@ function WordGameSection() {
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
-        <MotionPanel>
-          <Panel title="Word game (Connections)" description="Group 16 words into 4 hidden categories per level.">
-            <RuleList
-              items={[
-                ['Levels', CONNECTIONS_PUZZLES.length],
-                ['Perfect score', '250 + time bonus'],
-                ['Mistake penalty', '-50 each'],
-                ['Ranking', 'Total score'],
-              ]}
-            />
-            <Footnote>
-              Scores sync to <code className="font-mono">word_game_scores</code> (one row per level). Difficulty rises by level:
-              1–20 easy, 21–40 medium, 41–60 hard, 61–80 very hard, 81–100 expert.
-            </Footnote>
-          </Panel>
-        </MotionPanel>
-        <MotionPanel>
-          <GameLeaderboard unit="pts" load={loadWordLb} />
-        </MotionPanel>
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
-        {/* Level list */}
-        <MotionPanel>
-          <Panel title="Levels" padded={false}>
-            <div className="max-h-[70vh] overflow-y-auto p-2">
-              {filtered.map((p) => (
-                <LevelButton
-                  key={p.id}
-                  active={selected?.id === p.id}
-                  onClick={() => setSelectedId(p.id)}
-                  label={`Level #${p.id}`}
-                  meta={levelTier(p.id)}
+      {/* Rules and levels on the left; the top-10 list runs down the right
+          so it never leaves a gap under the rules. */}
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
+        <div className="min-w-0 space-y-5">
+            <MotionPanel>
+              <Panel title="Word game (Connections)" description="Group 16 words into 4 hidden categories per level.">
+                <RuleList
+                  items={[
+                    ['Levels', CONNECTIONS_PUZZLES.length],
+                    ['Perfect score', '250 + time bonus'],
+                    ['Mistake penalty', '-50 each'],
+                    ['Ranking', 'Total score'],
+                  ]}
                 />
-              ))}
-              {filtered.length === 0 && (
-                <div className="px-3 py-6 text-center text-sm font-semibold text-slate-400 dark:text-slate-500">No levels match your search.</div>
-              )}
-            </div>
-          </Panel>
-        </MotionPanel>
+                <Footnote>
+                  Scores sync to <code className="font-mono">word_game_scores</code> (one row per level). Difficulty rises by level:
+                  1–20 easy, 21–40 medium, 41–60 hard, 61–80 very hard, 81–100 expert.
+                </Footnote>
+              </Panel>
+            </MotionPanel>
+          <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
+            {/* Level list */}
+            <MotionPanel>
+              <Panel title="Levels" padded={false}>
+                <div className="max-h-[70vh] overflow-y-auto p-2">
+                  {filtered.map((p) => (
+                    <LevelButton
+                      key={p.id}
+                      active={selected?.id === p.id}
+                      onClick={() => setSelectedId(p.id)}
+                      label={`Level #${p.id}`}
+                      meta={levelTier(p.id)}
+                    />
+                  ))}
+                  {filtered.length === 0 && (
+                    <div className="px-3 py-6 text-center text-sm font-semibold text-slate-400 dark:text-slate-500">No levels match your search.</div>
+                  )}
+                </div>
+              </Panel>
+            </MotionPanel>
 
-        {/* Answers */}
-        <MotionPanel>
-          {selected && <WordPuzzleDetail puzzle={selected} />}
-        </MotionPanel>
+            {/* Answers */}
+            <MotionPanel>
+              {selected && <WordPuzzleDetail puzzle={selected} />}
+            </MotionPanel>
+          </div>
+        </div>
+        <div className="xl:sticky xl:top-4">
+            <MotionPanel>
+              <GameLeaderboard unit="pts" load={loadWordLb} />
+            </MotionPanel>
+        </div>
       </div>
     </div>
   );
