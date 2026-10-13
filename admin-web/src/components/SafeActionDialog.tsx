@@ -87,10 +87,16 @@ function SafeActionDialog({ request, onClose }: { request: SafeActionRequest; on
           </div>
 
           {request.requireReason ? (
-            <label className="block"><span className="text-xs font-black uppercase text-slate-600 dark:text-slate-300">Reason (required)</span><textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} maxLength={500} placeholder="Explain why this action is necessary…" className="mt-1 w-full rounded-2xl border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white" /></label>
+            <label className="block"><span className="text-xs font-black uppercase text-slate-600 dark:text-slate-300">Reason (required, at least 5 characters)</span><textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} maxLength={500} placeholder="Explain why this action is necessary…" className="mt-1 w-full rounded-2xl border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white" /></label>
           ) : null}
 
-          <label className="block"><span className="text-xs font-black uppercase text-slate-600 dark:text-slate-300">Type {expected} to confirm</span><input value={typed} onChange={(event) => setTyped(event.target.value)} autoCapitalize="characters" className="mt-1 h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 font-mono text-sm font-black text-slate-900 outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white" /></label>
+          <label className="block"><span className="text-xs font-black text-slate-600 dark:text-slate-300">To confirm, type exactly: <code className="rounded-md bg-slate-200 px-1.5 py-0.5 font-mono text-slate-900 dark:bg-slate-800 dark:text-white">{expected}</code></span><input value={typed} onChange={(event) => setTyped(event.target.value)} autoCapitalize="characters" placeholder={expected} className="mt-1 h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 font-mono text-sm font-black text-slate-900 outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white" /></label>
+          {!result && !busy && !canConfirm ? (
+            <div className="text-xs font-bold text-amber-700 dark:text-amber-300">
+              {request.requireReason && reason.trim().length < 5 ? 'Write a reason (at least 5 characters). ' : ''}
+              {typed.trim() !== expected ? `Type ${expected} exactly (nothing more).` : ''}
+            </div>
+          ) : null}
 
           {busy ? <div className="rounded-2xl border border-brand-200 bg-brand-50 p-3 text-sm font-bold text-brand-800 dark:border-brand-800 dark:bg-brand-900/40 dark:text-brand-100">Operation in progress… Do not close this window.</div> : null}
           {error ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-100">{error}</div> : null}
