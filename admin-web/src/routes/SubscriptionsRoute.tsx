@@ -13,6 +13,7 @@ import { Label, TextInput } from '../ui/Input';
 import { Chip, EmptyState, Notice, PageHeader, Panel, Pill, PillGroup, SkeletonRows } from '../ui/page';
 import { accountStatusTone, capitalize } from '../components/people/format';
 import { PlanFeaturesPanel } from '../components/people/PlanFeaturesPanel';
+import { useSafeActionDialog } from '../components/SafeActionDialog';
 
 export function SubscriptionsRoute() {
   const { searchQuery } = useAdminSearch();
@@ -66,23 +67,52 @@ export function SubscriptionsRoute() {
     );
   }, [items, searchQuery]);
 
-  const onPlanChange = async (userId: string, next: SubscriptionPlan) => {
-    setSavingId(userId);
-    setErr('');
-    try {
-      await setUserSubscriptionPlan(userId, next);
-      await refresh();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to update plan');
-    } finally {
-      setSavingId(null);
-    }
+  const { requestSafeAction, safeActionDialog } = useSafeActionDialog();
+
+  // Same confirmation as the Users page: a reason (saved in the audit log by
+  // the admin_users function) and typing SET FREE / SET PLUS / SET PRO. The
+  // dropdown is tied to the saved plan, so cancelling leaves it unchanged.
+  const PLAN_CONFIRM: Record<SubscriptionPlan, { title: string; operation: string; text: string; warning?: string }> = {
+    free: {
+      title: 'Change subscription plan',
+      operation: 'Set Free',
+      text: 'SET FREE',
+      warning: 'Only the explicit admin grant is removed. Valid RevenueCat or Curlec access remains authoritative.',
+    },
+    plus: { title: 'Grant Plus access', operation: 'Set Plus', text: 'SET PLUS' },
+    pro: { title: 'Grant Pro access', operation: 'Set Pro', text: 'SET PRO' },
+  };
+
+  const onPlanChange = (user: { id: string; name?: string | null; subscription_plan: SubscriptionPlan }, next: SubscriptionPlan) => {
+    if (next === user.subscription_plan) return;
+    const c = PLAN_CONFIRM[next];
+    requestSafeAction({
+      title: c.title,
+      operation: c.operation,
+      affectedCount: 1,
+      subject: `${user.name || user.id} → ${capitalize(next)}`,
+      confirmationText: c.text,
+      requireReason: true,
+      warning: c.warning,
+      onConfirm: async (reason) => {
+        setSavingId(user.id);
+        setErr('');
+        try {
+          await setUserSubscriptionPlan(user.id, next, reason);
+          await refresh();
+          return { affected: 1 };
+        } finally {
+          setSavingId(null);
+        }
+      },
+    });
   };
 
   const searching = searchQuery.trim().length > 0;
 
   return (
     <div className="space-y-6">
+      {safeActionDialog}
       <PageHeader
         title="Subscriptions"
         description="See each student's plan and change it. Everyone is on Free until you upgrade them."
@@ -93,7 +123,7 @@ export function SubscriptionsRoute() {
       <Panel
         padded={false}
         title="Plan per student"
-        description={`Showing ${rows.length.toLocaleString()} of ${count.toLocaleString()}${searching ? ', also filtered by the top search bar' : ''}. A new plan is saved as soon as you pick it.`}
+        description={`Showing ${rows.length.toLocaleString()} of ${count.toLocaleString()}${searching ? ', also filtered by the top search bar' : ''}. Picking a new plan asks you to confirm and give a reason first.`}
       >
         <div className="space-y-4 border-b border-slate-100 p-5 dark:border-slate-800">
           <PillGroup label="Plan">
@@ -149,7 +179,7 @@ export function SubscriptionsRoute() {
                   <select
                     value={u.subscription_plan}
                     disabled={savingId === u.id}
-                    onChange={(e) => void onPlanChange(u.id, e.target.value as SubscriptionPlan)}
+                    onChange={(e) => onPlanChange(u, e.target.value as SubscriptionPlan)}
                     aria-label={`Plan for ${u.name || u.student_id || u.id}`}
                     className="h-9 w-32 rounded-xl border border-slate-200 bg-white px-2 text-xs font-black uppercase tracking-wide text-slate-900 outline-none focus:border-brand-500 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   >
