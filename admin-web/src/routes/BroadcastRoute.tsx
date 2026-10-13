@@ -37,6 +37,36 @@ type FormState = {
 
 const USER_PAGE_SIZE = 25;
 
+/** Plain words for the push service's error codes. */
+const TICKET_REASON: Record<string, string> = {
+  DeviceNotRegistered: 'app removed or notifications turned off on the phone',
+  InvalidCredentials: 'push keys for iOS/Android are wrong or expired (fix in Expo)',
+  MessageTooBig: 'message too long',
+  MessageRateExceeded: 'sent too fast to one phone',
+  MismatchSenderId: 'Android push key mismatch (fix in Expo/Firebase)',
+};
+
+/** Counts the push service's per-phone answers in a send result. */
+function summarizeTickets(results: unknown): { ok: number; failed: number; reasons: Record<string, number> } | null {
+  if (!Array.isArray(results)) return null;
+  let ok = 0;
+  let failed = 0;
+  const reasons: Record<string, number> = {};
+  results.forEach((batch) => {
+    const tickets = (batch as { data?: unknown })?.data;
+    if (!Array.isArray(tickets)) return;
+    tickets.forEach((t: { status?: string; message?: string; details?: { error?: string } }) => {
+      if (t?.status === 'ok') ok += 1;
+      else {
+        failed += 1;
+        const key = t?.details?.error || t?.message || 'unknown';
+        reasons[key] = (reasons[key] ?? 0) + 1;
+      }
+    });
+  });
+  return ok + failed > 0 ? { ok, failed, reasons } : null;
+}
+
 /** Case-insensitive "contains", ignoring extra spaces, for the type-to-search boxes. */
 const norm = (v: string) => v.toLowerCase().replace(/\s+/g, ' ').trim();
 const matches = (text: string, query: string) => !query.trim() || norm(text).includes(norm(query));
@@ -816,16 +846,29 @@ export function BroadcastRoute() {
                 {sendErr}
               </div>
             ) : null}
-            {sendResult ? (
-              <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-100">
-                {typeof sendResult.in_app_recipients === 'number'
-                  ? `Delivered to ${sendResult.in_app_recipients} inbox(es). `
-                  : ''}
-                Sent {sendResult.sent ?? 0} push(es)
-                {typeof sendResult.batches === 'number' ? ` in ${sendResult.batches} batch(es)` : ''}
-                {sendResult.reason ? ` — ${sendResult.reason}` : ''}.
-              </div>
-            ) : null}
+            {sendResult ? (() => {
+              const tickets = summarizeTickets(sendResult.results);
+              const reason = sendResult.reason === 'no_push_recipients' || sendResult.reason === 'no_eligible_tokens'
+                ? 'No pop-ups: nobody in this audience has push notifications allowed for Rencana on their phone (or they turned this kind off).'
+                : sendResult.reason === 'no_recipients' ? 'Nobody matched this audience.' : '';
+              return (
+                <div className="mt-4 space-y-1 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-100">
+                  {typeof sendResult.in_app_recipients === 'number' ? <div>In-app inbox: {sendResult.in_app_recipients.toLocaleString()} student(s).</div> : null}
+                  <div>
+                    Phone pop-ups: tried {(sendResult.sent ?? 0).toLocaleString()}
+                    {typeof sendResult.push_recipients === 'number' ? ` of ${sendResult.push_recipients.toLocaleString()} with push on` : ''}
+                    {tickets ? ` · accepted ${tickets.ok.toLocaleString()}${tickets.failed ? ` · failed ${tickets.failed.toLocaleString()}` : ''}` : ''}.
+                  </div>
+                  {tickets && tickets.failed ? (
+                    <div className="text-rose-700 dark:text-rose-300">
+                      Why they failed: {Object.entries(tickets.reasons).map(([k, n]) => `${TICKET_REASON[k] ?? k} (${n})`).join(', ')}
+                    </div>
+                  ) : null}
+                  {reason ? <div className="text-amber-700 dark:text-amber-300">{reason}</div> : null}
+                  <div className="font-normal opacity-80">“Accepted” means Apple/Google took it. A phone still won’t show it if Rencana notifications are off in the phone’s settings.</div>
+                </div>
+              );
+            })() : null}
           </div>
         </MotionPanel>
       </MotionSection>
