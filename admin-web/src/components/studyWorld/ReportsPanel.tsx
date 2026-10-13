@@ -102,7 +102,7 @@ function ReportDialog({ report, onClose, onDone }: { report: WorldReport; onClos
     if (!banUser || typed.trim() !== 'BAN') return;
     setBusy(true);
     try {
-      const reason = note.trim() || `RenCity report: ${REPORT_REASON_LABEL[report.reason] ?? report.reason}`;
+      const reason = note.trim() || `RenTaman report: ${REPORT_REASON_LABEL[report.reason] ?? report.reason}`;
       await banWorldPlayer(banUser, reason, banDays === 'forever' ? null : Number(banDays));
       await updateWorldReport(report.id, 'actioned', note.trim() || 'Banned');
       await onDone();

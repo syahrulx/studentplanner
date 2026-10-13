@@ -10,7 +10,7 @@ import type { ItemTier, Plan } from "./avatar";
  */
 
 export type ShowoffKind = "frame" | "bubble" | "entrance";
-/** "admin": special items only RenCity admins can use (never sold). */
+/** "admin": special items only RenTaman admins can use (never sold). */
 export type ShowoffTier = ItemTier | "admin";
 export type ShowoffItem = { id: string; name: string; tier: ShowoffTier; price?: number };
 

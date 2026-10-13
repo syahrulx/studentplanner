@@ -23,10 +23,10 @@ import { ConfessionsRoute } from './routes/ConfessionsRoute';
 import { StudyWorldRoute } from './routes/StudyWorldRoute';
 import { AuthProvider } from './state/AuthProvider';
 
-/** Study World was renamed RenCity; old links (with their ?s= / ?tab=) still work. */
-function ToRenCity() {
+/** Study World became RenCity, then RenTaman; old links (with their ?s= / ?tab=) still work. */
+function ToRenTaman() {
   const { search } = useLocation();
-  return <Navigate to={{ pathname: '/rencity', search }} replace />;
+  return <Navigate to={{ pathname: '/rentaman', search }} replace />;
 }
 
 export default function App() {
@@ -55,8 +55,9 @@ export default function App() {
             <Route path="authorities" element={<Navigate to="/institutions?tab=authorities" replace />} />
             <Route path="services" element={<ServicesRoute />} />
             <Route path="confessions" element={<ConfessionsRoute />} />
-            <Route path="rencity" element={<StudyWorldRoute />} />
-            <Route path="study-world" element={<ToRenCity />} />
+            <Route path="rentaman" element={<StudyWorldRoute />} />
+            <Route path="rencity" element={<ToRenTaman />} />
+            <Route path="study-world" element={<ToRenTaman />} />
             <Route path="campuses" element={<Navigate to="/institutions?tab=campuses" replace />} />
             <Route path="organizations" element={<Navigate to="/institutions?tab=organisations" replace />} />
             <Route path="communications" element={<CommunicationsRoute />} />

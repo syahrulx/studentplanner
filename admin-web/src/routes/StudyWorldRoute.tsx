@@ -130,7 +130,7 @@ export function StudyWorldRoute() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">RenCity</h1>
+          <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">RenTaman</h1>
           <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">{section.hint}</p>
         </div>
         <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
@@ -139,7 +139,7 @@ export function StudyWorldRoute() {
         </span>
       </div>
 
-      <nav className="grid grid-cols-4 gap-2 sm:grid-cols-7" aria-label="RenCity sections">
+      <nav className="grid grid-cols-4 gap-2 sm:grid-cols-7" aria-label="RenTaman sections">
         {sections.map((s) => {
           const active = s.id === section.id;
           return (

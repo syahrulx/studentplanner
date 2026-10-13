@@ -47,12 +47,12 @@ function useBanFlow(onDone: () => Promise<void>) {
 
   const unban = (userId: string, label: string) =>
     requestSafeAction({
-      title: `Lift RenCity ban: ${label}`,
+      title: `Lift RenTaman ban: ${label}`,
       operation: 'Lift ban',
       affectedCount: 1,
       subject: `${label} (${userId})`,
       requireReason: true,
-      warning: 'They can enter RenCity again straight away.',
+      warning: 'They can enter RenTaman again straight away.',
       onConfirm: async (reason) => {
         const n = await unbanWorldPlayer(userId, reason);
         await onDone();
@@ -94,7 +94,7 @@ function BanDialog({ target, onClose, onBanned }: { target: { userId: string; la
 
   return (
     <Modal
-      title={`Ban from RenCity: ${target.label}`}
+      title={`Ban from RenTaman: ${target.label}`}
       onClose={onClose}
       footer={<>
         <button type="button" className={BTN_LIGHT} onClick={onClose} disabled={busy}>Cancel</button>
@@ -102,7 +102,7 @@ function BanDialog({ target, onClose, onBanned }: { target: { userId: string; la
       </>}
     >
       <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">
-        This only blocks RenCity. Their Rencana account, planner and data are not touched. They see the reason when they try to enter.
+        This only blocks RenTaman. Their Rencana account, planner and data are not touched. They see the reason when they try to enter.
       </p>
       <Field label="How long">
         <select value={days} onChange={(e) => setDays(e.target.value)} className={FIELD}>
@@ -171,7 +171,7 @@ function FixAvatarDialog({ player, onClose, onDone }: { player: FixTarget; onClo
         <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} className={FIELD} />
       </Field>
       <p className="text-xs font-semibold text-slate-500">
-        The old look and nickname are saved in the activity log. The player’s browser picks up the change next time they open RenCity. Items they unlocked are not affected.
+        The old look and nickname are saved in the activity log. The player’s browser picks up the change next time they open RenTaman. Items they unlocked are not affected.
       </p>
       <ErrorBox message={error} />
     </Modal>
@@ -441,7 +441,7 @@ export function PlayerDrawer({ userId, onClose, onChanged }: { userId: string; o
             aria-label={`Player ${label}`}
           >
             <div className="flex items-start justify-between gap-3">
-              <div className="text-xs font-black uppercase tracking-wider text-slate-400">RenCity player</div>
+              <div className="text-xs font-black uppercase tracking-wider text-slate-400">RenTaman player</div>
               <button type="button" onClick={onClose} className="text-sm font-black text-slate-400 hover:text-slate-700" aria-label="Close">✕</button>
             </div>
             <ErrorBox message={error} />
@@ -470,7 +470,7 @@ export function PlayerDrawer({ userId, onClose, onChanged }: { userId: string; o
                   {world ? <button type="button" className={BTN_LIGHT} onClick={() => setFixing(true)}>Fix avatar</button> : null}
                   {activeBan
                     ? <button type="button" className={BTN_LIGHT} onClick={() => unban(userId, label)}>Lift ban</button>
-                    : <button type="button" className={BTN_DANGER} onClick={() => ban(userId, label)}>Ban from RenCity</button>}
+                    : <button type="button" className={BTN_DANGER} onClick={() => ban(userId, label)}>Ban from RenTaman</button>}
                 </div>
 
                 {world ? (

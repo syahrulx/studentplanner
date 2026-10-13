@@ -18,7 +18,7 @@ export type ItemStatus = 'available' | 'coming_soon' | 'hidden';
 /**
  * free = everyone; coins = bought with coins; plus / pro = free with a Rencana
  * Plus / Pro membership (Pro also gets every Plus item); premium = old value,
- * treated like plus by the website; admin = only RenCity admins can use it
+ * treated like plus by the website; admin = only RenTaman admins can use it
  * (never sold).
  */
 export type ItemTier = 'free' | 'coins' | 'plus' | 'pro' | 'premium' | 'admin';
@@ -214,7 +214,7 @@ function explain(error: { code?: string; message?: string } | null): Error | nul
     /does not exist|could not find the (table|function)/i.test(msg)
   ) {
     return new Error(
-      'RenCity (RenCity) tables are not in the database yet. Run the website migration 202610120001_study_world_profiles.sql, then gradeup-mobile/supabase/migrations/20261012000001_study_world_admin.sql in the Supabase SQL Editor.',
+      'RenTaman (RenTaman) tables are not in the database yet. Run the website migration 202610120001_study_world_profiles.sql, then gradeup-mobile/supabase/migrations/20261012000001_study_world_admin.sql in the Supabase SQL Editor.',
     );
   }
   return new Error(msg);

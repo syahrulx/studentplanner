@@ -1,14 +1,14 @@
 import { TILE, createKit, type SeatKind, type WorldMap } from "./kit";
 
 /**
- * Dorm rooms: each player's own room in RenCity, decorated with furniture.
+ * Dorm rooms: each player's own room in RenTaman, decorated with furniture.
  * The furniture list and room themes live here (plain data, also used by the
  * admin website); the drawing of each piece is in kit.ts (paintThing,
  * t === "furniture", by item id). The server keeps what's placed where
  * (migration 202610130003) and checks sizes, limits and ownership.
  */
 
-/** "admin": special pieces only RenCity admins can place. */
+/** "admin": special pieces only RenTaman admins can place. */
 export type DormTier = "free" | "coins" | "plus" | "pro" | "admin";
 export type DormSize = "small" | "medium" | "large";
 

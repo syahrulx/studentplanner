@@ -84,7 +84,7 @@ function explain(error: { code?: string; message?: string } | null): Error | nul
   const msg = error.message ?? 'Request failed';
   if (error.code === 'PGRST202' || error.code === '42883' || error.code === '42P01' || /could not find the function|does not exist/i.test(msg)) {
     return new Error(
-      'The RenCity economy is not in the database yet. Run the website migration 202610120003_study_world_economy.sql, then gradeup-mobile/supabase/migrations/20261012000004_study_world_economy_admin.sql, in the Supabase SQL Editor.',
+      'The RenTaman economy is not in the database yet. Run the website migration 202610120003_study_world_economy.sql, then gradeup-mobile/supabase/migrations/20261012000004_study_world_economy_admin.sql, in the Supabase SQL Editor.',
     );
   }
   return new Error(msg);
