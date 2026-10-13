@@ -4,6 +4,7 @@ import { matchesAdminSearch } from '../lib/adminSearch';
 import { useAdminSearch } from '../state/AdminSearchContext';
 import { MotionPanel, MotionSection } from '../ui/motion';
 import { AdminPostComposer } from '../components/AdminPostComposer';
+import { CommunityPostDrawer } from '../components/CommunityPostDrawer';
 
 const TYPE_BADGE: Record<string, { label: string; color: string }> = {
   event: { label: 'Event', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' },
@@ -25,6 +26,7 @@ export function EventsRoute() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [composing, setComposing] = useState(false);
+  const [viewing, setViewing] = useState<string | null>(null);
 
   const refresh = async () => {
     setBusy(true);
@@ -90,6 +92,7 @@ export function EventsRoute() {
 
   return (
     <div>
+      {viewing ? <CommunityPostDrawer postId={viewing} onClose={() => setViewing(null)} onChanged={() => void refresh()} /> : null}
       {composing ? (
         <AdminPostComposer
           onClose={() => setComposing(false)}
@@ -190,7 +193,7 @@ export function EventsRoute() {
                         <div className="flex items-center gap-2">
                           {p.pinned && <span title="Pinned">📌</span>}
                           <div>
-                            <div className="text-sm font-black text-slate-900 dark:text-slate-100 max-w-[280px] truncate">{p.title}</div>
+                            <button type="button" onClick={() => setViewing(p.id)} className="block max-w-[280px] truncate text-left text-sm font-black text-slate-900 hover:underline dark:text-slate-100">{p.title}</button>
                             {p.body && (
                               <div className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400 max-w-[280px] truncate">{p.body}</div>
                             )}
@@ -219,6 +222,12 @@ export function EventsRoute() {
                       </td>
                       <td className="px-3 py-3">
                         <div className="flex justify-end gap-1.5">
+                          <button
+                            onClick={() => setViewing(p.id)}
+                            className="rounded-xl bg-slate-900 px-2.5 py-1.5 text-xs font-black text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950"
+                          >
+                            View
+                          </button>
                           <button
                             onClick={() => handleTogglePin(p)}
                             className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
