@@ -3,6 +3,7 @@ import { listCommunityPosts, updateCommunityPost, deleteCommunityPost, type Admi
 import { matchesAdminSearch } from '../lib/adminSearch';
 import { useAdminSearch } from '../state/AdminSearchContext';
 import { MotionPanel, MotionSection } from '../ui/motion';
+import { AdminPostComposer } from '../components/AdminPostComposer';
 
 const TYPE_BADGE: Record<string, { label: string; color: string }> = {
   event: { label: 'Event', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' },
@@ -23,6 +24,7 @@ export function EventsRoute() {
   const [items, setItems] = useState<AdminCommunityPostRow[]>([]);
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [composing, setComposing] = useState(false);
 
   const refresh = async () => {
     setBusy(true);
@@ -88,6 +90,15 @@ export function EventsRoute() {
 
   return (
     <div>
+      {composing ? (
+        <AdminPostComposer
+          onClose={() => setComposing(false)}
+          onPosted={async () => {
+            setComposing(false);
+            await refresh();
+          }}
+        />
+      ) : null}
       <MotionSection>
         <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Events & Posts</div>
         <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
@@ -127,13 +138,21 @@ export function EventsRoute() {
                 </select>
               </label>
             </div>
-            <button
-              onClick={() => void refresh()}
-              disabled={busy}
-              className="h-11 rounded-2xl bg-brand-600 px-4 text-sm font-black text-white shadow-soft hover:bg-brand-700 disabled:opacity-70"
-            >
-              {busy ? 'Loading…' : 'Refresh'}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setComposing(true)}
+                className="h-11 rounded-2xl bg-slate-900 px-4 text-sm font-black text-white shadow-soft hover:bg-slate-800 dark:bg-white dark:text-slate-950"
+              >
+                + Post as Admin Rencana
+              </button>
+              <button
+                onClick={() => void refresh()}
+                disabled={busy}
+                className="h-11 rounded-2xl bg-brand-600 px-4 text-sm font-black text-white shadow-soft hover:bg-brand-700 disabled:opacity-70"
+              >
+                {busy ? 'Loading…' : 'Refresh'}
+              </button>
+            </div>
           </div>
 
           {err ? (
