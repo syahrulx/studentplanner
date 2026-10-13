@@ -10,7 +10,9 @@ import type { ItemTier, Plan } from "./avatar";
  */
 
 export type ShowoffKind = "frame" | "bubble" | "entrance";
-export type ShowoffItem = { id: string; name: string; tier: ItemTier; price?: number };
+/** "admin": special items only RenCity admins can use (never sold). */
+export type ShowoffTier = ItemTier | "admin";
+export type ShowoffItem = { id: string; name: string; tier: ShowoffTier; price?: number };
 
 export const SHOWOFF_CATEGORY: Record<ShowoffKind, string> = {
   frame: "name_frame",
@@ -27,6 +29,9 @@ export const FRAMES: ShowoffItem[] = [
   { id: "neon", name: "Neon", tier: "plus" },
   { id: "galaxy", name: "Galaxy", tier: "pro" },
   { id: "royal", name: "Royal", tier: "pro" },
+  { id: "adm_root", name: "Root Access", tier: "admin" },
+  { id: "adm_rgb", name: "Neon Overlord", tier: "admin" },
+  { id: "adm_crest", name: "Gold Crest", tier: "admin" },
 ];
 
 export const BUBBLES: ShowoffItem[] = [
@@ -38,6 +43,9 @@ export const BUBBLES: ShowoffItem[] = [
   { id: "cloud", name: "Cloud", tier: "plus" },
   { id: "pixelgold", name: "Pixel gold", tier: "pro" },
   { id: "galaxy", name: "Galaxy", tier: "pro" },
+  { id: "adm_root", name: "Root Access", tier: "admin" },
+  { id: "adm_rgb", name: "Neon Overlord", tier: "admin" },
+  { id: "adm_crest", name: "Gold Crest", tier: "admin" },
 ];
 
 export const ENTRANCES: ShowoffItem[] = [
@@ -47,6 +55,9 @@ export const ENTRANCES: ShowoffItem[] = [
   { id: "petals", name: "Petal rain", tier: "plus" },
   { id: "bolt", name: "Lightning drop", tier: "pro" },
   { id: "portal", name: "Portal", tier: "pro" },
+  { id: "adm_root", name: "Code rain", tier: "admin" },
+  { id: "adm_rgb", name: "RGB shockwave", tier: "admin" },
+  { id: "adm_crest", name: "Golden beam", tier: "admin" },
 ];
 
 export const SHOWOFF: Record<ShowoffKind, ShowoffItem[]> = {
@@ -122,9 +133,10 @@ const PACK_EMOTES = new Map(
 );
 export const packEmote = (key: string) => PACK_EMOTES.get(key);
 
-const tierOk = (tier: ItemTier, plan: Plan) =>
+const tierOk = (tier: ShowoffTier, plan: Plan) =>
   tier === "free" ||
-  (tier === "pro" ? plan === "pro" : tier !== "coins" && (plan === "plus" || plan === "pro"));
+  (tier !== "admin" &&
+    (tier === "pro" ? plan === "pro" : tier !== "coins" && (plan === "plus" || plan === "pro")));
 
 /** Can this person use this show-off item (not just try it on)? */
 export function canUseShowoff(
@@ -246,6 +258,95 @@ export function drawNameFrame(
       if (Math.sin(t / 220) > 0.4) px(g, "#ffffff", cx - 1, y - 8, 2, 2);
       return "#ffe58a";
     }
+    // ─── Admin sets (preview) ───
+    case "adm_root": {
+      // Terminal: black, green border, ">_" on the left, blinking cursor on the
+      // right. Drawn a little wider than the name so the signs don't touch it.
+      const RL = L - 9;
+      const RW = w + 18;
+      round(g, RL, y, RW, h, 4);
+      g.fillStyle = "#05090a";
+      g.fill();
+      g.lineWidth = 1.5;
+      g.strokeStyle = "#2bd96b";
+      g.stroke();
+      for (let sy = y + 2; sy < y + h - 1; sy += 3)
+        px(g, "rgba(43,217,107,.1)", RL + 1, sy, RW - 2, 1);
+      px(g, "#2bd96b", RL + 5, y + h / 2 - 4, 2, 2);
+      px(g, "#2bd96b", RL + 7, y + h / 2 - 2, 2, 2);
+      px(g, "#2bd96b", RL + 5, y + h / 2, 2, 2);
+      px(g, "#2bd96b", RL + 10, y + h / 2 + 2, 5, 1);
+      if (Math.floor(t / 500) % 2 === 0) px(g, "#2bd96b", RL + RW - 9, y + 4, 3, h - 8);
+      return "#7dff9b";
+    }
+    case "adm_rgb": {
+      // Neon overlord: dark glass, a glowing border that cycles through the rainbow.
+      const hue = (t / 12) % 360;
+      const grad = g.createLinearGradient(L, y, L + w, y + h);
+      grad.addColorStop(0, `hsl(${hue},95%,60%)`);
+      grad.addColorStop(0.5, `hsl(${(hue + 120) % 360},95%,60%)`);
+      grad.addColorStop(1, `hsl(${(hue + 240) % 360},95%,60%)`);
+      g.save();
+      g.shadowColor = `hsl(${hue},95%,60%)`;
+      g.shadowBlur = 8;
+      round(g, L, y, w, h, h / 2);
+      g.fillStyle = "rgba(10,10,24,.88)";
+      g.fill();
+      g.lineWidth = 2;
+      g.strokeStyle = grad;
+      g.stroke();
+      g.restore();
+      // Little diamonds at each end.
+      const dm = (cx: number, c: string) => {
+        g.fillStyle = c;
+        g.beginPath();
+        g.moveTo(cx, y + h / 2 - 4);
+        g.lineTo(cx + 3, y + h / 2);
+        g.lineTo(cx, y + h / 2 + 4);
+        g.lineTo(cx - 3, y + h / 2);
+        g.closePath();
+        g.fill();
+      };
+      dm(L - 1, `hsl(${hue},95%,65%)`);
+      dm(L + w + 1, `hsl(${(hue + 240) % 360},95%,65%)`);
+      return "#ffffff";
+    }
+    case "adm_crest": {
+      // Gold crest: ivory with a double gold border, a shield badge and a shine.
+      fill("#fffaf0", "#c9971f", 2);
+      round(g, L + 2.5, y + 2.5, w - 5, h - 5, h / 2 - 2.5);
+      g.lineWidth = 1;
+      g.strokeStyle = "rgba(201,151,31,.55)";
+      g.stroke();
+      // Shine sweeping across now and then.
+      const sweep = (t / 6) % (w * 3);
+      if (sweep < w) {
+        g.save();
+        round(g, L, y, w, h, h / 2);
+        g.clip();
+        g.fillStyle = "rgba(255,255,255,.75)";
+        g.beginPath();
+        g.moveTo(L + sweep, y);
+        g.lineTo(L + sweep + 5, y);
+        g.lineTo(L + sweep - 3, y + h);
+        g.lineTo(L + sweep - 8, y + h);
+        g.closePath();
+        g.fill();
+        g.restore();
+      }
+      // Shield badge on the left, sticking out a little.
+      const sx = L - 4;
+      const sy = y + h / 2 - 7;
+      px(g, "#7a5a0c", sx, sy, 11, 9);
+      px(g, "#7a5a0c", sx + 1, sy + 9, 9, 2);
+      px(g, "#7a5a0c", sx + 3, sy + 11, 5, 2);
+      px(g, "#f2c14e", sx + 1, sy + 1, 9, 8);
+      px(g, "#f2c14e", sx + 2, sy + 9, 7, 1);
+      px(g, "#f2c14e", sx + 4, sy + 10, 3, 2);
+      px(g, "#ffffff", sx + 4, sy + 3, 3, 4);
+      px(g, "#fff6c8", sx + 2, sy + 2, 2, 1);
+      return "#6b4a00";
+    }
     default:
       fill(fallback);
       return "#ffffff";
@@ -327,6 +428,58 @@ export function drawBubble(
           px(g, "#fff6c8", L + 5 + (i * (w - 10)) / 3, y + 2 + (i % 2) * (h - 5), 2, 2);
       return "#e6e2ff";
     }
+    // ─── Admin sets (preview) ───
+    case "adm_root": {
+      // A terminal window: title bar with three dots, green text.
+      g.fillStyle = "#05090a";
+      g.fillRect(L, y - 5, w, h + 5);
+      g.fillStyle = "#1a2124";
+      g.fillRect(L, y - 5, w, 5);
+      px(g, "#ff5f57", L + 3, y - 4, 2, 2);
+      px(g, "#febc2e", L + 7, y - 4, 2, 2);
+      px(g, "#28c840", L + 11, y - 4, 2, 2);
+      g.strokeStyle = "#2bd96b";
+      g.lineWidth = 1;
+      g.strokeRect(L + 0.5, y - 4.5, w - 1, h + 4);
+      tail("#05090a");
+      return "#7dff9b";
+    }
+    case "adm_rgb": {
+      const hue = (t / 12) % 360;
+      const grad = g.createLinearGradient(L, y, L + w, y + h);
+      grad.addColorStop(0, `hsl(${hue},95%,60%)`);
+      grad.addColorStop(0.5, `hsl(${(hue + 120) % 360},95%,60%)`);
+      grad.addColorStop(1, `hsl(${(hue + 240) % 360},95%,60%)`);
+      g.save();
+      g.shadowColor = `hsl(${(hue + 120) % 360},95%,60%)`;
+      g.shadowBlur = 8;
+      round(g, L, y, w, h, 8);
+      g.fillStyle = "rgba(10,10,24,.9)";
+      g.fill();
+      g.lineWidth = 1.5;
+      g.strokeStyle = grad;
+      g.stroke();
+      g.restore();
+      tail("rgba(10,10,24,.9)");
+      return "#ffffff";
+    }
+    case "adm_crest": {
+      body("#fffaf0", "#c9971f", 8, 1.5);
+      round(g, L + 2, y + 2, w - 4, h - 4, 6);
+      g.lineWidth = 0.75;
+      g.strokeStyle = "rgba(201,151,31,.5)";
+      g.stroke();
+      // Small shield in the top-right corner.
+      const sx = L + w - 6;
+      const sy = y - 4;
+      px(g, "#7a5a0c", sx, sy, 7, 6);
+      px(g, "#7a5a0c", sx + 1, sy + 6, 5, 1);
+      px(g, "#7a5a0c", sx + 2, sy + 7, 3, 1);
+      px(g, "#f2c14e", sx + 1, sy + 1, 5, 5);
+      px(g, "#f2c14e", sx + 2, sy + 6, 3, 1);
+      if (Math.sin(t / 300) > 0.6) px(g, "#ffffff", sx + 2, sy + 2, 1, 1);
+      return "#5a3e00";
+    }
     default:
       body("#ffffff", "rgba(42,27,24,.5)");
       return "#2a1b18";
@@ -403,6 +556,83 @@ export function drawEntrance(g: Ctx, id: string, cx: number, fy: number, s: numb
     g.beginPath();
     g.ellipse(cx, fy - 1 * s, 8 * s * open, 2.5 * s * open, 0, 0, Math.PI * 2);
     g.stroke();
+  }
+  // ─── Admin sets (preview) ───
+  if (id === "adm_root") {
+    // Code rain falls around you, then a scan line sweeps up as you appear.
+    for (let c = 0; c < 9; c++) {
+      const colX = cx + (c - 4) * 5 * s;
+      const speed = 0.7 + ((c * 37) % 5) / 10;
+      const head = (k * speed * 1.6 + ((c * 13) % 7) / 10) % 1;
+      for (let j = 0; j < 6; j++) {
+        const yy = fy - 50 * s + (head * 56 - j * 4) * s;
+        if (yy > fy || yy < fy - 52 * s) continue;
+        g.globalAlpha = (1 - j / 6) * (1 - k * 0.8);
+        g.fillStyle = j === 0 ? "#d6ffe0" : "#2bd96b";
+        g.fillRect(colX, yy, 2 * s, 2 * s);
+      }
+    }
+    if (k > 0.45 && k < 0.85) {
+      const sy = fy - ((k - 0.45) / 0.4) * 40 * s;
+      g.globalAlpha = 0.8;
+      g.fillStyle = "#7dff9b";
+      g.fillRect(cx - 14 * s, sy, 28 * s, s);
+    }
+  }
+  if (id === "adm_rgb") {
+    // Three RGB shockwave rings, with glitch slices at the start.
+    for (let i = 0; i < 3; i++) {
+      const kk = k - i * 0.12;
+      if (kk < 0 || kk > 1) continue;
+      g.globalAlpha = (1 - kk) * 0.9;
+      g.strokeStyle = `hsl(${(i * 120 + p / 6) % 360},95%,60%)`;
+      g.lineWidth = 2 * s;
+      g.beginPath();
+      g.ellipse(cx, fy - s, (6 + kk * 26) * s, (2 + kk * 8) * s, 0, 0, Math.PI * 2);
+      g.stroke();
+    }
+    if (p < 700) {
+      for (let i = 0; i < 5; i++) {
+        if (Math.floor(p / 70 + i) % 3) continue;
+        g.globalAlpha = 0.7;
+        g.fillStyle = `hsl(${(i * 72 + p / 3) % 360},95%,60%)`;
+        const off = (((i * 7 + Math.floor(p / 70)) % 9) - 4) * 2 * s;
+        g.fillRect(cx - 14 * s + off, fy - (8 + i * 7) * s, 28 * s, 2 * s);
+      }
+    }
+  }
+  if (id === "adm_crest") {
+    // A golden beam of light comes down, gold sparkles fall, a shield flashes.
+    const beam = k < 0.6 ? Math.min(1, k * 4) : Math.max(0, (1 - k) / 0.4);
+    const grad = g.createLinearGradient(cx, fy - 70 * s, cx, fy);
+    grad.addColorStop(0, "rgba(255,229,138,0)");
+    grad.addColorStop(1, "rgba(255,229,138,.7)");
+    g.globalAlpha = beam;
+    g.fillStyle = grad;
+    g.fillRect(cx - 9 * s, fy - 70 * s, 18 * s, 70 * s);
+    g.globalAlpha = beam * 0.6;
+    g.fillStyle = "#fff6c8";
+    g.fillRect(cx - 3 * s, fy - 70 * s, 6 * s, 70 * s);
+    for (let i = 0; i < 12; i++) {
+      const ph = (k * 1.3 + i / 12) % 1;
+      g.globalAlpha = 1 - k;
+      g.fillStyle = i % 3 ? "#f2c14e" : "#ffffff";
+      const x = cx - 16 * s + ((i * 29) % 32) * s;
+      const yy = fy - 56 * s + ph * 56 * s;
+      g.fillRect(x, yy - s, s, 3 * s);
+      g.fillRect(x - s, yy, 3 * s, s);
+    }
+    if (k > 0.35 && k < 0.7) {
+      g.globalAlpha = 1 - Math.abs(k - 0.52) / 0.18;
+      const sx = cx - 5 * s;
+      const sy = fy - 50 * s;
+      g.fillStyle = "#f2c14e";
+      g.fillRect(sx, sy, 10 * s, 8 * s);
+      g.fillRect(sx + s, sy + 8 * s, 8 * s, 2 * s);
+      g.fillRect(sx + 3 * s, sy + 10 * s, 4 * s, 2 * s);
+      g.fillStyle = "#ffffff";
+      g.fillRect(sx + 4 * s, sy + 2 * s, 2 * s, 5 * s);
+    }
   }
   g.restore();
 }

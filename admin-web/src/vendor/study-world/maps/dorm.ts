@@ -372,8 +372,8 @@ export function createDormMap(layout: DormLayout): WorldMap {
         : thing("furniture", p.x, p.y, w, h);
     placed.item = p.item;
     placed.rot = r;
-    // Real fish are drawn live only on front-facing tanks.
-    if ((layout.fish?.length || layout.pet) && f.use === "tank" && r === 0) placed.emptyTank = true;
+    // Tanks hold only the pet fish you put in (drawn live), never painted fish.
+    if (f.use === "tank") placed.emptyTank = true;
     seatsFor(f, r, sitIn).forEach((s) => {
       const sx = p.x + s.dx;
       const sy = p.y + s.dy;
