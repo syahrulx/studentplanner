@@ -68,6 +68,9 @@ function uitmKey(row: UitmCalendarContributionRow): string {
   return [row.group_code, row.calendar_variant, row.start_date, row.end_date].join('|');
 }
 
+/** Weeks a UiTM term may run beyond its teaching weeks: mid-semester break, revision and exams. */
+const EXTRA_WEEKS = 7;
+
 function weeksBetween(start: string, end: string): number | null {
   const a = Date.parse(`${start}T00:00:00Z`);
   const b = Date.parse(`${end}T00:00:00Z`);
@@ -103,11 +106,29 @@ export function uitmSuggestions(rows: UitmCalendarContributionRow[], todayISO: s
       out.set(row.id, { verdict: 'reject', reason: 'This semester has already ended.' });
       continue;
     }
+    // total_weeks is TEACHING weeks; the dates also span the mid-semester
+    // break, revision week and exams, so a UiTM term of 14 teaching weeks
+    // normally runs about 18-20 weeks end to end. Only flag a span that is
+    // shorter than the teaching weeks, or longer than they plus EXTRA_WEEKS.
     const weeks = weeksBetween(row.start_date, row.end_date);
-    if (row.total_weeks < 8 || row.total_weeks > 30 || (weeks !== null && Math.abs(weeks - row.total_weeks) > 4)) {
+    if (row.total_weeks < 8 || row.total_weeks > 30) {
       out.set(row.id, {
         verdict: 'check',
-        reason: `Says ${row.total_weeks} weeks, but the dates cover about ${weeks ?? '?'} weeks. Check before approving.`,
+        reason: `Says ${row.total_weeks} teaching weeks, which is unusual for a UiTM semester. Check before approving.`,
+      });
+      continue;
+    }
+    if (weeks !== null && weeks < row.total_weeks - 1) {
+      out.set(row.id, {
+        verdict: 'check',
+        reason: `Says ${row.total_weeks} teaching weeks, but the dates only cover about ${weeks} weeks. Check before approving.`,
+      });
+      continue;
+    }
+    if (weeks !== null && weeks > row.total_weeks + EXTRA_WEEKS) {
+      out.set(row.id, {
+        verdict: 'check',
+        reason: `The dates cover about ${weeks} weeks for ${row.total_weeks} teaching weeks: more break and exam time than usual (${row.total_weeks + EXTRA_WEEKS} at most). Check before approving.`,
       });
       continue;
     }
@@ -115,7 +136,7 @@ export function uitmSuggestions(rows: UitmCalendarContributionRow[], todayISO: s
       out.set(row.id, { verdict: 'check', reason: 'No source link to verify against. Approve only if the dates look right.' });
       continue;
     }
-    out.set(row.id, { verdict: 'approve', reason: 'Dates and weeks match, has a source, and no duplicate.' });
+    out.set(row.id, { verdict: 'approve', reason: 'Teaching weeks fit the dates (allowing for break and exams), has a source, and no duplicate.' });
   }
   return out;
 }
