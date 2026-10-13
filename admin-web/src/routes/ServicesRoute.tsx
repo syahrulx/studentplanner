@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   listAdminServices,
   fetchAdminServiceStats,
@@ -80,6 +81,19 @@ export function ServicesRoute() {
   };
 
   useEffect(() => { void refresh(); }, [statusFilter, kindFilter, catFilter]);
+
+  // Keep the page behind still while the detail is open.
+  useEffect(() => {
+    if (!selected) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSelected(null); };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [selected]);
 
   const openDetail = async (s: AdminServiceRow) => {
     setSelected(s);
@@ -320,8 +334,10 @@ export function ServicesRoute() {
       </MotionPanel>
 
       {/* Detail modal */}
-      {selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Drawn into document.body: the admin layout animates with transforms,
+          which trapped this fixed overlay inside the page (you had to scroll to it). */}
+      {selected && createPortal(
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
           <button className="absolute inset-0 bg-black/40" onClick={() => setSelected(null)} aria-label="Close" />
           <div className="relative z-10 w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
             <button onClick={() => setSelected(null)} className="absolute right-4 top-4 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-lg font-black">✕</button>
@@ -450,7 +466,8 @@ export function ServicesRoute() {
 
             <div className="mt-3 text-xs text-slate-400 font-mono break-all">ID: {selected.id}</div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   )}
