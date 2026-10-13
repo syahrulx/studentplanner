@@ -1,5 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { MotionPanel, MotionSection } from '../ui/motion';
+import { Button } from '../ui/Button';
+import { Chip, EmptyState, Notice, PageHeader, Panel, Pill, PillGroup, SkeletonRows } from '../ui/page';
+import { Footnote, RuleList } from '../components/config/RuleList';
+import { errorText } from '../components/config/errorText';
 import { useAdminSearch } from '../state/AdminSearchContext';
 import { matchesAdminSearch } from '../lib/adminSearch';
 import { supabase } from '../lib/supabase';
@@ -45,34 +49,24 @@ export function MinigamesRoute() {
   const [tab, setTab] = useState<GameTab>('crossword');
 
   return (
-    <div>
+    <div className="space-y-5">
       <MotionSection>
-        <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Minigames</div>
-        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Top players, scoring rules and full content for the in-app mini games. Crossword answers and the hidden bonus word are shown for support.
-        </div>
+        <PageHeader
+          title="Minigames"
+          description="Top players, scoring rules and full content for the in-app mini games. Answers and the hidden bonus word are shown for support."
+        />
       </MotionSection>
 
-      {/* Game selector */}
-      <div className="mt-5 inline-flex rounded-2xl border border-slate-200 bg-white p-1 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-        {([
-          ['crossword', 'Crossword'],
-          ['word', 'Word Game'],
-          ['g2048', '2048'],
-        ] as [GameTab, string][]).map(([key, label]) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={
-              'rounded-xl px-4 py-2 text-sm font-bold transition ' +
-              (tab === key
-                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950'
-                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800')
-            }
-          >
-            {label}
-          </button>
-        ))}
+      <div role="group" aria-label="Choose a game">
+        <PillGroup label="Game">
+          {([
+            ['crossword', 'Crossword'],
+            ['word', 'Word game'],
+            ['g2048', '2048'],
+          ] as [GameTab, string][]).map(([key, label]) => (
+            <Pill key={key} active={tab === key} onClick={() => setTab(key)}>{label}</Pill>
+          ))}
+        </PillGroup>
       </div>
 
       {tab === 'crossword' && <CrosswordSection />}
@@ -92,19 +86,21 @@ interface LbRow {
   secondary: string;
 }
 
-async function withNames(
-  rows: any[],
-  map: (r: any) => { primary: number; secondary: string },
+type ProfileLite = { id: string; name?: string | null; avatar_url?: string | null };
+
+async function withNames<R extends { user_id: string }>(
+  rows: R[],
+  map: (r: R) => { primary: number; secondary: string },
 ): Promise<LbRow[]> {
   const ids = rows.map((r) => r.user_id).filter(Boolean);
-  let profileMap = new Map<string, any>();
+  let profileMap = new Map<string, ProfileLite>();
   if (ids.length) {
     const { data: profs } = await supabase.from('profiles').select('id, name, avatar_url').in('id', ids);
-    profileMap = new Map((profs || []).map((p: any) => [p.id, p]));
+    profileMap = new Map(((profs || []) as ProfileLite[]).map((p) => [p.id, p]));
   }
   return rows.map((r) => {
     const p = profileMap.get(r.user_id);
-    return { user_id: r.user_id, name: p?.name || 'Player', avatar_url: p?.avatar_url, ...map(r) };
+    return { user_id: r.user_id, name: p?.name || 'Player', avatar_url: p?.avatar_url ?? undefined, ...map(r) };
   });
 }
 
@@ -118,7 +114,7 @@ async function loadCrosswordLb(): Promise<LbRow[]> {
   if (error) throw error;
   return withNames(data || [], (r) => ({
     primary: r.total_points ?? 0,
-    secondary: `${r.puzzles_completed ?? 0} solved · 🔥 ${r.best_streak ?? 0}`,
+    secondary: `${r.puzzles_completed ?? 0} solved · best streak ${r.best_streak ?? 0}`,
   }));
 }
 
@@ -141,7 +137,8 @@ async function loadWordLb(): Promise<LbRow[]> {
   // client-side sum if the RPC isn't deployed.
   const rpc = await supabase.rpc('get_word_game_leaderboard', { p_limit: 10 });
   if (!rpc.error && rpc.data) {
-    return withNames(rpc.data, (r) => ({
+    const rpcRows = rpc.data as { user_id: string; total_score: number | string | null; puzzles_solved: number | null }[];
+    return withNames(rpcRows, (r) => ({
       primary: Number(r.total_score) || 0,
       secondary: `${r.puzzles_solved ?? 0} solved`,
     }));
@@ -162,9 +159,16 @@ async function loadWordLb(): Promise<LbRow[]> {
   return withNames(top, (r) => ({ primary: r.total_score, secondary: `${r.puzzles_solved} solved` }));
 }
 
-const MEDAL = ['🥇', '🥈', '🥉'];
+/** Gold, silver and bronze tints for the top three ranks. */
+const RANK_TONE = [
+  'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
+  'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100',
+  'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200',
+];
 
-function GameLeaderboard({ title, unit, load }: { title: string; unit: string; load: () => Promise<LbRow[]> }) {
+const SUB_LABEL = 'text-[11px] font-black uppercase tracking-wide text-slate-400 dark:text-slate-500';
+
+function GameLeaderboard({ unit, load }: { unit: string; load: () => Promise<LbRow[]> }) {
   const [rows, setRows] = useState<LbRow[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -174,54 +178,70 @@ function GameLeaderboard({ title, unit, load }: { title: string; unit: string; l
     setErr(null);
     load()
       .then((r) => on && setRows(r))
-      .catch((e) => on && setErr(e?.message || 'Failed to load'));
+      .catch((e) => on && setErr(errorText(e, 'Failed to load')));
     return () => { on = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex items-center justify-between">
-        <div className="text-sm font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">{title}</div>
-        <div className="text-xs font-bold text-slate-400">Top 10</div>
-      </div>
-
-      {err && <div className="mt-4 text-sm font-semibold text-rose-500">{err}</div>}
-      {!rows && !err && <div className="mt-4 text-sm font-semibold text-slate-400">Loading…</div>}
-      {rows && rows.length === 0 && (
-        <div className="mt-4 text-sm font-semibold text-slate-400">No scores yet.</div>
-      )}
+    <Panel title="Top 10 players">
+      {err && <Notice tone="danger">{err}</Notice>}
+      {!rows && !err && <SkeletonRows rows={4} height="h-10" />}
+      {rows && rows.length === 0 && <EmptyState title="No scores yet." />}
 
       {rows && rows.length > 0 && (
-        <div className="mt-3 flex flex-col gap-1.5">
+        <ol className="-mx-2 flex flex-col gap-0.5">
           {rows.map((r, i) => (
-            <div
-              key={r.user_id}
-              className="flex items-center gap-3 rounded-2xl px-3 py-2.5 odd:bg-slate-50 dark:odd:bg-slate-950/40"
-            >
-              <div className="w-7 text-center text-sm font-black text-slate-500 dark:text-slate-400">
-                {i < 3 ? MEDAL[i] : i + 1}
-              </div>
+            <li key={r.user_id} className="flex items-center gap-3 rounded-2xl px-2 py-2 odd:bg-slate-50 dark:odd:bg-slate-950/40">
+              <span
+                className={
+                  'grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-black ' +
+                  (i < 3 ? RANK_TONE[i] : 'text-slate-500 dark:text-slate-400')
+                }
+                aria-label={`Rank ${i + 1}`}
+              >
+                {i + 1}
+              </span>
               {r.avatar_url ? (
-                <img src={r.avatar_url} alt="" className="h-9 w-9 rounded-full object-cover" />
+                <img src={r.avatar_url} alt="" className="h-8 w-8 rounded-full object-cover" />
               ) : (
-                <div className="grid h-9 w-9 place-items-center rounded-full bg-slate-200 text-xs font-black text-slate-600 dark:bg-slate-700 dark:text-slate-200">
+                <div className="grid h-8 w-8 place-items-center rounded-full bg-slate-200 text-xs font-black text-slate-600 dark:bg-slate-700 dark:text-slate-200" aria-hidden="true">
                   {(r.name[0] || '?').toUpperCase()}
                 </div>
               )}
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">{r.name}</div>
-                <div className="truncate text-xs font-semibold text-slate-400">{r.secondary}</div>
+                <div className="truncate text-xs font-semibold text-slate-500 dark:text-slate-400">{r.secondary}</div>
               </div>
               <div className="text-right">
-                <div className="text-base font-black text-slate-900 dark:text-slate-100">{r.primary.toLocaleString()}</div>
-                <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{unit}</div>
+                <div className="text-sm font-black tabular-nums text-slate-900 dark:text-slate-100">{r.primary.toLocaleString()}</div>
+                <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">{unit}</div>
               </div>
-            </div>
+            </li>
           ))}
-        </div>
+        </ol>
       )}
-    </div>
+    </Panel>
+  );
+}
+
+/** One row of a game's level list (selected = dark). */
+function LevelButton({ active, onClick, label, meta }: { active: boolean; onClick: () => void; label: ReactNode; meta: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={
+        'flex w-full items-center justify-between gap-2 rounded-2xl px-3 py-2.5 text-left text-sm transition ' +
+        (active
+          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950'
+          : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800')
+      }
+    >
+      <span className="min-w-0 truncate font-bold">{label}</span>
+      <span className={'shrink-0 text-xs ' + (active ? 'text-white/70 dark:text-slate-600' : 'text-slate-400 dark:text-slate-500')}>{meta}</span>
+    </button>
   );
 }
 
@@ -254,8 +274,8 @@ function CrosswordSection() {
     setLoadError(null);
     try {
       setAdminPuzzles(await listAdminCrosswordPuzzles());
-    } catch (e: any) {
-      setLoadError(e?.message || 'Could not load admin-created levels.');
+    } catch (e) {
+      setLoadError(errorText(e, 'Could not load admin-created levels.'));
     } finally {
       setLoadingAdmin(false);
     }
@@ -318,99 +338,89 @@ function CrosswordSection() {
   }
 
   return (
-    <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_340px] lg:items-start">
-      {/* Left column: rules + puzzle browser */}
-      <div className="flex min-w-0 flex-col gap-5">
+    <div className="space-y-5">
+      {loadError && <Notice tone="danger">{loadError}</Notice>}
+
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <MotionPanel>
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Crossword rules</div>
-              <button
-                onClick={openNewEditor}
-                className="flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-slate-700 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
-              >
-                <span className="text-sm leading-none">+</span> Add level
-              </button>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Stat label="Puzzles" value={`${combined.length}`} />
-              <Stat label="Per day" value="2 (in order)" />
-              <Stat label="Base points" value="100" />
-              <Stat label="Hidden bonus" value="+25 if guessed" />
-              <Stat label="Streak bonus" value="+5/day (max +35)" />
-              <Stat label="Hints" value="2 per puzzle" />
-              <Stat label="Grid" value="Admin-defined (5–15)" />
-              <Stat label="Ranking" value="Total points" />
-            </div>
-            {loadError && (
-              <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-semibold text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
-                {loadError}
-              </div>
-            )}
-          </div>
+          <Panel title="Crossword rules">
+            <RuleList
+              items={[
+                ['Puzzles', combined.length],
+                ['Per day', '2 (in order)'],
+                ['Base points', '100'],
+                ['Hidden bonus', '+25 if guessed'],
+                ['Streak bonus', '+5/day (max +35)'],
+                ['Hints', '2 per puzzle'],
+                ['Grid', 'Admin-defined (5–15)'],
+                ['Ranking', 'Total points'],
+              ]}
+            />
+            <Footnote>
+              Hidden bonus word: players tap “Find the hidden word”, read the hint and type a guess. It never appears on the board.
+              A correct guess adds +25 points; otherwise the puzzle still completes normally.
+            </Footnote>
+          </Panel>
         </MotionPanel>
-
-        <div className="grid gap-5 lg:grid-cols-[260px_1fr]">
-          {/* Puzzle list */}
-          <MotionPanel>
-            <div className="rounded-3xl border border-slate-200 bg-white p-3 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-              <div className="max-h-[70vh] overflow-y-auto">
-                {filteredGroups.map((group) => (
-                  <div key={group.label}>
-                    <div className="sticky top-0 z-10 bg-white px-4 pb-1.5 pt-3 text-[11px] font-black uppercase tracking-wide text-slate-400 dark:bg-slate-900 dark:text-slate-500">
-                      {group.label} · {group.puzzles.length}
-                    </div>
-                    {group.puzzles.map((p) => {
-                      const active = selected?.id === p.id;
-                      const isAdmin = isAdminPuzzle(p.id);
-                      return (
-                        <button
-                          key={p.id}
-                          onClick={() => setSelectedId(p.id)}
-                          className={
-                            'flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm transition ' +
-                            (active
-                              ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950'
-                              : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800')
-                          }
-                        >
-                          <span className="font-bold">
-                            #{p.id} · {p.title}
-                            {isAdmin && <span className="ml-1.5 opacity-60">★</span>}
-                          </span>
-                          <span className={active ? 'text-white/70 dark:text-slate-600' : 'text-slate-400'}>{p.clues.length}w</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))}
-                {loadingAdmin && (
-                  <div className="px-4 py-3 text-center text-xs font-semibold text-slate-400">Loading admin levels…</div>
-                )}
-                {filteredCount === 0 && !loadingAdmin && (
-                  <div className="px-4 py-6 text-center text-sm font-semibold text-slate-400">No puzzles match your search.</div>
-                )}
-              </div>
-            </div>
-          </MotionPanel>
-
-          {/* Detail: grid + answers */}
-          <MotionPanel>
-            {selected && (
-              <PuzzleDetail
-                puzzle={selected}
-                isAdminPuzzle={isAdminPuzzle(selected.id)}
-                onEdit={() => openEditEditor(selected.id)}
-              />
-            )}
-          </MotionPanel>
-        </div>
+        <MotionPanel>
+          <GameLeaderboard unit="pts" load={loadCrosswordLb} />
+        </MotionPanel>
       </div>
 
-      {/* Right rail: leaderboard */}
-      <MotionPanel>
-        <GameLeaderboard title="Crossword leaders" unit="pts" load={loadCrosswordLb} />
-      </MotionPanel>
+      <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start">
+        {/* Puzzle list */}
+        <MotionPanel>
+          <Panel
+            title="Levels"
+            actions={<Button type="button" size="sm" onClick={openNewEditor}>+ Add level</Button>}
+            padded={false}
+          >
+            <div className="max-h-[70vh] overflow-y-auto p-2">
+              {filteredGroups.map((group) => (
+                <div key={group.label}>
+                  <div className={'sticky top-0 z-10 bg-white px-3 pb-1.5 pt-3 dark:bg-slate-900 ' + SUB_LABEL}>
+                    {group.label} · {group.puzzles.length}
+                  </div>
+                  {group.puzzles.map((p) => {
+                    const isAdmin = isAdminPuzzle(p.id);
+                    return (
+                      <LevelButton
+                        key={p.id}
+                        active={selected?.id === p.id}
+                        onClick={() => setSelectedId(p.id)}
+                        label={
+                          <>
+                            #{p.id} · {p.title}
+                            {isAdmin && <span className="ml-1.5 opacity-60" title="Admin-created, can be edited" aria-label="Admin-created">★</span>}
+                          </>
+                        }
+                        meta={`${p.clues.length}w`}
+                      />
+                    );
+                  })}
+                </div>
+              ))}
+              {loadingAdmin && (
+                <div className="px-3 py-3 text-center text-xs font-semibold text-slate-400 dark:text-slate-500">Loading admin levels…</div>
+              )}
+              {filteredCount === 0 && !loadingAdmin && (
+                <div className="px-3 py-6 text-center text-sm font-semibold text-slate-400 dark:text-slate-500">No puzzles match your search.</div>
+              )}
+            </div>
+          </Panel>
+        </MotionPanel>
+
+        {/* Detail: grid + answers */}
+        <MotionPanel>
+          {selected && (
+            <PuzzleDetail
+              puzzle={selected}
+              isAdminPuzzle={isAdminPuzzle(selected.id)}
+              onEdit={() => openEditEditor(selected.id)}
+            />
+          )}
+        </MotionPanel>
+      </div>
 
       {editorOpen && (
         <CrosswordPuzzleEditor puzzle={editingPuzzle} onClose={closeEditor} onSaved={handleSaved} />
@@ -437,48 +447,32 @@ function PuzzleDetail({
   const down = puzzle.clues.filter((c) => c.direction === 'down').sort((a, b) => a.number - b.number);
 
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-lg font-black text-slate-900 dark:text-slate-100">#{puzzle.id} · {puzzle.title}</div>
-        {isAdminPuzzle ? (
-          <button
-            onClick={onEdit}
-            className="shrink-0 rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-          >
-            Edit
-          </button>
+    <Panel
+      title={<span className="text-base">#{puzzle.id} · {puzzle.title}</span>}
+      actions={
+        isAdminPuzzle ? (
+          <Button type="button" variant="secondary" size="sm" onClick={onEdit}>Edit</Button>
         ) : (
-          <span className="shrink-0 rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-400 dark:bg-slate-800 dark:text-slate-500">
-            Built-in
-          </span>
-        )}
-      </div>
-
-      {/* Hidden bonus word — not part of the grid */}
-      <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
-        <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-amber-700 dark:text-amber-300">
-          🔍 Hidden bonus word · never appears on the board
+          <Chip title="Ships inside the app, so it cannot be edited here">Built-in</Chip>
+        )
+      }
+    >
+      <div className="grid gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:grid-cols-2 dark:border-amber-900/50 dark:bg-amber-950/40">
+        <div className="min-w-0">
+          <div className="text-[10px] font-black uppercase tracking-wide text-amber-700 dark:text-amber-300">Hidden bonus word</div>
+          <div className="mt-0.5 break-words text-xl font-black tracking-widest text-amber-900 dark:text-amber-100">{puzzle.bonusWord}</div>
         </div>
-        <div className="mt-2 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-xl bg-white/70 px-3 py-2 dark:bg-slate-900/40">
-            <div className="text-[10px] font-black uppercase tracking-wide text-amber-600/80 dark:text-amber-400/70">Answer</div>
-            <div className="mt-0.5 text-xl font-black tracking-widest text-amber-800 dark:text-amber-200">{puzzle.bonusWord}</div>
-          </div>
-          <div className="rounded-xl bg-white/70 px-3 py-2 dark:bg-slate-900/40">
-            <div className="text-[10px] font-black uppercase tracking-wide text-amber-600/80 dark:text-amber-400/70">Hint shown to player</div>
-            <div className="mt-0.5 text-sm font-semibold text-amber-800/90 dark:text-amber-200/90">“{puzzle.bonusHint}”</div>
-          </div>
-        </div>
-        <div className="mt-2 text-xs font-semibold text-amber-700/70 dark:text-amber-300/70">
-          Players tap “Find the hidden word”, read the hint and type a guess. A correct guess adds +25 points; otherwise the puzzle still completes normally.
+        <div className="min-w-0">
+          <div className="text-[10px] font-black uppercase tracking-wide text-amber-700 dark:text-amber-300">Hint shown to player</div>
+          <div className="mt-0.5 text-sm font-semibold text-amber-900 dark:text-amber-100">“{puzzle.bonusHint}”</div>
         </div>
       </div>
 
-      <div className="mt-4 flex flex-col gap-6 lg:flex-row">
+      <div className="mt-5 flex flex-col gap-6 xl:flex-row">
         {/* Grid */}
-        <div className="shrink-0">
+        <div className="shrink-0 overflow-x-auto">
           <div
-            className="grid gap-[2px] rounded-xl bg-slate-200 p-[2px] dark:bg-slate-700"
+            className="grid w-max gap-[2px] rounded-xl bg-slate-200 p-[2px] dark:bg-slate-700"
             style={{ gridTemplateColumns: `repeat(${puzzle.size}, 34px)` }}
           >
             {puzzle.solution.flatMap((row, r) =>
@@ -505,19 +499,19 @@ function PuzzleDetail({
         </div>
 
         {/* Clues + answers */}
-        <div className="min-w-0 flex-1 grid gap-5 sm:grid-cols-2">
+        <div className="grid min-w-0 flex-1 gap-5 sm:grid-cols-2">
           <ClueList title="Across" clues={across} />
           <ClueList title="Down" clues={down} />
         </div>
       </div>
-    </div>
+    </Panel>
   );
 }
 
 function ClueList({ title, clues }: { title: string; clues: CrosswordClue[] }) {
   return (
     <div>
-      <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">{title}</div>
+      <div className={SUB_LABEL}>{title}</div>
       <div className="mt-2 flex flex-col gap-2">
         {clues.map((c) => (
           <div key={`${c.direction}-${c.number}`} className="text-sm">
@@ -554,68 +548,55 @@ function WordGameSection() {
   const selected = CONNECTIONS_PUZZLES.find((p) => p.id === selectedId) ?? CONNECTIONS_PUZZLES[0];
 
   return (
-    <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_340px] lg:items-start">
-      {/* Left column: rules + level browser */}
-      <div className="flex min-w-0 flex-col gap-5">
+    <div className="space-y-5">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <MotionPanel>
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-            <div className="text-lg font-black text-slate-900 dark:text-slate-100">Word Game (Connections)</div>
-            <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-              Group 16 words into 4 hidden categories per level.
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Stat label="Levels" value={`${CONNECTIONS_PUZZLES.length}`} />
-              <Stat label="Perfect score" value="250 + time bonus" />
-              <Stat label="Mistake penalty" value="-50 each" />
-              <Stat label="Ranking" value="Total score" />
-            </div>
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-400">
-              Scores sync to <code className="font-mono">word_game_scores</code> (one row per level). Difficulty rises by level: 1–20 easy, 21–40 medium, 41–60 hard, 61–80 very hard, 81–100 expert.
-            </div>
-          </div>
+          <Panel title="Word game (Connections)" description="Group 16 words into 4 hidden categories per level.">
+            <RuleList
+              items={[
+                ['Levels', CONNECTIONS_PUZZLES.length],
+                ['Perfect score', '250 + time bonus'],
+                ['Mistake penalty', '-50 each'],
+                ['Ranking', 'Total score'],
+              ]}
+            />
+            <Footnote>
+              Scores sync to <code className="font-mono">word_game_scores</code> (one row per level). Difficulty rises by level:
+              1–20 easy, 21–40 medium, 41–60 hard, 61–80 very hard, 81–100 expert.
+            </Footnote>
+          </Panel>
         </MotionPanel>
-
-        <div className="grid gap-5 lg:grid-cols-[200px_1fr]">
-          {/* Level list */}
-          <MotionPanel>
-            <div className="rounded-3xl border border-slate-200 bg-white p-3 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-              <div className="max-h-[70vh] overflow-y-auto">
-                {filtered.map((p) => {
-                  const active = selected?.id === p.id;
-                  return (
-                    <button
-                      key={p.id}
-                      onClick={() => setSelectedId(p.id)}
-                      className={
-                        'flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm transition ' +
-                        (active
-                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950'
-                          : 'text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800')
-                      }
-                    >
-                      <span className="font-bold">Level #{p.id}</span>
-                      <span className={active ? 'text-white/70 dark:text-slate-600' : 'text-slate-400'}>{levelTier(p.id)}</span>
-                    </button>
-                  );
-                })}
-                {filtered.length === 0 && (
-                  <div className="px-4 py-6 text-center text-sm font-semibold text-slate-400">No levels match your search.</div>
-                )}
-              </div>
-            </div>
-          </MotionPanel>
-
-          {/* Answers */}
-          <MotionPanel>
-            {selected && <WordPuzzleDetail puzzle={selected} />}
-          </MotionPanel>
-        </div>
+        <MotionPanel>
+          <GameLeaderboard unit="pts" load={loadWordLb} />
+        </MotionPanel>
       </div>
 
-      {/* Right rail: leaderboard */}
-      <MotionPanel>
-        <GameLeaderboard title="Word Game leaders" unit="pts" load={loadWordLb} />
-      </MotionPanel>
+      <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
+        {/* Level list */}
+        <MotionPanel>
+          <Panel title="Levels" padded={false}>
+            <div className="max-h-[70vh] overflow-y-auto p-2">
+              {filtered.map((p) => (
+                <LevelButton
+                  key={p.id}
+                  active={selected?.id === p.id}
+                  onClick={() => setSelectedId(p.id)}
+                  label={`Level #${p.id}`}
+                  meta={levelTier(p.id)}
+                />
+              ))}
+              {filtered.length === 0 && (
+                <div className="px-3 py-6 text-center text-sm font-semibold text-slate-400 dark:text-slate-500">No levels match your search.</div>
+              )}
+            </div>
+          </Panel>
+        </MotionPanel>
+
+        {/* Answers */}
+        <MotionPanel>
+          {selected && <WordPuzzleDetail puzzle={selected} />}
+        </MotionPanel>
+      </div>
     </div>
   );
 }
@@ -630,14 +611,8 @@ function levelTier(id: number): string {
 
 function WordPuzzleDetail({ puzzle }: { puzzle: ConnectionsPuzzle }) {
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex items-center justify-between">
-        <div className="text-lg font-black text-slate-900 dark:text-slate-100">Level #{puzzle.id}</div>
-        <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-          {levelTier(puzzle.id)}
-        </div>
-      </div>
-      <div className="mt-4 flex flex-col gap-3">
+    <Panel title={<span className="text-base">Level #{puzzle.id}</span>} actions={<Chip>{levelTier(puzzle.id)}</Chip>}>
+      <div className="flex flex-col gap-3">
         {puzzle.groups.map((g, i) => (
           <div key={i} className={'rounded-2xl px-4 py-3 ' + (WORD_COLORS[g.color] || WORD_COLORS.yellow)}>
             <div className="text-xs font-black uppercase tracking-wide opacity-80">{g.label}</div>
@@ -645,7 +620,7 @@ function WordPuzzleDetail({ puzzle }: { puzzle: ConnectionsPuzzle }) {
           </div>
         ))}
       </div>
-    </div>
+    </Panel>
   );
 }
 
@@ -653,51 +628,46 @@ function WordPuzzleDetail({ puzzle }: { puzzle: ConnectionsPuzzle }) {
 
 function Game2048Section() {
   return (
-    <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_340px] lg:items-start">
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
       <MotionPanel>
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-          <div className="text-lg font-black text-slate-900 dark:text-slate-100">2048 Challenge</div>
-          <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-            Slide and merge tiles. Rencana Points are awarded by the highest tile reached.
+        <Panel title="2048 challenge" description="Slide and merge tiles. Rencana Points are awarded by the highest tile reached.">
+          <div className={SUB_LABEL}>Settings</div>
+          <div className="mt-2">
+            <RuleList
+              items={[
+                ['Grid', '4 × 4'],
+                ['New tile', '2 or 4'],
+                ['Win tile', '2048'],
+                ['After win', 'Keep playing'],
+                ['Best score', 'Saved locally'],
+                ['Ranking', 'Highest tile, then score'],
+                ['Controls', 'Swipe / arrows'],
+                ['Storage', 'game_2048_scores'],
+              ]}
+            />
           </div>
 
-          <div className="mt-4 text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Settings</div>
-          <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Stat label="Grid" value="4 × 4" />
-            <Stat label="New tile" value="2 or 4" />
-            <Stat label="Win tile" value="2048" />
-            <Stat label="After win" value="Keep playing" />
-            <Stat label="Best score" value="Saved locally" />
-            <Stat label="Ranking" value="Highest tile, then score" />
-            <Stat label="Controls" value="Swipe / arrows" />
-            <Stat label="Storage" value="game_2048_scores" />
+          <div className={'mt-6 ' + SUB_LABEL}>Rencana Points by tile</div>
+          <div className="mt-2">
+            <RuleList
+              columns={5}
+              items={[
+                ['Reach 128', '+5'],
+                ['Reach 256', '+10'],
+                ['Reach 512', '+20'],
+                ['Reach 1024', '+50'],
+                ['Reach 2048', '+100'],
+              ]}
+            />
           </div>
-
-          <div className="mt-5 text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Rencana Points by tile</div>
-          <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-5">
-            <Stat label="Reach 128" value="+5" />
-            <Stat label="Reach 256" value="+10" />
-            <Stat label="Reach 512" value="+20" />
-            <Stat label="Reach 1024" value="+50" />
-            <Stat label="Reach 2048" value="+100" />
-          </div>
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-400">
-            There are no fixed answers — 2048 is procedural. Points are granted once per milestone tile per game; the leaderboard ranks by the highest tile ever reached, then best score.
-          </div>
-        </div>
+          <Footnote>
+            There are no fixed answers: 2048 is procedural. Points are granted once per milestone tile per game.
+          </Footnote>
+        </Panel>
       </MotionPanel>
       <MotionPanel>
-        <GameLeaderboard title="2048 leaders" unit="score" load={load2048Lb} />
+        <GameLeaderboard unit="score" load={load2048Lb} />
       </MotionPanel>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/40">
-      <div className="text-xs font-bold uppercase tracking-wide text-slate-400">{label}</div>
-      <div className="mt-1 text-base font-black text-slate-900 dark:text-slate-100">{value}</div>
     </div>
   );
 }

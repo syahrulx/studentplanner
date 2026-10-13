@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { MotionPanel, MotionSection } from '../ui/motion';
 import {
@@ -10,23 +10,40 @@ import {
 } from '../lib/api';
 import { FeedbackSurveyEditor } from '../components/FeedbackSurveyEditor';
 import { FeedbackSurveyResults } from '../components/FeedbackSurveyResults';
-import { cardCls, dangerBtnCls, fmtDate, primaryBtnCls, randomId, secondaryBtnCls, toInput } from '../lib/feedbackSurveys';
+import { fmtDate, randomId, toInput } from '../lib/feedbackSurveys';
+import { Button } from '../ui/Button';
+import { Chip, EmptyState, Notice, PageHeader, SkeletonRows } from '../ui/page';
+import type { Tone } from '../ui/tones';
+import { DANGER_TEXT_BTN } from '../components/config/buttons';
 
 type View =
   | { kind: 'list' }
   | { kind: 'edit'; survey: FeedbackSurveyRow | null; template?: FeedbackSurveyInput }
   | { kind: 'results'; id: string };
 
-function statusOf(s: FeedbackSurveyRow): { label: string; cls: string } {
+function statusOf(s: FeedbackSurveyRow): { label: string; tone: Tone } {
   const now = Date.now();
-  if (!s.is_active) return { label: 'Off', cls: 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400' };
+  if (!s.is_active) return { label: 'Off', tone: 'neutral' };
   if (s.ends_at && new Date(s.ends_at).getTime() <= now) {
-    return { label: 'Ended', cls: 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400' };
+    return { label: 'Ended', tone: 'neutral' };
   }
   if (s.starts_at && new Date(s.starts_at).getTime() > now) {
-    return { label: 'Scheduled', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' };
+    return { label: 'Scheduled', tone: 'warning' };
   }
-  return { label: 'Live', cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300' };
+  return { label: 'Live', tone: 'success' };
+}
+
+/** One number in a survey card. */
+function CardStat({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-lg font-black leading-none tabular-nums text-slate-900 dark:text-slate-100">
+        {value}
+        {hint ? <span className="ml-1 text-xs font-bold text-slate-500 dark:text-slate-400">{hint}</span> : null}
+      </div>
+      <div className="mt-1 text-[10px] font-black uppercase tracking-wide text-slate-400 dark:text-slate-500">{label}</div>
+    </div>
+  );
 }
 
 export function FeedbackSurveysRoute() {
@@ -105,21 +122,20 @@ export function FeedbackSurveysRoute() {
   };
 
   return (
-    <div>
+    <div className="space-y-5">
       <MotionSection>
-        <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Feedback Surveys</div>
-        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          In-app popups that collect feedback straight to the team. You control the questions, who sees them, when, and how often.
-        </div>
+        <PageHeader
+          title="Feedback surveys"
+          description="In-app popups that send feedback straight to the team. You choose the questions, who sees them, when and how often."
+          actions={view.kind === 'list' ? (
+            <Button type="button" onClick={() => go({ kind: 'edit', survey: null })}>+ New survey</Button>
+          ) : undefined}
+        />
       </MotionSection>
 
-      {err && (
-        <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
-          {err}
-        </div>
-      )}
+      {err ? <Notice tone="danger">{err}</Notice> : null}
 
-      <MotionPanel className="mt-6">
+      <MotionPanel>
         {view.kind === 'edit' && (
           <FeedbackSurveyEditor
             key={view.survey?.id ?? 'new'}
@@ -133,70 +149,61 @@ export function FeedbackSurveysRoute() {
         {view.kind === 'results' && <FeedbackSurveyResults key={view.id} surveyId={view.id} onBack={() => go({ kind: 'list' })} />}
 
         {view.kind === 'list' && (
-          <div className={cardCls}>
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-black text-slate-900 dark:text-slate-100">All surveys</h3>
-              <button className={primaryBtnCls} onClick={() => go({ kind: 'edit', survey: null })}>+ New survey</button>
+          busy && items.length === 0 ? (
+            <SkeletonRows rows={3} height="h-28" />
+          ) : items.length === 0 ? (
+            <EmptyState
+              title="No surveys yet"
+              action={<Button type="button" size="sm" onClick={() => go({ kind: 'edit', survey: null })}>+ New survey</Button>}
+            >
+              Create one to start collecting feedback.
+            </EmptyState>
+          ) : (
+            <div className="space-y-3">
+              {items.map((s) => {
+                const st = statusOf(s);
+                const reached = s.stats?.reached_users ?? 0;
+                const responses = s.stats?.responses ?? 0;
+                return (
+                  <article
+                    key={s.id}
+                    className="rounded-2xl border border-slate-200 bg-white p-4 shadow-soft dark:border-slate-800 dark:bg-slate-900"
+                  >
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Chip tone={st.tone}>{st.label}</Chip>
+                          <h3 className="min-w-0 text-base font-black text-slate-900 dark:text-slate-100">{s.title_en}</h3>
+                        </div>
+                        <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                          {s.questions.length} question{s.questions.length === 1 ? '' : 's'} · priority {s.priority} · updated {fmtDate(s.updated_at)}
+                        </div>
+                      </div>
+                      <div className="grid shrink-0 grid-cols-2 gap-6 lg:w-56">
+                        <CardStat label="Reached" value={reached} />
+                        <CardStat
+                          label="Responses"
+                          value={responses}
+                          hint={reached > 0 ? `(${Math.round((responses / reached) * 100)}%)` : undefined}
+                        />
+                      </div>
+                      <div className="flex shrink-0 flex-wrap items-center gap-1.5 lg:justify-end">
+                        <Button type="button" size="sm" variant="secondary" onClick={() => go({ kind: 'results', id: s.id })}>Results</Button>
+                        <Button type="button" size="sm" variant="secondary" onClick={() => go({ kind: 'edit', survey: s })}>Edit</Button>
+                        <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => void toggleActive(s)}>
+                          {s.is_active ? 'Turn off' : 'Turn on'}
+                        </Button>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => duplicate(s)}>Duplicate</Button>
+                        <button type="button" className={DANGER_TEXT_BTN} disabled={busy} onClick={() => void remove(s)}>
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] border-separate border-spacing-y-2">
-                <thead>
-                  <tr className="text-left text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    <th className="px-3 py-2">Status</th>
-                    <th className="px-3 py-2">Survey</th>
-                    <th className="px-3 py-2">Reached</th>
-                    <th className="px-3 py-2">Responses</th>
-                    <th className="px-3 py-2">Updated</th>
-                    <th className="px-3 py-2 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((s) => {
-                    const st = statusOf(s);
-                    const reached = s.stats?.reached_users ?? 0;
-                    const responses = s.stats?.responses ?? 0;
-                    return (
-                      <tr key={s.id} className="bg-slate-50/60 dark:bg-slate-950/40">
-                        <td className="px-3 py-3">
-                          <span className={`inline-flex rounded-xl px-2.5 py-1 text-xs font-bold ${st.cls}`}>{st.label}</span>
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="text-sm font-black text-slate-900 dark:text-slate-100">{s.title_en}</div>
-                          <div className="text-xs font-semibold text-slate-500">
-                            {s.questions.length} question{s.questions.length === 1 ? '' : 's'} · priority {s.priority}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">{reached}</td>
-                        <td className="px-3 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
-                          {responses}
-                          {reached > 0 && <span className="ml-1 text-xs text-slate-500">({Math.round((responses / reached) * 100)}%)</span>}
-                        </td>
-                        <td className="px-3 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400">{fmtDate(s.updated_at)}</td>
-                        <td className="px-3 py-3">
-                          <div className="flex justify-end gap-2">
-                            <button className={secondaryBtnCls} onClick={() => go({ kind: 'results', id: s.id })}>Results</button>
-                            <button className={secondaryBtnCls} disabled={busy} onClick={() => void toggleActive(s)}>
-                              {s.is_active ? 'Turn off' : 'Turn on'}
-                            </button>
-                            <button className={secondaryBtnCls} onClick={() => go({ kind: 'edit', survey: s })}>Edit</button>
-                            <button className={secondaryBtnCls} onClick={() => duplicate(s)}>Duplicate</button>
-                            <button className={dangerBtnCls} disabled={busy} onClick={() => void remove(s)}>Delete</button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {items.length === 0 && !busy && (
-                    <tr>
-                      <td colSpan={6} className="px-3 py-6 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
-                        No surveys yet. Create one to start collecting feedback.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          )
         )}
       </MotionPanel>
     </div>

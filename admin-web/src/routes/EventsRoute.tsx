@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { listCommunityPosts, updateCommunityPost, deleteCommunityPost, type AdminCommunityPostRow } from '../lib/api';
 import { matchesAdminSearch } from '../lib/adminSearch';
 import { useAdminSearch } from '../state/AdminSearchContext';
-import { MotionPanel, MotionSection } from '../ui/motion';
+import { Button } from '../ui/Button';
+import { EmptyState, Notice, PageHeader, Panel, Pill, PillGroup, SkeletonRows } from '../ui/page';
 import { AdminPostComposer } from '../components/AdminPostComposer';
 import { CommunityPostDrawer } from '../components/CommunityPostDrawer';
-import { FilterPill } from '../components/events/FilterPill';
-import { PostCard, PostCardSkeleton } from '../components/events/PostCard';
+import { PostCard } from '../components/events/PostCard';
 
 const LOAD_LIMIT = 300;
 
@@ -22,9 +22,6 @@ const STATUS_PILLS = [
   { value: 'flagged', label: 'Flagged' },
   { value: 'closed', label: 'Closed' },
 ] as const;
-
-const PRIMARY_BTN =
-  'h-11 rounded-2xl bg-slate-900 px-4 text-sm font-black text-white shadow-soft hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200';
 
 export function EventsRoute() {
   const { searchQuery } = useAdminSearch();
@@ -116,7 +113,91 @@ export function EventsRoute() {
   const showSkeletons = busy && (!loadedOnce || items.length === 0);
 
   return (
-    <div>
+    <div className="space-y-5">
+      <PageHeader
+        title="Events & posts"
+        description="Events, memos and services students post in the app. Open one to see its photos, comments, likes and reports."
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => void refresh()} disabled={busy}>
+              {busy ? 'Loading…' : 'Refresh'}
+            </Button>
+            <Button onClick={() => setComposing(true)}>+ Post as Admin Rencana</Button>
+          </>
+        }
+      />
+
+      {/* Quick filters with counts */}
+      <Panel>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-6">
+          <div role="group" aria-label="Filter by type">
+            <PillGroup label="Type">
+              {TYPE_PILLS.map((p) => (
+                <Pill key={p.value} count={typeCount(p.value)} active={typeFilter === p.value} onClick={() => setTypeFilter(p.value)}>
+                  {p.label}
+                </Pill>
+              ))}
+            </PillGroup>
+          </div>
+          <div role="group" aria-label="Filter by status">
+            <PillGroup label="Status">
+              {STATUS_PILLS.map((p) => (
+                <Pill
+                  key={p.value}
+                  count={statusCount(p.value)}
+                  active={statusFilter === p.value}
+                  alert={p.value === 'flagged'}
+                  title={statusFilter === p.value ? 'Click again to show every status' : undefined}
+                  onClick={() => setStatusFilter(statusFilter === p.value ? 'all' : p.value)}
+                >
+                  {p.label}
+                </Pill>
+              ))}
+            </PillGroup>
+          </div>
+        </div>
+        <div className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
+          {items.length >= LOAD_LIMIT
+            ? `Counts are for the newest ${LOAD_LIMIT} posts loaded, so real totals may be higher.`
+            : 'Counts are for the posts loaded with these filters.'}
+          {searching ? ` ${filtered.length} of ${items.length} match your search.` : ''}
+        </div>
+      </Panel>
+
+      {err ? <Notice tone="danger">{err}</Notice> : null}
+
+      {/* List */}
+      {showSkeletons ? (
+        <SkeletonRows rows={3} height="h-28" />
+      ) : filtered.length === 0 && err && items.length === 0 ? null : filtered.length === 0 ? (
+        <EmptyState
+          title={searching ? 'Nothing matches your search.' : 'No posts here yet.'}
+          action={<Button onClick={() => setComposing(true)}>+ Post as Admin Rencana</Button>}
+        >
+          {searching
+            ? 'Try other words, or clear the search box at the top.'
+            : typeFilter !== 'all' || statusFilter !== 'all'
+              ? 'Try another filter above, or share something with students yourself.'
+              : 'When students share events, memos or services, they show up here. You can also post one yourself.'}
+        </EmptyState>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((p) => (
+            <PostCard
+              key={p.id}
+              post={p}
+              onView={() => setViewing(p.id)}
+              onTogglePin={() => void handleTogglePin(p)}
+              onSetStatus={(status) => void handleSetStatus(p, status)}
+              onDelete={() => void handleDelete(p)}
+            />
+          ))}
+          <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+            Showing {filtered.length} post{filtered.length !== 1 ? 's' : ''}
+          </div>
+        </div>
+      )}
+
       {viewing ? <CommunityPostDrawer postId={viewing} onClose={() => setViewing(null)} onChanged={() => void refresh()} /> : null}
       {composing ? (
         <AdminPostComposer
@@ -126,125 +207,6 @@ export function EventsRoute() {
             await refresh();
           }}
         />
-      ) : null}
-
-      {/* Header */}
-      <MotionSection>
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Events & posts</h1>
-            <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-              Events, memos and services students post in the app. Open one to see its photos, comments, likes and reports.
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void refresh()}
-              disabled={busy}
-              className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-            >
-              {busy ? 'Loading…' : 'Refresh'}
-            </button>
-            <button type="button" onClick={() => setComposing(true)} className={PRIMARY_BTN}>
-              + Post as Admin Rencana
-            </button>
-          </div>
-        </div>
-      </MotionSection>
-
-      {/* Quick filters with counts */}
-      <MotionPanel className="mt-6">
-        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-6">
-            <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by type">
-              <span className="mr-1 text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Type</span>
-              {TYPE_PILLS.map((p) => (
-                <FilterPill
-                  key={p.value}
-                  label={p.label}
-                  count={typeCount(p.value)}
-                  active={typeFilter === p.value}
-                  onClick={() => setTypeFilter(p.value)}
-                />
-              ))}
-            </div>
-            <div className="hidden h-6 w-px bg-slate-200 dark:bg-slate-700 lg:block" aria-hidden />
-            <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by status">
-              <span className="mr-1 text-[11px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">Status</span>
-              {STATUS_PILLS.map((p) => (
-                <FilterPill
-                  key={p.value}
-                  label={p.label}
-                  count={statusCount(p.value)}
-                  active={statusFilter === p.value}
-                  alert={p.value === 'flagged'}
-                  title={statusFilter === p.value ? 'Click again to show every status' : undefined}
-                  onClick={() => setStatusFilter(statusFilter === p.value ? 'all' : p.value)}
-                />
-              ))}
-            </div>
-          </div>
-          <div className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
-            {items.length >= LOAD_LIMIT
-              ? `Counts are for the newest ${LOAD_LIMIT} posts loaded, so real totals may be higher.`
-              : 'Counts are for the posts loaded with these filters.'}
-            {searching ? ` ${filtered.length} of ${items.length} match your search.` : ''}
-          </div>
-        </div>
-      </MotionPanel>
-
-      {err ? (
-        <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
-          {err}
-        </div>
-      ) : null}
-
-      {/* List */}
-      <div className="mt-4 space-y-3">
-        {showSkeletons ? (
-          <>
-            <PostCardSkeleton />
-            <PostCardSkeleton />
-            <PostCardSkeleton />
-          </>
-        ) : filtered.length === 0 && err && items.length === 0 ? null : filtered.length === 0 ? (
-          <div className="rounded-3xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center dark:border-slate-700 dark:bg-slate-900">
-            <div className="text-3xl" aria-hidden>
-              🗓️
-            </div>
-            <div className="mt-3 text-base font-black text-slate-900 dark:text-slate-100">
-              {searching ? 'Nothing matches your search.' : 'No posts here yet.'}
-            </div>
-            <p className="mx-auto mt-1 max-w-md text-sm font-semibold text-slate-500 dark:text-slate-400">
-              {searching
-                ? 'Try other words, or clear the search box at the top.'
-                : typeFilter !== 'all' || statusFilter !== 'all'
-                  ? 'Try another filter above, or share something with students yourself.'
-                  : 'When students share events, memos or services, they show up here. You can also post one yourself.'}
-            </p>
-            <button type="button" onClick={() => setComposing(true)} className={`${PRIMARY_BTN} mt-5`}>
-              + Post as Admin Rencana
-            </button>
-          </div>
-        ) : (
-          filtered.map((p) => (
-            <PostCard
-              key={p.id}
-              post={p}
-              onView={() => setViewing(p.id)}
-              onTogglePin={() => void handleTogglePin(p)}
-              onSetStatus={(status) => void handleSetStatus(p, status)}
-              onDelete={() => void handleDelete(p)}
-            />
-          ))
-        )}
-      </div>
-
-      {!showSkeletons && filtered.length > 0 ? (
-        <div className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
-          Showing {filtered.length} post{filtered.length !== 1 ? 's' : ''}
-        </div>
       ) : null}
     </div>
   );

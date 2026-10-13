@@ -6,10 +6,20 @@ export function CommunicationsRoute() {
   return (
     <AdminSectionTabs
       title="Communications"
-      description="Send broadcasts and manage in-app release notes without switching between separate sections."
+      description="Send push notifications and manage the in-app release note."
       tabs={[
-        { id: 'broadcasts', label: 'Broadcasts', description: 'Send a notification to a selected audience.', content: <BroadcastRoute /> },
-        { id: 'whats-new', label: "What's new", description: 'Manage the release note shown when users open the app.', content: <WhatsNewRoute /> },
+        {
+          id: 'broadcasts',
+          label: 'Broadcasts',
+          description: 'Send a push notification to a chosen audience. Each user’s push opt-in and category settings are respected.',
+          content: <BroadcastRoute />,
+        },
+        {
+          id: 'whats-new',
+          label: "What's new",
+          description: 'The release note shown when users open the app. Only one can be active at a time.',
+          content: <WhatsNewRoute />,
+        },
       ]}
     />
   );

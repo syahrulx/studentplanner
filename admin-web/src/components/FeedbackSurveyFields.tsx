@@ -14,8 +14,8 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
 
 export function SectionTitle({ children, sub }: { children: ReactNode; sub?: string }) {
   return (
-    <div className="mb-4">
-      <h3 className="text-lg font-black text-slate-900 dark:text-slate-100">{children}</h3>
+    <div>
+      <h2 className="text-sm font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">{children}</h2>
       {sub && <p className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">{sub}</p>}
     </div>
   );

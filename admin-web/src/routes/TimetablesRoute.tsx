@@ -1,5 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   deleteTimetableEntry,
@@ -12,7 +11,11 @@ import {
 } from '../lib/api';
 import { matchesAdminSearch } from '../lib/adminSearch';
 import { useAdminSearch } from '../state/AdminSearchContext';
-import { MotionPanel, MotionSection } from '../ui/motion';
+import { MotionSection } from '../ui/motion';
+import { Button } from '../ui/Button';
+import { Label, Select, TextInput } from '../ui/Input';
+import { cn } from '../ui/cn';
+import { EmptyState, Notice, PageHeader, Panel, SidePanel, SkeletonRows } from '../ui/page';
 import { AdminTimetableGrid } from '../components/AdminTimetableGrid';
 import {
   WEEK_DAYS_MON_FIRST,
@@ -397,114 +400,72 @@ export function TimetablesRoute() {
         }
       : null;
 
-  const studentTimetablePanel =
-    timetableModalUserId && summaryRowForModal ? (
-      <div
-        id="admin-timetable-panel"
-        className="rounded-2xl border border-brand-200/60 bg-slate-50/90 p-4 shadow-inner dark:border-brand-900/40 dark:bg-slate-950/70"
-      >
-        <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 dark:border-slate-700 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Timetable</div>
-            <h2 className="text-lg font-black text-slate-900 dark:text-slate-100">
-              {userDisplayName(summaryRowForModal)}
-            </h2>
-            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-              {modalProfile?.student_id?.trim() || '—'} · {modalProfile?.university_id?.trim() || '—'}
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => void refreshModalEntries()}
-              disabled={modalBusy}
-              className="h-10 rounded-2xl border border-slate-200 px-4 text-xs font-black text-slate-900 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800"
-            >
-              {modalBusy ? 'Loading…' : 'Reload grid'}
-            </button>
-            <button
-              type="button"
-              onClick={openNewSlot}
-              className="h-10 rounded-2xl bg-brand-600 px-4 text-xs font-black text-white hover:bg-brand-700"
-            >
-              Add slot
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setTimetableModalUserId(null);
-                setModalEntries([]);
-                setSlotEditorErr('');
-                setEditor(null);
-              }}
-              className="h-10 rounded-2xl bg-slate-900 px-4 text-xs font-black text-white hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600"
-            >
-              Close timetable
-            </button>
-          </div>
-        </div>
-        <p className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
-          Click a class block to edit. Overlapping times on the same day are blocked when saving.
-        </p>
-        <div className="mt-4">
-          {modalBusy && modalEntries.length === 0 ? (
-            <div className="py-16 text-center font-semibold text-slate-500">Loading timetable…</div>
-          ) : (
-            <AdminTimetableGrid entries={modalEntries} onSlotClick={openEditorForRow} />
-          )}
-        </div>
-      </div>
-    ) : null;
+  const closeTimetable = () => {
+    setTimetableModalUserId(null);
+    setModalEntries([]);
+    setSlotEditorErr('');
+    setEditor(null);
+  };
 
-  const openUserVisibleInStudentList =
-    timetableModalUserId != null && summariesFiltered.some((s) => s.user_id === timetableModalUserId);
+  // While a class is open, closing the panel goes back to the grid (like the old editor window).
+  const onPanelClose = () => {
+    if (editor) {
+      if (!formBusy) closeEditor();
+      return;
+    }
+    closeTimetable();
+  };
+
+  const searching = Boolean(searchQuery.trim());
+
+  const slotFields: Array<{ label: string; value: string; set: (v: string) => void; placeholder?: string }> = [
+    { label: 'Start', value: formStart, set: setFormStart, placeholder: '08:00' },
+    { label: 'End', value: formEnd, set: setFormEnd, placeholder: '10:00' },
+    { label: 'Subject code', value: formCode, set: setFormCode },
+    { label: 'Subject name', value: formName, set: setFormName },
+    { label: 'Lecturer', value: formLecturer, set: setFormLecturer },
+    { label: 'Location', value: formLocation, set: setFormLocation },
+    { label: 'Group', value: formGroup, set: setFormGroup },
+    { label: 'Semester label', value: formSemester, set: setFormSemester },
+    { label: 'Display name', value: formDisplay, set: setFormDisplay },
+    { label: 'Slot colour (CSS)', value: formColor, set: setFormColor, placeholder: '#22c55e or hsl(200 70% 40%)' },
+  ];
 
   return (
-    <div>
-      <MotionSection>
-        <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Timetables</div>
-        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Click a student row to open their week grid directly under that row. Click again to close.
-          {searchQuery.trim() ? (
-            <span className="mt-1 block text-xs font-bold text-brand-600 dark:text-brand-400">
-              Lists filtered by the top search bar.
-            </span>
-          ) : null}
-        </div>
-      </MotionSection>
+    <div className="space-y-6">
+      <PageHeader
+        title="Timetables"
+        description="Click a student to open their week grid, then click a class to edit it."
+      />
 
-      <MotionSection delay={0.04} className="mt-6">
-        <MotionPanel>
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <div className="text-sm font-black text-slate-900 dark:text-slate-100">Students</div>
-                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  {summariesBusy ? 'Loading…' : `${summariesFiltered.length} with timetables`} — grid opens under the row you click.
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => void loadSummaries()}
-                disabled={summariesBusy}
-                className="h-10 rounded-2xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-900 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
-              >
-                Refresh list
-              </button>
-            </div>
-            {summariesErr ? (
-              <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
-                {summariesErr}
-              </div>
-            ) : null}
-            <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-100 dark:border-slate-800">
-              <table className="w-full min-w-[520px] text-left text-sm">
-                <thead className="bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500 dark:bg-slate-950 dark:text-slate-400">
+      {searching ? <Notice tone="brand">Top search is on. Both lists below are filtered.</Notice> : null}
+      {err ? <Notice tone="danger">{err}</Notice> : null}
+
+      <MotionSection>
+        <Panel
+          title="Students"
+          description={summariesBusy ? 'Loading…' : `${summariesFiltered.length} with timetables`}
+          actions={
+            <Button variant="secondary" size="sm" onClick={() => void loadSummaries()} disabled={summariesBusy}>
+              Refresh list
+            </Button>
+          }
+          padded={false}
+        >
+          {summariesErr ? <Notice tone="danger" className="m-5 mb-0">{summariesErr}</Notice> : null}
+          {summariesBusy && summaries.length === 0 ? (
+            <div className="p-5"><SkeletonRows rows={4} height="h-12" /></div>
+          ) : summariesFiltered.length === 0 ? (
+            <div className="p-5"><EmptyState title="No users with timetable rows yet." /></div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
                   <tr>
-                    <th className="px-3 py-2">Name</th>
-                    <th className="px-3 py-2">Student ID</th>
-                    <th className="px-3 py-2">University</th>
-                    <th className="px-3 py-2 text-right">Slots</th>
+                    <th className="px-5 py-2.5">Name</th>
+                    <th className="px-3 py-2.5">Student ID</th>
+                    <th className="px-3 py-2.5">University</th>
+                    <th className="px-5 py-2.5 text-right">Slots</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -512,375 +473,143 @@ export function TimetablesRoute() {
                     const p = u.profile;
                     const selected = timetableModalUserId === u.user_id;
                     return (
-                      <Fragment key={u.user_id}>
-                        <tr
-                          data-student-timetable-row={u.user_id}
-                          className={`cursor-pointer border-t border-slate-100 transition-colors hover:bg-slate-50 dark:border-slate-800/80 dark:hover:bg-slate-800/40 ${
-                            selected ? 'bg-brand-500/12 dark:bg-brand-500/20' : ''
-                          }`}
-                          onClick={() => void openUserTimetable(u.user_id)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              void openUserTimetable(u.user_id);
-                            }
-                          }}
-                          tabIndex={0}
-                          role="button"
-                          aria-expanded={selected}
-                          aria-label={`Open timetable for ${userDisplayName(u)}`}
-                          aria-selected={selected}
-                        >
-                          <td className="px-3 py-2">
-                            <span className="font-black text-brand-600 dark:text-brand-400">{userDisplayName(u)}</span>
-                            <div className="text-[10px] font-mono font-semibold text-slate-400">{u.user_id}</div>
-                          </td>
-                          <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">
-                            {p?.student_id?.trim() || '—'}
-                          </td>
-                          <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{p?.university_id?.trim() || '—'}</td>
-                          <td className="px-3 py-2 text-right font-black text-slate-900 dark:text-slate-100">
-                            {u.entry_count}
-                          </td>
-                        </tr>
-                        {selected && studentTimetablePanel ? (
-                          <tr className="border-t border-slate-100 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-950/40">
-                            <td colSpan={4} className="px-3 py-4">
-                              {studentTimetablePanel}
-                            </td>
-                          </tr>
-                        ) : null}
-                      </Fragment>
+                      <tr
+                        key={u.user_id}
+                        data-student-timetable-row={u.user_id}
+                        className={cn(
+                          'cursor-pointer border-t border-slate-100 transition-colors focus:outline-none focus-visible:bg-slate-50 dark:border-slate-800 dark:focus-visible:bg-slate-800/40',
+                          selected
+                            ? 'bg-brand-50 dark:bg-brand-900/30'
+                            : 'hover:bg-slate-50 dark:hover:bg-slate-800/40',
+                        )}
+                        onClick={() => void openUserTimetable(u.user_id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            void openUserTimetable(u.user_id);
+                          }
+                        }}
+                        tabIndex={0}
+                        role="button"
+                        aria-expanded={selected}
+                        aria-label={`Open timetable for ${userDisplayName(u)}`}
+                        aria-selected={selected}
+                      >
+                        <td className="px-5 py-2.5">
+                          <div className="font-black text-slate-900 dark:text-slate-100">{userDisplayName(u)}</div>
+                          <div className="break-all font-mono text-[10px] font-semibold text-slate-400 dark:text-slate-500">{u.user_id}</div>
+                        </td>
+                        <td className="px-3 py-2.5 font-semibold text-slate-700 dark:text-slate-200">{p?.student_id?.trim() || '—'}</td>
+                        <td className="px-3 py-2.5 font-semibold text-slate-600 dark:text-slate-300">{p?.university_id?.trim() || '—'}</td>
+                        <td className="px-5 py-2.5 text-right font-black tabular-nums text-slate-900 dark:text-slate-100">{u.entry_count}</td>
+                      </tr>
                     );
                   })}
-                  {summariesFiltered.length === 0 && !summariesBusy ? (
-                    <tr>
-                      <td colSpan={4} className="px-3 py-8 text-center font-semibold text-slate-500 dark:text-slate-400">
-                        No users with timetable rows yet.
-                      </td>
-                    </tr>
-                  ) : null}
                 </tbody>
               </table>
             </div>
-
-            {timetableModalUserId && studentTimetablePanel && !openUserVisibleInStudentList ? (
-              <div className="mt-4 rounded-2xl border border-amber-200/60 bg-amber-50/40 p-4 dark:border-amber-900/40 dark:bg-amber-950/20">
-                <div className="mb-3 text-xs font-semibold text-amber-900 dark:text-amber-100/90">
-                  This student is not in the filtered list above (search or filters). Timetable is shown here instead.
-                </div>
-                {studentTimetablePanel}
-              </div>
-            ) : null}
-          </div>
-        </MotionPanel>
+          )}
+        </Panel>
       </MotionSection>
 
-      {editor
-        ? createPortal(
-                  <div
-                    className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 p-3 backdrop-blur-[1px] sm:p-4"
-                    role="presentation"
-                    onClick={() => {
-                      if (!formBusy) closeEditor();
-                    }}
-                  >
-                    <div
-                      className="flex max-h-[min(88dvh,860px)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-600 dark:bg-slate-900"
-                      role="dialog"
-                      aria-modal="true"
-                      aria-labelledby="slot-editor-title"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-5 pb-3 pt-5 dark:border-slate-800">
-                        <div className="min-w-0">
-                          <h3
-                            id="slot-editor-title"
-                            className="text-lg font-black text-slate-900 dark:text-slate-100"
-                          >
-                            {editor.kind === 'new' ? 'Add timetable slot' : 'Class details'}
-                          </h3>
-                          {editor.kind === 'edit' ? (
-                            <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                              {editor.row.subject_code} · {editor.row.day} · {editor.row.start_time}–{editor.row.end_time}
-                              {editor.row.id ? (
-                                <span className="ml-2 font-mono text-[10px] opacity-70">id {editor.row.id}</span>
-                              ) : null}
-                            </p>
-                          ) : (
-                            <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                              Fill in the fields below, then save. Times must not overlap another class on the same day.
-                            </p>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => !formBusy && closeEditor()}
-                          disabled={formBusy}
-                          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-lg font-black text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
-                          aria-label="Close editor"
-                        >
-                          ×
-                        </button>
-                      </div>
-                      {slotEditorErr ? (
-                        <div className="shrink-0 border-b border-rose-200 bg-rose-50 px-5 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/50 dark:text-rose-100">
-                          {slotEditorErr}
-                        </div>
-                      ) : null}
-                      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  <label className="block text-xs font-black uppercase text-slate-600 dark:text-slate-400">
-                    Day
-                    <select
-                      value={formDay}
-                      onChange={(e) => setFormDay(e.target.value)}
-                      className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                      {WEEK_DAYS_MON_FIRST.map((d) => (
-                        <option key={d} value={d}>
-                          {d}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block text-xs font-black uppercase text-slate-600 dark:text-slate-400">
-                    Start
-                    <input
-                      value={formStart}
-                      onChange={(e) => setFormStart(e.target.value)}
-                      className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="08:00"
-                    />
-                  </label>
-                  <label className="block text-xs font-black uppercase text-slate-600 dark:text-slate-400">
-                    End
-                    <input
-                      value={formEnd}
-                      onChange={(e) => setFormEnd(e.target.value)}
-                      className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="10:00"
-                    />
-                  </label>
-                  <label className="block text-xs font-black uppercase text-slate-600 dark:text-slate-400">
-                    Subject code
-                    <input
-                      value={formCode}
-                      onChange={(e) => setFormCode(e.target.value)}
-                      className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </label>
-                  <label className="block text-xs font-black uppercase text-slate-600 dark:text-slate-400">
-                    Subject name
-                    <input
-                      value={formName}
-                      onChange={(e) => setFormName(e.target.value)}
-                      className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </label>
-                  <label className="block text-xs font-black uppercase text-slate-600 dark:text-slate-400">
-                    Lecturer
-                    <input
-                      value={formLecturer}
-                      onChange={(e) => setFormLecturer(e.target.value)}
-                      className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </label>
-                  <label className="block text-xs font-black uppercase text-slate-600 dark:text-slate-400">
-                    Location
-                    <input
-                      value={formLocation}
-                      onChange={(e) => setFormLocation(e.target.value)}
-                      className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </label>
-                  <label className="block text-xs font-black uppercase text-slate-600 dark:text-slate-400">
-                    Group
-                    <input
-                      value={formGroup}
-                      onChange={(e) => setFormGroup(e.target.value)}
-                      className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </label>
-                  <label className="block text-xs font-black uppercase text-slate-600 dark:text-slate-400">
-                    Semester label
-                    <input
-                      value={formSemester}
-                      onChange={(e) => setFormSemester(e.target.value)}
-                      className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </label>
-                  <label className="block text-xs font-black uppercase text-slate-600 dark:text-slate-400">
-                    Display name
-                    <input
-                      value={formDisplay}
-                      onChange={(e) => setFormDisplay(e.target.value)}
-                      className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </label>
-                  <label className="block text-xs font-black uppercase text-slate-600 dark:text-slate-400">
-                    Slot color (CSS)
-                    <input
-                      value={formColor}
-                      onChange={(e) => setFormColor(e.target.value)}
-                      className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="#22c55e or hsl(200 70% 40%)"
-                    />
-                  </label>
-                </div>
-                      </div>
-                      <div className="flex shrink-0 flex-wrap gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-700 dark:bg-slate-950/80">
-                  <button
-                    type="button"
-                    onClick={() => void saveEditor()}
-                    disabled={formBusy}
-                    className="h-10 rounded-2xl bg-brand-600 px-5 text-xs font-black text-white hover:bg-brand-700 disabled:opacity-60"
-                  >
-                    {formBusy ? 'Saving…' : 'Save'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={closeEditor}
-                    disabled={formBusy}
-                    className="h-10 rounded-2xl border border-slate-200 px-5 text-xs font-black text-slate-900 dark:border-slate-600 dark:text-slate-100"
-                  >
-                    Cancel
-                  </button>
-                  {editor.kind === 'edit' ? (
-                    <button
-                      type="button"
-                      onClick={() => void deleteEditorRow()}
-                      disabled={formBusy}
-                      className="h-10 rounded-2xl bg-rose-600 px-5 text-xs font-black text-white hover:bg-rose-700 disabled:opacity-60"
-                    >
-                      Delete slot
-                    </button>
-                  ) : null}
-                      </div>
-                    </div>
-                  </div>,
-                  document.body,
-                )
-        : null}
-
-      <MotionSection delay={0.1} className="mt-6">
-        <MotionPanel>
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-            <div className="mb-2 text-sm font-black text-slate-900 dark:text-slate-100">Raw rows (filters)</div>
-            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-              <div className="flex flex-1 flex-col gap-3 md:flex-row">
-                <label className="block md:w-64">
-                  <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                    University
-                  </div>
-                  <select
-                    value={universityId}
-                    onChange={(e) => setUniversityId(e.target.value)}
-                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                  >
-                    <option value="">All universities</option>
-                    {universityOptions.map((u) => (
-                      <option key={u} value={u}>
-                        {u}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="block flex-1">
-                  <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                    Student
-                  </div>
-                  <select
-                    value={userId}
-                    onChange={(e) => setUserId(e.target.value)}
-                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                  >
-                    <option value="">All students</option>
-                    {userOptions.map((u) => (
-                      <option key={u.userId} value={u.userId}>
-                        {u.label} - {u.subtitle}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    setUniversityId('');
-                    setUserId('');
-                    void refresh();
-                  }}
-                  disabled={busy}
-                  className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-900 shadow-sm hover:bg-slate-50 disabled:opacity-70 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-                >
-                  Reset
-                </button>
-                <button
-                  onClick={() => void refresh()}
-                  disabled={busy}
-                  className="h-11 rounded-2xl bg-brand-600 px-4 text-sm font-black text-white shadow-soft hover:bg-brand-700 disabled:opacity-70"
-                >
-                  {busy ? 'Loading…' : 'Apply'}
-                </button>
-              </div>
+      <MotionSection delay={0.06}>
+        <Panel
+          title="All timetable rows"
+          description={`Showing ${rowsFiltered.length} entries across ${groupedFilteredCount} users${searching ? ' (filtered)' : ''} · max 200 rows loaded`}
+          padded={false}
+        >
+          <div className="flex flex-col gap-3 border-b border-slate-100 p-5 md:flex-row md:items-end dark:border-slate-800">
+            <div className="md:w-64">
+              <Label htmlFor="tt-university" className="mb-1">University</Label>
+              <Select id="tt-university" value={universityId} onChange={(e) => setUniversityId(e.target.value)}>
+                <option value="">All universities</option>
+                {universityOptions.map((u) => (
+                  <option key={u} value={u}>{u}</option>
+                ))}
+              </Select>
             </div>
-
-            {err ? (
-              <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
-                {err}
-              </div>
-            ) : null}
-
-            <div className="mt-4 text-xs font-semibold text-slate-500 dark:text-slate-400">
-              Showing {rowsFiltered.length} entries across {groupedFilteredCount} users
-              {searchQuery.trim() ? ' (filtered)' : ''} (max 200 rows loaded)
+            <div className="min-w-0 flex-1">
+              <Label htmlFor="tt-student" className="mb-1">Student</Label>
+              <Select id="tt-student" value={userId} onChange={(e) => setUserId(e.target.value)}>
+                <option value="">All students</option>
+                {userOptions.map((u) => (
+                  <option key={u.userId} value={u.userId}>
+                    {u.label} - {u.subtitle}
+                  </option>
+                ))}
+              </Select>
             </div>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setUniversityId('');
+                  setUserId('');
+                  void refresh();
+                }}
+                disabled={busy}
+              >
+                Reset
+              </Button>
+              <Button onClick={() => void refresh()} disabled={busy}>
+                {busy ? 'Loading…' : 'Apply'}
+              </Button>
+            </div>
+          </div>
 
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full min-w-[980px] border-separate border-spacing-y-2">
-                <thead>
-                  <tr className="text-left text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    <th className="px-3 py-2">User</th>
-                    <th className="px-3 py-2">Day</th>
-                    <th className="px-3 py-2">Subject</th>
-                    <th className="px-3 py-2">Time</th>
-                    <th className="px-3 py-2">Location</th>
-                    <th className="px-3 py-2">Actions</th>
+          {busy && rows.length === 0 ? (
+            <div className="p-5"><SkeletonRows rows={4} height="h-12" /></div>
+          ) : rowsFiltered.length === 0 ? (
+            !busy ? (
+              <div className="p-5">
+                <EmptyState
+                  title={searching && rows.length > 0 ? 'No rows match the top search.' : 'No timetable entries found.'}
+                />
+              </div>
+            ) : null
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  <tr>
+                    <th className="px-5 py-2.5">User</th>
+                    <th className="px-3 py-2.5">Class</th>
+                    <th className="px-3 py-2.5">When</th>
+                    <th className="hidden px-3 py-2.5 md:table-cell">Location</th>
+                    <th className="px-5 py-2.5 text-right"><span className="sr-only">Actions</span></th>
                   </tr>
                 </thead>
                 <tbody>
                   {rowsFiltered.map((r) => (
-                    <tr
-                      key={`${r.user_id}-${r.id}-${r.day}-${r.start_time}`}
-                      className="rounded-2xl border border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-950/40"
-                    >
-                      <td className="px-3 py-3 text-xs font-black text-slate-900 dark:text-slate-100">
+                    <tr key={`${r.user_id}-${r.id}-${r.day}-${r.start_time}`} className="border-t border-slate-100 align-top dark:border-slate-800">
+                      <td className="px-5 py-2.5">
                         <button
                           type="button"
                           onClick={() => void openUserTimetable(r.user_id)}
                           className="text-left font-black text-brand-600 hover:underline dark:text-brand-400"
+                          title="Open this student's week grid"
                         >
                           {formatUserLabel(profilesByUserId[r.user_id])}
                         </button>
-                        <div className="mt-0.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                        <div className="mt-0.5 break-all text-[11px] font-semibold text-slate-500 dark:text-slate-400">
                           {profilesByUserId[r.user_id]?.name?.trim() || r.user_id}
                         </div>
                       </td>
-                      <td className="px-3 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">{r.day}</td>
-                      <td className="px-3 py-3 text-sm">
+                      <td className="px-3 py-2.5">
                         <div className="font-black text-slate-900 dark:text-slate-100">{r.subject_code}</div>
                         <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">{r.subject_name}</div>
+                        <div className="text-xs font-semibold text-slate-500 md:hidden dark:text-slate-400">{r.location}</div>
                       </td>
-                      <td className="px-3 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
-                        {r.start_time}–{r.end_time}
+                      <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700 dark:text-slate-200">
+                        <div>{r.day}</div>
+                        <div className="text-xs tabular-nums text-slate-500 dark:text-slate-400">{r.start_time}–{r.end_time}</div>
                       </td>
-                      <td className="px-3 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">{r.location}</td>
-                      <td className="px-3 py-3">
-                        <button
-                          className="h-9 rounded-xl bg-slate-900 px-3 text-xs font-black text-white hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600"
+                      <td className="hidden px-3 py-2.5 font-semibold text-slate-700 md:table-cell dark:text-slate-200">{r.location}</td>
+                      <td className="px-5 py-2.5 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
                           onClick={async () => {
                             const ok = confirm('Delete this timetable entry row?');
                             if (!ok) return;
@@ -890,28 +619,107 @@ export function TimetablesRoute() {
                           }}
                         >
                           Delete row
-                        </button>
+                        </Button>
                       </td>
                     </tr>
                   ))}
-                  {rowsFiltered.length === 0 && !busy ? (
-                    <tr>
-                      <td
-                        colSpan={6}
-                        className="px-3 py-6 text-center text-sm font-semibold text-slate-500 dark:text-slate-400"
-                      >
-                        {searchQuery.trim() && rows.length > 0
-                          ? 'No rows match the top search.'
-                          : 'No timetable entries found.'}
-                      </td>
-                    </tr>
-                  ) : null}
                 </tbody>
               </table>
             </div>
-          </div>
-        </MotionPanel>
+          )}
+        </Panel>
       </MotionSection>
+
+      {timetableModalUserId && summaryRowForModal ? (
+        <SidePanel
+          width="max-w-5xl"
+          title={userDisplayName(summaryRowForModal)}
+          subtitle={`${modalProfile?.student_id?.trim() || '—'} · ${modalProfile?.university_id?.trim() || '—'}`}
+          onClose={onPanelClose}
+          footer={
+            editor ? (
+              <>
+                {editor.kind === 'edit' ? (
+                  <Button variant="danger" size="sm" className="mr-auto" onClick={() => void deleteEditorRow()} disabled={formBusy}>
+                    Delete slot
+                  </Button>
+                ) : null}
+                <Button variant="secondary" size="sm" onClick={closeEditor} disabled={formBusy}>
+                  Cancel
+                </Button>
+                <Button size="sm" onClick={() => void saveEditor()} disabled={formBusy}>
+                  {formBusy ? 'Saving…' : 'Save'}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="secondary" size="sm" onClick={() => void refreshModalEntries()} disabled={modalBusy}>
+                  {modalBusy ? 'Loading…' : 'Reload grid'}
+                </Button>
+                <Button size="sm" onClick={openNewSlot}>
+                  Add slot
+                </Button>
+              </>
+            )
+          }
+        >
+          {editor ? (
+            <section aria-labelledby="slot-editor-title" className="space-y-4">
+              <div>
+                <h3 id="slot-editor-title" className="text-base font-black text-slate-900 dark:text-slate-100">
+                  {editor.kind === 'new' ? 'Add timetable slot' : 'Class details'}
+                </h3>
+                {editor.kind === 'edit' ? (
+                  <p className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    {editor.row.subject_code} · {editor.row.day} · {editor.row.start_time}–{editor.row.end_time}
+                    {editor.row.id ? <span className="ml-2 font-mono text-[10px] opacity-70">id {editor.row.id}</span> : null}
+                  </p>
+                ) : (
+                  <p className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    Fill in the fields below, then save. Times must not overlap another class on the same day.
+                  </p>
+                )}
+              </div>
+              {slotEditorErr ? <Notice tone="danger">{slotEditorErr}</Notice> : null}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="slot-day" className="mb-1">Day</Label>
+                  <Select id="slot-day" value={formDay} onChange={(e) => setFormDay(e.target.value)}>
+                    {WEEK_DAYS_MON_FIRST.map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </Select>
+                </div>
+                {slotFields.map((f) => {
+                  const id = `slot-${f.label.toLowerCase().replace(/[^a-z]+/g, '-')}`;
+                  return (
+                    <div key={f.label}>
+                      <Label htmlFor={id} className="mb-1">{f.label}</Label>
+                      <TextInput id={id} value={f.value} onChange={(e) => f.set(e.target.value)} placeholder={f.placeholder} />
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ) : (
+            <>
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                Click a class to edit it. Times that overlap on the same day are blocked when saving.
+              </p>
+              {modalBusy && modalEntries.length === 0 ? (
+                <SkeletonRows rows={1} height="h-96" />
+              ) : (
+                <>
+                  {modalEntries.length === 0 ? (
+                    <Notice tone="neutral">No classes yet. Use Add slot to create one.</Notice>
+                  ) : null}
+                  <AdminTimetableGrid entries={modalEntries} onSlotClick={openEditorForRow} />
+                </>
+              )}
+            </>
+          )}
+        </SidePanel>
+      ) : null}
     </div>
   );
 }

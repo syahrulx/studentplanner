@@ -2,7 +2,19 @@ import { useEffect, useMemo, useState } from 'react';
 import { listAdminLogs, type AdminLogRow } from '../lib/api';
 import { matchesAdminSearch } from '../lib/adminSearch';
 import { useAdminSearch } from '../state/AdminSearchContext';
-import { MotionPanel, MotionSection, MotionStagger, MotionStaggerItem } from '../ui/motion';
+import { MotionPanel, MotionSection } from '../ui/motion';
+import { Button } from '../ui/Button';
+import { Chip, EmptyState, Notice, PageHeader, Panel, Pill, PillGroup, SkeletonRows } from '../ui/page';
+
+const TYPE_OPTIONS = ['all', 'api_request', 'failed_login', 'error'] as const;
+const STATUS_OPTIONS = ['all', 'success', 'failed'] as const;
+
+/** Plain label for a log type / status value (the value sent to the server is unchanged). */
+function prettyValue(v: string) {
+  if (v === 'all') return 'All';
+  const t = v.replace(/_/g, ' ');
+  return t[0].toUpperCase() + t.slice(1);
+}
 
 type LogRow = AdminLogRow;
 
@@ -13,6 +25,9 @@ export function LogsRoute() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [rows, setRows] = useState<LogRow[]>([]);
+  // Display only: which filters the rows on screen were loaded with, so the
+  // page can say when a changed filter still needs "Apply".
+  const [loadedWith, setLoadedWith] = useState({ type: 'all', status: 'all' });
   const [selected, setSelected] = useState<LogRow | null>(null);
 
   const refresh = async () => {
@@ -21,6 +36,7 @@ export function LogsRoute() {
     try {
       const items = await listAdminLogs({ type, status, limit: 200 });
       setRows(items);
+      setLoadedWith({ type, status });
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load logs');
     } finally {
@@ -47,134 +63,115 @@ export function LogsRoute() {
     );
   }, [rows, searchQuery]);
 
+  const pending = type !== loadedWith.type || status !== loadedWith.status;
+  const searching = searchQuery.trim().length > 0;
+
   return (
-    <div>
+    <div className="space-y-5">
       <MotionSection>
-        <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Logs</div>
-        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          API requests, errors, and monitoring.
-          {searchQuery.trim() ? (
-            <span className="mt-1 block text-xs font-bold text-brand-600 dark:text-brand-400">
-              Rows filtered by the top search (including JSON meta).
-            </span>
-          ) : null}
-        </div>
+        <PageHeader
+          title="Logs"
+          description="API requests, failed logins and errors. Newest 200 for the chosen filters."
+          actions={
+            <Button type="button" onClick={refresh} disabled={busy} variant={pending ? 'primary' : 'secondary'}>
+              {busy ? 'Loading…' : pending ? 'Apply filters' : 'Refresh'}
+            </Button>
+          }
+        />
       </MotionSection>
 
-      <MotionStagger className="mt-6 grid gap-4 lg:grid-cols-2">
-        <MotionStaggerItem>
-          <MotionPanel className="h-full">
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div className="grid flex-1 gap-3 md:grid-cols-2">
-              <label className="block">
-                <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Type</div>
-                <select
-                  value={type}
-                  onChange={(e) => setType(e.target.value)}
-                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                >
-                  <option value="all">all</option>
-                  <option value="api_request">api_request</option>
-                  <option value="failed_login">failed_login</option>
-                  <option value="error">error</option>
-                </select>
-              </label>
-              <label className="block">
-                <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Status</div>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                >
-                  <option value="all">all</option>
-                  <option value="success">success</option>
-                  <option value="failed">failed</option>
-                </select>
-              </label>
-            </div>
-            <button
-              onClick={refresh}
-              disabled={busy}
-              className="h-11 rounded-2xl bg-brand-600 px-4 text-sm font-black text-white shadow-soft hover:bg-brand-700 disabled:opacity-70"
-            >
-              {busy ? 'Loading…' : 'Refresh'}
-            </button>
-          </div>
-
-          {err ? (
-            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
-              {err}
-            </div>
-          ) : null}
-
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full min-w-[720px] border-separate border-spacing-y-2">
-              <thead>
-                <tr className="text-left text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  <th className="px-3 py-2">When</th>
-                  <th className="px-3 py-2">Type</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Meta</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rowsFiltered.map((r) => (
-                  <tr
-                    key={r.id}
-                    className="cursor-pointer rounded-2xl border border-slate-200 bg-slate-50/60 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-950/70"
-                    onClick={() => setSelected(r)}
-                  >
-                    <td className="px-3 py-3 text-xs font-black text-slate-900 dark:text-slate-100">
-                      {new Date(r.created_at).toLocaleString()}
-                    </td>
-                    <td className="px-3 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">{r.type}</td>
-                    <td className="px-3 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">{r.status}</td>
-                    <td className="px-3 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                      {JSON.stringify(r.meta)?.slice(0, 120)}
-                    </td>
-                  </tr>
+      <MotionPanel>
+        <Panel padded>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-6">
+            <div role="group" aria-label="Filter by type">
+              <PillGroup label="Type">
+                {TYPE_OPTIONS.map((v) => (
+                  <Pill key={v} active={type === v} onClick={() => setType(v)}>{prettyValue(v)}</Pill>
                 ))}
-                {rowsFiltered.length === 0 && !busy ? (
-                  <tr>
-                    <td colSpan={4} className="px-3 py-6 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
-                      {searchQuery.trim() && rows.length > 0
-                        ? 'No logs match the top search.'
-                        : 'No logs found yet.'}
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-
-          {rows.length === 0 && !busy && !searchQuery.trim() ? (
-            <div className="mt-3 text-xs font-semibold text-slate-500">
-              Logs are recorded when you perform admin actions like <code>Test Fetch</code>, user status changes (Activate/Disable/Ban), or deleting timetable rows.
+              </PillGroup>
             </div>
-          ) : null}
-        </div>
-          </MotionPanel>
-        </MotionStaggerItem>
+            <div className="hidden h-6 w-px bg-slate-200 dark:bg-slate-700 lg:block" aria-hidden />
+            <div role="group" aria-label="Filter by status">
+              <PillGroup label="Status">
+                {STATUS_OPTIONS.map((v) => (
+                  <Pill key={v} active={status === v} onClick={() => setStatus(v)}>{prettyValue(v)}</Pill>
+                ))}
+              </PillGroup>
+            </div>
+          </div>
+          <div className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
+            {pending
+              ? 'Filters changed. Press "Apply filters" to load matching logs.'
+              : `${rows.length} loaded${searching ? `, ${rowsFiltered.length} match the top search (including JSON meta)` : ''}.`}
+          </div>
+        </Panel>
+      </MotionPanel>
 
-        <MotionStaggerItem>
-          <MotionPanel className="h-full">
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-          <div className="text-sm font-black text-slate-900 dark:text-slate-100">Log details</div>
-          <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Click a row to inspect full JSON.</div>
+      {err ? <Notice tone="danger">{err}</Notice> : null}
 
-          {selected ? (
-            <pre className="mt-4 max-h-[70vh] overflow-auto rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
-              {JSON.stringify(selected, null, 2)}
-            </pre>
-          ) : (
-            <div className="mt-6 text-sm font-semibold text-slate-500 dark:text-slate-400">No log selected.</div>
-          )}
-        </div>
-          </MotionPanel>
-        </MotionStaggerItem>
-      </MotionStagger>
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start">
+        <MotionPanel className="min-w-0">
+          <Panel padded={false}>
+            {busy && rows.length === 0 ? (
+              <div className="p-5"><SkeletonRows rows={5} height="h-12" /></div>
+            ) : rowsFiltered.length === 0 ? (
+              <div className="p-5">
+                {searching && rows.length > 0 ? (
+                  <EmptyState title="No logs match the top search." />
+                ) : (
+                  <EmptyState title="No logs found yet.">
+                    Logs are recorded when you perform admin actions like <code>Test Fetch</code>, user status changes (Activate/Disable/Ban), or deleting timetable rows.
+                  </EmptyState>
+                )}
+              </div>
+            ) : (
+              <ul className="divide-y divide-slate-100 dark:divide-slate-800" aria-label="Logs">
+                {rowsFiltered.map((r) => {
+                  const isSelected = selected?.id === r.id;
+                  const failed = r.status === 'failed';
+                  return (
+                    <li key={r.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelected(r)}
+                        aria-pressed={isSelected}
+                        className={`block w-full px-5 py-3 text-left transition ${
+                          isSelected
+                            ? 'bg-slate-100 dark:bg-slate-800'
+                            : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Chip tone={failed ? 'danger' : r.status === 'success' ? 'success' : 'neutral'}>{r.status}</Chip>
+                          <span className="text-sm font-bold text-slate-900 dark:text-slate-100">{r.type}</span>
+                          <span className="ml-auto text-xs font-semibold tabular-nums text-slate-500 dark:text-slate-400">
+                            {new Date(r.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="mt-1 truncate font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                          {JSON.stringify(r.meta)?.slice(0, 120)}
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Panel>
+        </MotionPanel>
+
+        <MotionPanel className="min-w-0 lg:sticky lg:top-4">
+          <Panel title="Log details" description={selected ? undefined : 'Pick a log to see its full JSON.'}>
+            {selected ? (
+              <pre className="max-h-[70vh] overflow-auto rounded-2xl bg-slate-50 p-3 text-xs font-semibold text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+                {JSON.stringify(selected, null, 2)}
+              </pre>
+            ) : (
+              <div className="text-sm font-semibold text-slate-400 dark:text-slate-500">No log selected.</div>
+            )}
+          </Panel>
+        </MotionPanel>
+      </div>
     </div>
   );
 }
-

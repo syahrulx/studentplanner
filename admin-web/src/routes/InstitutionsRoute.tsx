@@ -10,10 +10,10 @@ export function InstitutionsRoute() {
       title="Institutions"
       description="Manage universities and their related campus, organisation and authority records together."
       tabs={[
-        { id: 'universities', label: 'Universities', description: '', content: <UniversitiesRoute /> },
-        { id: 'campuses', label: 'Campuses', description: '', content: <CampusesRoute /> },
-        { id: 'organisations', label: 'Organisations', description: '', content: <OrganizationsRoute /> },
-        { id: 'authorities', label: 'Authorities', description: '', content: <AuthorityRoute /> },
+        { id: 'universities', label: 'Universities', description: 'University records, timetable endpoints and data mappings.', content: <UniversitiesRoute /> },
+        { id: 'campuses', label: 'Campuses', description: 'Campuses under each university, used by the community.', content: <CampusesRoute /> },
+        { id: 'organisations', label: 'Organisations', description: 'Clubs and organisations, per university or campus.', content: <OrganizationsRoute /> },
+        { id: 'authorities', label: 'Authorities', description: 'Authority role requests. Approved users can post official memos.', content: <AuthorityRoute /> },
       ]}
     />
   );
