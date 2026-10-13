@@ -181,7 +181,7 @@ function UsageBar({
         <span className="flex items-center gap-1">
           {formatTokens(used)} / {formatTokens(limit)}
           {hasOverride ? (
-            <span className="rounded-full border border-brand-200 bg-brand-50 px-1.5 py-[1px] text-[9px] font-black uppercase text-brand-700 dark:border-brand-900/50 dark:bg-brand-950/40 dark:text-brand-200">
+            <span className="rounded-full border border-brand-200 bg-brand-50 px-1.5 py-[1px] text-[9px] font-black uppercase text-brand-700 dark:border-brand-800 dark:bg-brand-900/40 dark:text-brand-200">
               custom
             </span>
           ) : null}

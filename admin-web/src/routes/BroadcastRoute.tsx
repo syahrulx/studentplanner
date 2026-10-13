@@ -58,7 +58,7 @@ function UniversitySearch({
 
   if (selected && !open) {
     return (
-      <div className="mt-1 flex items-center gap-2 rounded-2xl border border-brand-500 bg-brand-50 px-4 py-2.5 text-sm font-bold text-slate-900 dark:bg-brand-950/30 dark:text-slate-100">
+      <div className="mt-1 flex items-center gap-2 rounded-2xl border border-brand-500 bg-brand-50 px-4 py-2.5 text-sm font-bold text-slate-900 dark:bg-brand-900/40 dark:text-slate-100">
         <span className="truncate">{selected.name}</span>
         <button
           type="button"
@@ -509,7 +509,7 @@ export function BroadcastRoute() {
                   {campusList.filter((c) => matches(c.campus, campusQuery)).map((c) => {
                     const on = form.campuses.includes(c.campus);
                     return (
-                      <label key={c.campus} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold ${on ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/30' : 'border-slate-200 dark:border-slate-800'} ${c.count === 0 ? 'opacity-50' : ''}`}>
+                      <label key={c.campus} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold ${on ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/40' : 'border-slate-200 dark:border-slate-800'} ${c.count === 0 ? 'opacity-50' : ''}`}>
                         <input
                           type="checkbox"
                           checked={on}
