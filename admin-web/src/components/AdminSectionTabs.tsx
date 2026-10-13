@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { EmbeddedPage, PageHeader } from '../ui/page';
 
 export type AdminSectionTab = {
   id: string;
@@ -32,18 +33,18 @@ export function AdminSectionTabs({ title, description, tabs }: {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">{title}</h1>
-        <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">{description}</p>
-      </div>
-      <div className="flex max-w-full gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-soft dark:border-slate-800 dark:bg-slate-900">
+    <div className="space-y-5">
+      <PageHeader title={title} description={description} />
+      <div className="flex max-w-full gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-soft dark:border-slate-800 dark:bg-slate-900" role="tablist">
         {tabs.map((tab) => {
           const selected = tab.id === active.id;
           return (
             <button
               key={tab.id}
               type="button"
+              role="tab"
+              aria-selected={selected}
+              title={tab.description}
               onClick={() => choose(tab.id)}
               className={`shrink-0 rounded-xl px-4 py-2 text-sm font-black transition ${
                 selected
@@ -56,9 +57,9 @@ export function AdminSectionTabs({ title, description, tabs }: {
           );
         })}
       </div>
-      <div className="rounded-3xl border border-slate-200/80 bg-slate-50/70 p-1 dark:border-slate-800 dark:bg-slate-950/30">
-        {active.content}
-      </div>
+      {active.description ? <p className="-mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">{active.description}</p> : null}
+      {/* Pages inside a tab drop their own big title (said once, above). */}
+      <EmbeddedPage>{active.content}</EmbeddedPage>
     </div>
   );
 }
