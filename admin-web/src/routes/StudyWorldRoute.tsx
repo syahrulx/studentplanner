@@ -82,12 +82,12 @@ export function StudyWorldRoute() {
     {
       id: 'shop',
       label: 'Shop',
-      hint: 'Items and prices, players’ coins and fish, and leaderboards',
+      hint: 'Items and prices, coin packs and payments, players’ coins and fish, leaderboards',
       views: [
         { id: 'items', label: 'Items', content: <ItemsPanel /> },
         { id: 'wallets', label: 'Wallets & bags', content: <WalletsPanel /> },
         { id: 'leaderboards', label: 'Leaderboards', content: <LeaderboardsPanel /> },
-        { id: 'payments', label: 'Coin packs & prices (demo)', content: <PaymentsPanel /> },
+        { id: 'payments', label: 'Coin packs & payments', content: <PaymentsPanel /> },
       ],
     },
     {
