@@ -44,9 +44,9 @@ import {
   setThemePreviewExpiry as persistThemePreviewExpiry,
   setRevisionSettings as persistRevision,
   getCompletedStudyKeys,
-  setCompletedStudyKeys as persistCompletedStudies,
+  setCompletedStudyKeys as persistCompletedStudiesLocal,
   getPinnedTaskIds,
-  setPinnedTaskIds as persistPinnedTaskIds,
+  setPinnedTaskIds as persistPinnedTaskIdsLocal,
   getSubjectColors,
   setSubjectColors as persistSubjectColors,
   getCourses,
@@ -94,6 +94,7 @@ import {
   rescheduleAttendanceNotifications,
 } from '../attendanceNotifications';
 import { ensureAttendanceCategory, flushPendingAttendanceEvents } from '../attendanceRecording';
+import { reconcilePlannerState, recordLocalChange } from '../lib/plannerStateSync';
 import { supabase } from '../lib/supabase';
 import * as studyDb from '../lib/studyDb';
 import { deleteHandwritingCache, flushHandwritingOutbox } from '../lib/handwritingDb';
@@ -478,6 +479,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [revisionSettingsList, setRevisionSettingsList] = useState<RevisionSettings[]>([]);
   const [completedStudyKeys, setCompletedStudyKeys] = useState<string[]>([]);
   const [pinnedTaskIds, setPinnedTaskIds] = useState<string[]>([]);
+  /**
+   * Saved on the phone and sent to the student's account, so a pin or a
+   * study tick shows on their other devices too (see plannerStateSync).
+   */
+  const plannerOwnerRef = useRef<string | null>(null);
+  const persistPinnedTaskIds = useCallback(async (ids: string[]) => {
+    await persistPinnedTaskIdsLocal(ids);
+    void recordLocalChange(plannerOwnerRef.current, 'pinned', ids.slice(0, 2)).catch(() => {});
+  }, []);
+  const persistCompletedStudies = useCallback(async (keys: string[]) => {
+    await persistCompletedStudiesLocal(keys);
+    void recordLocalChange(plannerOwnerRef.current, 'completed', keys).catch(() => {});
+  }, []);
   const [subjectColors, setSubjectColorsState] = useState<Record<string, string>>({});
   /** The device's colours, readable from inside the remote load without going stale. */
   const subjectColorsRef = useRef<Record<string, string>>({});
@@ -894,6 +908,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         !quiet || !listsAtStart || localListsRef.current?.[key] === listsAtStart[key];
       remoteUserIdRef.current = uid;
       remoteLoadsInFlightRef.current += 1;
+      plannerOwnerRef.current = uid;
+      if (!quiet) {
+        // Pins and study ticks from the student's other devices. Runs beside
+        // the main load; a failure leaves the phone's own copy on screen.
+        void (async () => {
+          const [localPinned, localCompleted] = await Promise.all([getPinnedTaskIds(), getCompletedStudyKeys()]);
+          const r = await reconcilePlannerState(uid, { pinned: localPinned, completed: localCompleted });
+          if (gen !== remoteLoadGeneration || remoteUserIdRef.current !== uid) return;
+          if (r.pinned) {
+            const ids = r.pinned.slice(0, 2);
+            setPinnedTaskIds(ids);
+            await persistPinnedTaskIdsLocal(ids);
+          }
+          if (r.completed) {
+            setCompletedStudyKeys(r.completed);
+            await persistCompletedStudiesLocal(r.completed);
+          }
+        })().catch((e) => {
+          if (__DEV__) console.warn('[Rencana] planner state sync failed:', e);
+        });
+      }
       lastRemoteLoadStartedAtRef.current = Date.now();
       // Show the last confirmed local snapshot immediately. Remote results are
       // merged over it only when the request actually succeeds, so an offline
@@ -1509,6 +1544,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           });
           setTasks([]);
           setTaskCompletionKeys(new Set());
+          // Off screen only: the phone copy keeps its owner tag, so the next
+          // account neither sees nor uploads these (see plannerStateSync).
+          plannerOwnerRef.current = null;
+          setPinnedTaskIds([]);
+          setCompletedStudyKeys([]);
           setNotes(initialNotes);
           setFlashcards(initialFlashcards);
           setRevisionSettingsList([]);
