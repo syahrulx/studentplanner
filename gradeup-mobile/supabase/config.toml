@@ -28,6 +28,10 @@ verify_jwt = false
 [functions.admin_community_push]
 verify_jwt = false
 
+# Admin-only: reads UiTM's public HEA calendar page; checks admin itself.
+[functions.admin_uitm_hea]
+verify_jwt = false
+
 [functions.community-push]
 verify_jwt = false
 

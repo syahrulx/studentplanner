@@ -3009,3 +3009,10 @@ export async function getFeedbackSurveyResults(id: string) {
     responses: FeedbackResponseRow[];
   }>(data, error);
 }
+
+/** UiTM's public HEA calendar page, read through an admin-only edge function (the browser can't fetch it directly). */
+export async function getUitmHeaPage(refresh = false): Promise<{ html: string; fetched_at: string; from_cache: boolean; stale?: boolean }> {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction('admin_uitm_hea', { refresh }, headers);
+  return unwrapFunctionData<{ html: string; fetched_at: string; from_cache: boolean; stale?: boolean }>(data, error);
+}

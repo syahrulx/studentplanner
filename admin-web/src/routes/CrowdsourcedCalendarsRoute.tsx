@@ -16,6 +16,7 @@ import { useAdminSearch } from '../state/AdminSearchContext';
 import { AcademicCalendarOfferGraphic } from '../components/AcademicCalendarOfferGraphic';
 import { useSafeActionDialog } from '../components/SafeActionDialog';
 import { crowdsourcedDuplicates, uitmSuggestions } from '../lib/calendarReview';
+import { compareWithHea, describeHeaCheck, loadHeaPage, type HeaCheck, type HeaPage } from '../lib/uitmHea';
 import { CleanupBox, Field } from '../components/calendars/calendarUi';
 import { BTN_APPROVE, BTN_DANGER, BTN_DANGER_SOFT, BTN_SECONDARY, CHECKBOX, LINK_SM } from '../components/calendars/calendarStyles';
 
@@ -38,6 +39,11 @@ export function CrowdsourcedCalendarsRoute() {
   const [groupBy, setGroupBy] = useState<'none' | 'university' | 'duplicates'>('none');
   const [uitmStatus, setUitmStatus] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
   const [deletingDuplicates, setDeletingDuplicates] = useState(false);
+  // Compare-only hint against UiTM's official HEA calendar. Never approves or rejects.
+  const [heaPage, setHeaPage] = useState<HeaPage | null>(null);
+  const [heaErr, setHeaErr] = useState('');
+  const [heaLoading, setHeaLoading] = useState(false);
+  const [heaChecks, setHeaChecks] = useState<Map<string, HeaCheck>>(new Map());
 
   const refreshHistory = async () => {
     setBusy(true);
@@ -76,6 +82,36 @@ export function CrowdsourcedCalendarsRoute() {
     () => [...duplicates.entries()].filter(([, info]) => !info.keep).map(([id]) => id),
     [duplicates],
   );
+  const loadHea = async (refresh = false) => {
+    setHeaLoading(true);
+    setHeaErr('');
+    try {
+      setHeaPage(await loadHeaPage(refresh));
+    } catch (e) {
+      setHeaErr(e instanceof Error ? e.message : 'Could not load HEA');
+    } finally {
+      setHeaLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (uitmContributions.length > 0 && !heaPage && !heaLoading && !heaErr) void loadHea();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uitmContributions.length]);
+
+  useEffect(() => {
+    if (!heaPage) return;
+    let cancelled = false;
+    void (async () => {
+      const next = new Map<string, HeaCheck>();
+      for (const row of uitmContributions) next.set(row.id, await compareWithHea(row, heaPage));
+      if (!cancelled) setHeaChecks(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [heaPage, uitmContributions]);
+
   const uitmVerdicts = useMemo(() => uitmSuggestions(uitmContributions, today), [uitmContributions, today]);
   const visibleUitm = useMemo(
     () =>
@@ -323,6 +359,22 @@ export function CrowdsourcedCalendarsRoute() {
               </Pill>
             ))}
           </PillGroup>
+          {uitmContributions.length ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              <span>
+                {heaLoading
+                  ? 'Checking against UiTM HEA calendar…'
+                  : heaErr
+                    ? `Couldn't load the HEA calendar (${heaErr}). Suggestions below still work.`
+                    : heaPage
+                      ? `Compared with UiTM HEA calendar, read ${new Date(heaPage.fetchedAt).toLocaleString()}${heaPage.stale ? ' (old copy, HEA did not answer)' : ''}. Only a hint.`
+                      : ''}
+              </span>
+              <button type="button" disabled={heaLoading} onClick={() => void loadHea(true)} className={LINK_SM}>
+                Check HEA again
+              </button>
+            </div>
+          ) : null}
           {visibleUitm.length ? (
             <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-slate-50 px-3 py-2 dark:bg-slate-950/40">
               <label className="flex cursor-pointer items-center gap-2 text-xs font-black text-slate-700 dark:text-slate-200">
@@ -360,6 +412,7 @@ export function CrowdsourcedCalendarsRoute() {
           <ul className="divide-y divide-slate-100 border-t border-slate-100 dark:divide-slate-800 dark:border-slate-800">
             {visibleUitm.map((row) => {
               const v = uitmVerdicts.get(row.id);
+              const hea = heaChecks.get(row.id);
               return (
                 <li key={row.id} className="flex gap-3 px-5 py-4">
                   <input
@@ -390,6 +443,14 @@ export function CrowdsourcedCalendarsRoute() {
                           {v.verdict === 'approve' ? 'Suggested: Approve' : v.verdict === 'reject' ? 'Suggested: Reject' : 'Check first'}
                         </Chip>
                         <span className="min-w-0">{v.reason}</span>
+                      </div>
+                    ) : null}
+                    {hea ? (
+                      <div className="flex flex-wrap items-baseline gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                        <Chip tone={hea.kind === 'match' ? 'success' : hea.kind === 'differs' ? 'warning' : 'neutral'}>
+                          {hea.kind === 'match' ? 'Matches HEA' : hea.kind === 'differs' ? 'Differs from HEA' : hea.kind === 'not_on_hea' ? 'Not on HEA yet' : "Couldn't check HEA"}
+                        </Chip>
+                        <span className="min-w-0">{describeHeaCheck(hea)}</span>
                       </div>
                     ) : null}
                     {row.source_url || row.status === 'pending' ? (
