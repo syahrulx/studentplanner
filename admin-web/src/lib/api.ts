@@ -1610,6 +1610,10 @@ export type SendBroadcastResult = {
   in_app_recipients?: number;
   // Number of users eligible for a remote Expo push (subset of in_app_recipients).
   push_recipients?: number;
+  // The server now replies straight away and sends in the background; the
+  // final numbers land in admin_logs row `log_id` (meta.phase 'done' / 'failed').
+  queued?: boolean;
+  log_id?: string | null;
 };
 
 export async function sendBroadcast(opts: SendBroadcastArgs): Promise<SendBroadcastResult> {

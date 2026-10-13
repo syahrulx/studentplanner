@@ -12,7 +12,11 @@
 //   { action: "send", audience, userIds?, universityId?, campuses?, title, body,
 //       category?: "reaction" | "shared_task" | "circle" | "friend",
 //       route?: string, params?: Record<string,string>, collapseKey?: string }
-//     → response from community-push ({ sent, batches, results })
+//     → 202 { queued: true, log_id } straight away; the inbox writes and the
+//       push run in the background and fill in the admin_logs row (phase
+//       'sending' → 'done' / 'failed'). 409 duplicate_broadcast if the same
+//       title went to the same audience in the last 15 minutes (force: true
+//       to send anyway).
 //
 // Deploy: npx supabase functions deploy admin_community_push
 
@@ -27,6 +31,8 @@ type Category = 'reaction' | 'shared_task' | 'circle' | 'friend';
 // Per-admin rate limit: how many successful sends are allowed per window.
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const RATE_LIMIT_MAX_SENDS = 3;
+// The same title to the same audience is refused within this window.
+const DUPLICATE_WINDOW_MS = 15 * 60 * 1000;
 
 function jsonResp(status: number, body: unknown, corsHeaders: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
@@ -184,10 +190,9 @@ serve(async (req: Request) => {
   }
 
   try {
-    // Everyone in the audience receives an in-app notification…
-    const recipients = await resolveRecipients(admin, audience, userIds, universityId, false, campuses);
-
     if (action === 'preview') {
+      // Everyone in the audience receives an in-app notification.
+      const recipients = await resolveRecipients(admin, audience, userIds, universityId, false, campuses);
       return json(200, { count: recipients.length });
     }
 
@@ -195,10 +200,6 @@ serve(async (req: Request) => {
       const title = String(payload.title ?? '').trim();
       const body = String(payload.body ?? '').trim();
       if (!title || !body) return json(400, { error: 'missing_title_or_body' });
-      if (recipients.length === 0) return json(200, { sent: 0, reason: 'no_recipients' });
-
-      // …but only push-eligible users get a remote Expo push.
-      const pushRecipients = await resolveRecipients(admin, audience, userIds, universityId, true, campuses);
 
       // Rate-limit per admin (not applied to dev-secret bypass so automated
       // tooling stays unblocked; tighten if needed).
@@ -211,6 +212,30 @@ serve(async (req: Request) => {
               RATE_LIMIT_WINDOW_MS / 60000,
             )} minutes. Try again later.`,
             retry_after_minutes: Math.round(RATE_LIMIT_WINDOW_MS / 60000),
+          });
+        }
+      }
+
+      // The reply now comes back before sending finishes, so a second press
+      // could send the same thing twice. Refuse the same title to the same
+      // audience within 15 minutes unless the admin explicitly forces it.
+      if (payload.force !== true) {
+        const sinceIso = new Date(Date.now() - DUPLICATE_WINDOW_MS).toISOString();
+        const { count: dupes } = await admin
+          .from('admin_logs')
+          .select('id', { count: 'exact', head: true })
+          .gte('created_at', sinceIso)
+          .contains('meta', {
+            action: 'community_broadcast',
+            title,
+            audience,
+            universityId: universityId ?? null,
+            ...(audience === 'campus' ? { campuses } : {}),
+          });
+        if ((dupes ?? 0) > 0) {
+          return json(409, {
+            error: 'duplicate_broadcast',
+            message: 'This exact broadcast was already sent to this audience in the last 15 minutes. It is not sent again.',
           });
         }
       }
@@ -249,111 +274,142 @@ serve(async (req: Request) => {
       const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
       if (!supabaseUrl || !serviceKey) return json(500, { error: 'missing_env' });
 
-      // 1. Bulk insert into in_app_notifications, paced.
-      // in_app_notifications is on the realtime publication, so every row is
-      // checked against every open subscription, and each open app re-counts
-      // its unread badge when its row lands. Writing all rows back to back
-      // (≈31k for "all") made the database spike, so pause between batches to
-      // spread the load. ~62 batches × ~1s ≈ 1 minute for every user, which
-      // stays well inside the edge function time limit.
-      const chunkSize = 500;
-      const pauseBetweenBatchesMs = 700;
-      for (let i = 0; i < recipients.length; i += chunkSize) {
-        if (i > 0) await new Promise((resolve) => setTimeout(resolve, pauseBetweenBatchesMs));
-        const batchIds = recipients.slice(i, i + chunkSize);
-        const rows = batchIds.map((uid) => ({
-          user_id: uid,
-          title: title,
-          body: body,
-          category: category,
-          data: data,
-        }));
-        
-        // We do not await/fail the whole request if inserting in-app notifications fails,
-        // but we log the error. We use the service key client (admin) since we bypass RLS for broadcasting.
-        const { error: insertErr } = await admin.from('in_app_notifications').insert(rows);
-        if (insertErr) {
-          console.error('[admin_community_push] Failed to bulk insert in_app_notifications:', insertErr.message);
-        }
-      }
-
-      // 2. Delegate to the existing community-push function so all rate-limiting, chunking
-      // and opt-in filtering stays in one place. Only push-eligible users are sent here;
-      // if nobody is eligible we skip the call but the in-app notifications above still stand.
-      let parsed: unknown = { sent: 0, reason: 'no_push_recipients' };
-      let res: Response | null = null;
-      if (pushRecipients.length > 0) {
-        res = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/community-push`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${serviceKey}`,
-          },
-          body: JSON.stringify({
-            recipientUserIds: pushRecipients,
-            title,
-            body,
-            category,
-            collapseKey,
-            data,
-          }),
-        });
-
-        const text = await res.text();
+      // One log row per broadcast: written now as "sending", filled in when
+      // the background job finishes. Its status (success) also counts towards
+      // the rate limit straight away.
+      const baseMeta = {
+        action: 'community_broadcast',
+        actor: adminUserId ?? null,
+        via_dev_secret: viaDevSecret,
+        audience,
+        universityId: universityId ?? null,
+        campuses: audience === 'campus' ? campuses : null,
+        title,
+        body,
+        category,
+        route: route || null,
+        collapseKey,
+      };
+      const { data: logRow } = await admin
+        .from('admin_logs')
+        .insert({ type: 'api_request', status: 'success', meta: { ...baseMeta, phase: 'sending' } })
+        .select('id')
+        .single();
+      const logId = (logRow as { id?: string } | null)?.id ?? null;
+      const finishLog = async (status: 'success' | 'failed', extra: Record<string, unknown>) => {
+        if (!logId) return;
         try {
-          parsed = text ? JSON.parse(text) : null;
+          await admin.from('admin_logs').update({ status, meta: { ...baseMeta, ...extra } }).eq('id', logId);
         } catch {
-          parsed = { raw: text };
+          // Non-fatal if logs table is unavailable.
         }
-      }
+      };
 
-      // A null `res` means there were no push-eligible recipients; the in-app
-      // notifications were still written, so that path is a success.
-      const pushOk = res === null || res.ok;
+      // Big audiences (a whole university, or everyone) take a minute or two,
+      // longer than the gateway waits for a reply (it answered 504 for a
+      // 24,922-student UiTM send that had in fact worked). So reply now and do
+      // the work in the background.
+      const job = async () => {
+        try {
+          const recipients = await resolveRecipients(admin, audience, userIds, universityId, false, campuses);
+          if (recipients.length === 0) {
+            await finishLog('success', { phase: 'done', recipient_count: 0, push_recipient_count: 0, reason: 'no_recipients' });
+            return;
+          }
+          // …but only push-eligible users get a remote Expo push.
+          const pushRecipients = await resolveRecipients(admin, audience, userIds, universityId, true, campuses);
 
-      // Log the broadcast for audit with the acting admin id.
-      try {
-        await admin.from('admin_logs').insert({
-          type: 'api_request',
-          status: pushOk ? 'success' : 'failed',
-          meta: {
-            action: 'community_broadcast',
-            actor: adminUserId ?? null,
-            via_dev_secret: viaDevSecret,
-            audience,
-            universityId: universityId ?? null,
-            campuses: audience === 'campus' ? campuses : null,
+          // 1. Bulk insert into in_app_notifications, paced.
+          // in_app_notifications is on the realtime publication, so every row is
+          // checked against every open subscription, and each open app re-counts
+          // its unread badge when its row lands. Writing all rows back to back
+          // (≈31k for "all") made the database spike, so pause between batches to
+          // spread the load. ~62 batches × ~1s ≈ 1 minute for every user, which
+          // stays well inside the edge function time limit.
+          const chunkSize = 500;
+          const pauseBetweenBatchesMs = 700;
+          for (let i = 0; i < recipients.length; i += chunkSize) {
+            if (i > 0) await new Promise((resolve) => setTimeout(resolve, pauseBetweenBatchesMs));
+            const batchIds = recipients.slice(i, i + chunkSize);
+            const rows = batchIds.map((uid) => ({
+              user_id: uid,
+              title: title,
+              body: body,
+              category: category,
+              data: data,
+            }));
+        
+            // We do not await/fail the whole request if inserting in-app notifications fails,
+            // but we log the error. We use the service key client (admin) since we bypass RLS for broadcasting.
+            const { error: insertErr } = await admin.from('in_app_notifications').insert(rows);
+            if (insertErr) {
+              console.error('[admin_community_push] Failed to bulk insert in_app_notifications:', insertErr.message);
+            }
+          }
+
+          // 2. Delegate to the existing community-push function so all rate-limiting, chunking
+          // and opt-in filtering stays in one place. Only push-eligible users are sent here;
+          // if nobody is eligible we skip the call but the in-app notifications above still stand.
+          let parsed: unknown = { sent: 0, reason: 'no_push_recipients' };
+          let res: Response | null = null;
+          if (pushRecipients.length > 0) {
+            res = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/community-push`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${serviceKey}`,
+              },
+              body: JSON.stringify({
+                recipientUserIds: pushRecipients,
+                title,
+                body,
+                category,
+                collapseKey,
+                data,
+              }),
+            });
+
+            const text = await res.text();
+            try {
+              parsed = text ? JSON.parse(text) : null;
+            } catch {
+              parsed = { raw: text };
+            }
+          }
+
+          // A null `res` means there were no push-eligible recipients; the in-app
+          // notifications were still written, so that path is a success.
+          const pushOk = res === null || res.ok;
+          const tickets = Array.isArray((parsed as { results?: unknown })?.results)
+            ? ((parsed as { results: { data?: { status?: string; details?: { error?: string } }[] }[] }).results)
+                .flatMap((b) => (Array.isArray(b?.data) ? b.data : []))
+            : [];
+          const failedReasons: Record<string, number> = {};
+          tickets.filter((t) => t?.status !== 'ok').forEach((t) => {
+            const k = t?.details?.error ?? 'unknown';
+            failedReasons[k] = (failedReasons[k] ?? 0) + 1;
+          });
+          await finishLog(pushOk ? 'success' : 'failed', {
+            phase: 'done',
             recipient_count: recipients.length,
             push_recipient_count: pushRecipients.length,
-            title,
-            body,
-            category,
-            route: route || null,
-            collapseKey,
+            push_sent: (parsed as { sent?: number })?.sent ?? 0,
+            push_accepted: tickets.filter((t) => t?.status === 'ok').length,
+            push_failed: tickets.filter((t) => t?.status !== 'ok').length,
+            push_failed_reasons: failedReasons,
             response_status: res?.status ?? null,
-          },
-        });
-      } catch {
-        // Non-fatal if logs table is unavailable.
-      }
+          });
+        } catch (err) {
+          await finishLog('failed', { phase: 'failed', error: (err as Error).message });
+        }
+      };
 
-      if (res && !res.ok) {
-        const inner =
-          parsed && typeof parsed === 'object' && 'error' in parsed
-            ? String((parsed as { error: unknown }).error)
-            : `HTTP ${res.status}`;
-        return json(502, {
-          error: `community_push_failed (${res.status}): ${inner}`,
-          community_push_status: res.status,
-          community_push_response: parsed,
-        });
-      }
-      const pushResult = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-      return json(200, {
-        ...pushResult,
-        in_app_recipients: recipients.length,
-        push_recipients: pushRecipients.length,
-      });
+      // deno-lint-ignore no-explicit-any
+      const runtime = (globalThis as any).EdgeRuntime;
+      if (runtime && typeof runtime.waitUntil === 'function') runtime.waitUntil(job());
+      else await job();
+
+      return json(202, { queued: true, log_id: logId });
     }
 
     return json(400, { error: 'unknown_action' });

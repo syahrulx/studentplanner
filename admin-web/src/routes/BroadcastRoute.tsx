@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { supabase } from '../lib/supabase';
 import {
   listUniversities,
   listBroadcastCampuses,
@@ -212,6 +213,30 @@ export function BroadcastRoute() {
   const [sendBusy, setSendBusy] = useState(false);
   const [sendErr, setSendErr] = useState('');
   const [sendResult, setSendResult] = useState<SendBroadcastResult | null>(null);
+  // Final numbers of a background send, read from its admin_logs row.
+  const [finalLog, setFinalLog] = useState<{ status: string; meta: Record<string, unknown> } | null>(null);
+  useEffect(() => {
+    const logId = sendResult?.queued ? sendResult.log_id : null;
+    setFinalLog(null);
+    if (!logId) return;
+    let stop = false;
+    let tries = 0;
+    const tick = async () => {
+      if (stop) return;
+      tries += 1;
+      const { data } = await supabase.from('admin_logs').select('status, meta').eq('id', logId).maybeSingle();
+      const row = data as { status: string; meta: Record<string, unknown> } | null;
+      if (row && (row.meta?.phase === 'done' || row.meta?.phase === 'failed')) {
+        if (!stop) setFinalLog(row);
+        return;
+      }
+      if (tries < 60) setTimeout(() => void tick(), 5000);
+    };
+    void tick();
+    return () => {
+      stop = true;
+    };
+  }, [sendResult]);
 
   // ---------------------------------------------------------------------------
   // Individual user picker (audience === 'user_ids')
@@ -436,7 +461,12 @@ export function BroadcastRoute() {
       });
       setSendResult(res);
     } catch (e) {
-      setSendErr(e instanceof Error ? e.message : 'Send failed');
+      const msg = e instanceof Error ? e.message : 'Send failed';
+      setSendErr(
+        /duplicate_broadcast/.test(msg)
+          ? 'Not sent again: this exact broadcast already went to this audience in the last 15 minutes. Change the title if you really mean to send a new one.'
+          : msg,
+      );
     } finally {
       setSendBusy(false);
     }
@@ -846,7 +876,28 @@ export function BroadcastRoute() {
                 {sendErr}
               </div>
             ) : null}
-            {sendResult ? (() => {
+            {sendResult?.queued ? (
+              <div className="mt-4 space-y-1 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-100">
+                {!finalLog ? (
+                  <div>Sending in the background{preview?.count ? ` to about ${preview.count.toLocaleString()} student(s)` : ''}… Big groups take 1–2 minutes. You can leave this page; it still sends. Don’t press Send again.</div>
+                ) : finalLog.meta.phase === 'failed' ? (
+                  <div className="text-rose-700 dark:text-rose-300">Sending stopped with an error: {String(finalLog.meta.error ?? 'unknown')}. Check the inbox count before trying again.</div>
+                ) : (
+                  <>
+                    <div>Done. In-app inbox: {Number(finalLog.meta.recipient_count ?? 0).toLocaleString()} student(s).</div>
+                    <div>
+                      Phone pop-ups: tried {Number(finalLog.meta.push_sent ?? 0).toLocaleString()} of {Number(finalLog.meta.push_recipient_count ?? 0).toLocaleString()} with push on · accepted {Number(finalLog.meta.push_accepted ?? 0).toLocaleString()}
+                      {Number(finalLog.meta.push_failed ?? 0) ? ` · failed ${Number(finalLog.meta.push_failed).toLocaleString()}` : ''}.
+                    </div>
+                    {Number(finalLog.meta.push_failed ?? 0) ? (
+                      <div className="text-rose-700 dark:text-rose-300">
+                        Why they failed: {Object.entries((finalLog.meta.push_failed_reasons ?? {}) as Record<string, number>).map(([k, n]) => `${TICKET_REASON[k] ?? k} (${n})`).join(', ')}
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            ) : sendResult ? (() => {
               const tickets = summarizeTickets(sendResult.results);
               const reason = sendResult.reason === 'no_push_recipients' || sendResult.reason === 'no_eligible_tokens'
                 ? 'No pop-ups: nobody in this audience has push notifications allowed for Rencana on their phone (or they turned this kind off).'
