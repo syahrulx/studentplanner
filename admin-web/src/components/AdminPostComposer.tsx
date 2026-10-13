@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { listUniversities, type UniversityRow } from '../lib/api';
-import { createAdminPost, listCampusNames, type AdminPostInput } from '../lib/adminPosts';
+import { createAdminPost, listCampusNames, uploadAdminPostPhoto, type AdminPostInput } from '../lib/adminPosts';
 import { BTN_DARK, BTN_LIGHT, FIELD } from './studyWorld/format';
 import { ErrorBox, Field, Modal } from './studyWorld/ui';
 
@@ -15,6 +15,7 @@ const EMPTY: AdminPostInput = {
   location: null,
   expiresAt: null,
   pinned: false,
+  imageUrls: [],
 };
 
 /** Post an Event or Memo to the app's Community as "Admin Rencana". */
@@ -25,6 +26,23 @@ export function AdminPostComposer({ onClose, onPosted }: { onClose: () => void; 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  async function addPhotos(files: FileList | null) {
+    if (!files?.length) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const room = 3 - v.imageUrls.length;
+      const urls: string[] = [];
+      for (const f of Array.from(files).slice(0, room)) urls.push(await uploadAdminPostPhoto(f));
+      set('imageUrls', [...v.imageUrls, ...urls].slice(0, 3));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Photo upload failed.');
+    } finally {
+      setUploading(false);
+    }
+  }
 
   useEffect(() => {
     listUniversities().then(setUniversities).catch(() => setUniversities([]));
@@ -79,7 +97,7 @@ export function AdminPostComposer({ onClose, onPosted }: { onClose: () => void; 
       onClose={onClose}
       footer={<>
         <button type="button" className={BTN_LIGHT} onClick={onClose} disabled={busy}>Cancel</button>
-        <button type="button" className={confirming ? `${BTN_DARK} bg-rose-600 hover:bg-rose-700` : BTN_DARK} onClick={() => void post()} disabled={busy || !!problem}>
+        <button type="button" className={confirming ? `${BTN_DARK} bg-rose-600 hover:bg-rose-700` : BTN_DARK} onClick={() => void post()} disabled={busy || uploading || !!problem}>
           {busy ? 'Posting…' : confirming ? `Yes, post to ${!v.universityId ? 'everyone' : 'them'}` : 'Post'}
         </button>
       </>}
@@ -107,6 +125,27 @@ export function AdminPostComposer({ onClose, onPosted }: { onClose: () => void; 
         </div>
       ) : null}
 
+      <div>
+        <div className="text-[11px] font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Photos (optional, up to 3)</div>
+        <div className="mt-1 flex flex-wrap gap-2">
+          {v.imageUrls.map((url, i) => (
+            <div key={url} className="relative h-24 w-24 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
+              <img src={url} alt={`Photo ${i + 1}`} className="h-full w-full object-cover" />
+              <button type="button" aria-label={`Remove photo ${i + 1}`} onClick={() => set('imageUrls', v.imageUrls.filter((u) => u !== url))}
+                className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-black/70 text-xs font-black text-white">✕</button>
+            </div>
+          ))}
+          {v.imageUrls.length < 3 ? (
+            <label className={`grid h-24 w-24 cursor-pointer place-items-center rounded-xl border-2 border-dashed border-slate-300 text-center text-[11px] font-bold text-slate-500 dark:border-slate-600 ${uploading ? 'opacity-50' : ''}`}>
+              {uploading ? 'Uploading…' : '+ Add photo'}
+              <input type="file" accept="image/*" multiple className="hidden" disabled={uploading}
+                onChange={(e) => { void addPhotos(e.target.files); e.target.value = ''; }} />
+            </label>
+          ) : null}
+        </div>
+        <div className="mt-1 text-xs font-semibold text-slate-500">The first photo is the cover. Photos are shrunk before upload so they load fast.</div>
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
         <Field label="Who sees it">
           <select value={v.universityId ?? ''} onChange={(e) => { set('universityId', e.target.value || null); set('campus', null); }} className={FIELD}>
@@ -131,6 +170,7 @@ export function AdminPostComposer({ onClose, onPosted }: { onClose: () => void; 
 
       <div className="rounded-2xl bg-slate-50 p-3 text-xs font-semibold text-slate-600 dark:bg-slate-950/50 dark:text-slate-300">
         <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">In the app</div>
+        {v.imageUrls[0] ? <img src={v.imageUrls[0]} alt="" className="mt-2 max-h-40 w-full rounded-xl object-cover" /> : null}
         <div className="mt-1 text-sm font-black text-slate-900 dark:text-white">{v.title || 'Title'}</div>
         <div>by <b>Admin Rencana</b> · {v.type === 'event' ? 'Event' : 'Memo'}{v.eventDate ? ` · ${v.eventDate}` : ''}{v.eventTime ? ` ${v.eventTime}` : ''}{v.location ? ` · ${v.location}` : ''}</div>
         <div className="mt-1">Shown to: {audience}. No notification is sent; students see it in Community.</div>
