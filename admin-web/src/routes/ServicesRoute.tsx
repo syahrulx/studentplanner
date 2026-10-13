@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
 import {
   listAdminServices,
   fetchAdminServiceStats,
@@ -18,31 +17,75 @@ import {
 import { matchesAdminSearch } from '../lib/adminSearch';
 import { useAdminSearch } from '../state/AdminSearchContext';
 import { MotionPanel, MotionSection } from '../ui/motion';
+import { ServiceCard, ServiceCardSkeleton } from '../components/services/ServiceCard';
+import { ServiceDetailPanel } from '../components/services/ServiceDetailPanel';
+import { CATEGORIES, capitalize, type ServiceAction } from '../components/services/serviceFormat';
 
-const STATUS_COLORS: Record<string, string> = {
-  open: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
-  claimed: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
-  submitted: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
-  completed: 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300',
-  cancelled: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
-};
+/** "in_progress" is a page-only filter: it loads all statuses and keeps claimed + submitted. */
+const STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'open', label: 'Open' },
+  { value: 'in_progress', label: 'In progress' },
+  { value: 'claimed', label: 'Claimed' },
+  { value: 'submitted', label: 'Submitted' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
 
-const KIND_COLORS: Record<string, string> = {
-  request: 'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300',
-  offer: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300',
-};
+const KIND_OPTIONS: { value: string; label: string }[] = [
+  { value: 'all', label: 'All kinds' },
+  { value: 'request', label: 'Requests' },
+  { value: 'offer', label: 'Offers' },
+];
 
-const CATEGORIES = ['all','tutoring','printing','transport','food','errands','tech','design','other'];
+const PILL_BASE = 'inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-black transition-colors';
+const PILL_ON = 'bg-slate-900 text-white dark:bg-white dark:text-slate-950';
+const PILL_OFF = 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700';
 
-function fmt(iso: string) {
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-}
-function fmtPrice(s: AdminServiceRow) {
-  if (s.price_type === 'free') return 'Free';
-  const amt = s.accepted_amount ?? s.price_amount;
-  if (amt == null) return 'Negotiable';
-  return `${s.currency || 'MYR'} ${Number(amt).toLocaleString()}`;
+const SECONDARY_BTN =
+  'inline-flex h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800';
+
+function StatChip({
+  label,
+  value,
+  tone = 'slate',
+  active = false,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  tone?: 'slate' | 'emerald' | 'amber' | 'sky' | 'rose';
+  active?: boolean;
+  onClick?: () => void;
+}) {
+  const valueColor: Record<string, string> = {
+    slate: 'text-slate-900 dark:text-slate-100',
+    emerald: 'text-emerald-700 dark:text-emerald-300',
+    amber: 'text-amber-700 dark:text-amber-300',
+    sky: 'text-sky-700 dark:text-sky-300',
+    rose: 'text-rose-700 dark:text-rose-300',
+  };
+  const loudRose = tone === 'rose' && value > 0;
+  const box = loudRose
+    ? 'border-rose-300 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/40'
+    : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900';
+  const ring = active ? 'ring-2 ring-slate-900 dark:ring-white' : '';
+  const content = (
+    <>
+      <span className={`text-lg font-black tabular-nums ${valueColor[tone]}`}>{value}</span>
+      <span className={`text-xs font-bold ${loudRose ? 'text-rose-700 dark:text-rose-300' : 'text-slate-500 dark:text-slate-400'}`}>
+        {loudRose ? '🚩 ' : ''}{label}
+      </span>
+    </>
+  );
+  const cls = `inline-flex items-baseline gap-1.5 rounded-2xl border px-3 py-1.5 ${box} ${ring}`;
+  if (!onClick) return <div className={cls}>{content}</div>;
+  return (
+    <button type="button" onClick={onClick} aria-pressed={active}
+      className={`${cls} transition-colors hover:border-slate-300 dark:hover:border-slate-700`}>
+      {content}
+    </button>
+  );
 }
 
 export function ServicesRoute() {
@@ -58,7 +101,7 @@ export function ServicesRoute() {
   /** Narrow list to services that have at least one user report (moderation queue). */
   const [reportFilter, setReportFilter] = useState<'all' | 'reported'>('all');
 
-  // Detail modal
+  // Detail panel
   const [selected, setSelected] = useState<AdminServiceRow | null>(null);
   const [reports, setReports] = useState<AdminServiceReportRow[]>([]);
   const [loadingReports, setLoadingReports] = useState(false);
@@ -68,7 +111,12 @@ export function ServicesRoute() {
     setErr('');
     try {
       const [rows, s] = await Promise.all([
-        listAdminServices({ status: statusFilter, kind: kindFilter, category: catFilter, limit: 300 }),
+        listAdminServices({
+          status: statusFilter === 'in_progress' ? 'all' : statusFilter,
+          kind: kindFilter,
+          category: catFilter,
+          limit: 300,
+        }),
         fetchAdminServiceStats(),
       ]);
       setItems(rows);
@@ -107,6 +155,9 @@ export function ServicesRoute() {
 
   const filtered = useMemo(() => {
     let rows = items;
+    if (statusFilter === 'in_progress') {
+      rows = rows.filter((s) => s.service_status === 'claimed' || s.service_status === 'submitted');
+    }
     if (reportFilter === 'reported') {
       rows = rows.filter((s) => (s.report_count ?? 0) > 0);
     }
@@ -114,9 +165,11 @@ export function ServicesRoute() {
     return rows.filter((s) =>
       matchesAdminSearch(searchQuery, s.id, s.title, s.body || '', s.author_name || '', s.claimer_name || ''),
     );
-  }, [items, searchQuery, reportFilter]);
+  }, [items, searchQuery, reportFilter, statusFilter]);
 
-  const handleAction = async (action: string, id: string) => {
+  const reportedInList = useMemo(() => items.filter((s) => (s.report_count ?? 0) > 0).length, [items]);
+
+  const handleAction = async (action: ServiceAction, id: string) => {
     const labels: Record<string, string> = {
       cancel: 'Force cancel this service?',
       complete: 'Force complete this service?',
@@ -138,341 +191,183 @@ export function ServicesRoute() {
     }
   };
 
-  // Stat card component
-  const Stat = ({ label, value, color }: { label: string; value: number; color: string }) => (
-    <div className={`rounded-2xl border p-4 ${color}`}>
-      <div className="text-2xl font-black tabular-nums">{value}</div>
-      <div className="mt-0.5 text-xs font-bold uppercase tracking-wide opacity-70">{label}</div>
-    </div>
-  );
+  const toggleStatus = (value: string) => setStatusFilter((cur) => (cur === value ? 'all' : value));
+  const hasFilters = statusFilter !== 'all' || kindFilter !== 'all' || catFilter !== 'all' || reportFilter !== 'all';
 
   return (
     <div>
+      {/* Header */}
       <MotionSection>
-        <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Service Marketplace</div>
-        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Monitor, moderate, and manage all services across campuses. Filter by <strong className="text-slate-700 dark:text-slate-200">Reports: Reported only</strong> to review user-flagged listings — open a row for report reasons, then <strong className="text-slate-700 dark:text-slate-200">Delete service</strong> or clear reports.
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Services</h1>
+            <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
+              Requests and offers students post. Check reported ones and step in when needed.
+            </p>
+          </div>
+          {activeTab === 'services' && (
+            <button type="button" onClick={() => void refresh()} disabled={busy} className={SECONDARY_BTN}>
+              {busy ? 'Loading…' : 'Refresh'}
+            </button>
+          )}
+        </div>
+
+        {/* Tabs */}
+        <div className="mt-4 inline-flex rounded-2xl bg-slate-100 p-1 dark:bg-slate-800/70" role="tablist">
+          {([
+            { id: 'services', label: 'Services' },
+            { id: 'verifications', label: '🎓 Student verifications' },
+          ] as const).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === t.id}
+              onClick={() => setActiveTab(t.id)}
+              className={`rounded-xl px-4 py-2 text-sm font-black transition-colors ${
+                activeTab === t.id
+                  ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-950 dark:text-slate-100'
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
       </MotionSection>
-
-      {/* Tab Toggle */}
-      <MotionPanel className="mt-4">
-        <div className="flex gap-2">
-          <button
-            onClick={() => setActiveTab('services')}
-            className={`rounded-2xl px-5 py-2.5 text-sm font-black transition-colors ${
-              activeTab === 'services'
-                ? 'bg-brand-600 text-white shadow-soft'
-                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
-            }`}
-          >
-            Services
-          </button>
-          <button
-            onClick={() => setActiveTab('verifications')}
-            className={`rounded-2xl px-5 py-2.5 text-sm font-black transition-colors ${
-              activeTab === 'verifications'
-                ? 'bg-brand-600 text-white shadow-soft'
-                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
-            }`}
-          >
-            🎓 Student Verifications
-          </button>
-        </div>
-      </MotionPanel>
 
       {activeTab === 'verifications' ? (
         <VerificationsPanel />
       ) : (
       <>
+        {/* Stats strip */}
+        {stats && (
+          <MotionPanel className="mt-5">
+            <div className="flex flex-wrap gap-2">
+              <StatChip label="Total" value={stats.total} />
+              <StatChip label="Open" value={stats.open} tone="emerald"
+                active={statusFilter === 'open'} onClick={() => toggleStatus('open')} />
+              <StatChip label="In progress" value={stats.claimed + stats.submitted} tone="amber"
+                active={statusFilter === 'in_progress'} onClick={() => toggleStatus('in_progress')} />
+              <StatChip label="Completed" value={stats.completed} tone="sky"
+                active={statusFilter === 'completed'} onClick={() => toggleStatus('completed')} />
+              <StatChip label="Cancelled" value={stats.cancelled}
+                active={statusFilter === 'cancelled'} onClick={() => toggleStatus('cancelled')} />
+              <StatChip label="Offers made" value={stats.total_offers} />
+              <StatChip label="Reviews" value={stats.total_reviews} />
+              <StatChip label="Reported" value={stats.reported} tone="rose"
+                active={reportFilter === 'reported'}
+                onClick={() => setReportFilter((cur) => (cur === 'reported' ? 'all' : 'reported'))} />
+            </div>
+          </MotionPanel>
+        )}
 
-      {/* Stats grid */}
-      {stats && (
+        {/* Filter bar */}
         <MotionPanel className="mt-4">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-5">
-            <Stat label="Total" value={stats.total} color="border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 text-slate-900 dark:text-slate-100" />
-            <Stat label="Open" value={stats.open} color="border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-200" />
-            <Stat label="In Progress" value={stats.claimed + stats.submitted} color="border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200" />
-            <Stat label="Completed" value={stats.completed} color="border-sky-200 bg-sky-50 dark:border-sky-900/40 dark:bg-sky-950/30 text-sky-800 dark:text-sky-200" />
-            <Stat label="Reports" value={stats.reported} color="border-rose-200 bg-rose-50 dark:border-rose-900/40 dark:bg-rose-950/30 text-rose-800 dark:text-rose-200" />
-          </div>
-          <div className="mt-2 grid grid-cols-3 gap-3">
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 dark:border-slate-800 dark:bg-slate-900">
-              <span className="text-sm font-black text-slate-900 dark:text-slate-100">{stats.total_offers}</span>
-              <span className="ml-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">offers made</span>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 dark:border-slate-800 dark:bg-slate-900">
-              <span className="text-sm font-black text-slate-900 dark:text-slate-100">{stats.total_reviews}</span>
-              <span className="ml-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">reviews</span>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 dark:border-slate-800 dark:bg-slate-900">
-              <span className="text-sm font-black text-slate-900 dark:text-slate-100">{stats.cancelled}</span>
-              <span className="ml-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">cancelled</span>
+          <div className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {STATUS_OPTIONS.map((o) => (
+                  <button key={o.value} type="button" onClick={() => setStatusFilter(o.value)}
+                    aria-pressed={statusFilter === o.value}
+                    className={`${PILL_BASE} ${statusFilter === o.value ? PILL_ON : PILL_OFF}`}>
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {KIND_OPTIONS.map((o) => (
+                  <button key={o.value} type="button" onClick={() => setKindFilter(o.value)}
+                    aria-pressed={kindFilter === o.value}
+                    className={`${PILL_BASE} ${kindFilter === o.value ? PILL_ON : PILL_OFF}`}>
+                    {o.label}
+                  </button>
+                ))}
+                <select
+                  value={catFilter}
+                  onChange={(e) => setCatFilter(e.target.value)}
+                  aria-label="Category"
+                  className="h-8 rounded-full border border-slate-200 bg-white pl-3 pr-8 text-xs font-black text-slate-700 outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                >
+                  {CATEGORIES.map((c) => (
+                    <option key={c} value={c}>{c === 'all' ? 'All categories' : capitalize(c)}</option>
+                  ))}
+                </select>
+                <button type="button"
+                  onClick={() => setReportFilter((cur) => (cur === 'reported' ? 'all' : 'reported'))}
+                  aria-pressed={reportFilter === 'reported'}
+                  className={`${PILL_BASE} ${reportFilter === 'reported' ? PILL_ON : PILL_OFF}`}>
+                  🚩 Reported only
+                  {reportedInList > 0 && (
+                    <span className="rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-black leading-none text-white">
+                      {reportedInList}
+                    </span>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </MotionPanel>
-      )}
 
-      {/* Filters + table */}
-      <MotionPanel className="mt-6">
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div className="flex flex-wrap gap-3">
-              <label className="block">
-                <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Status</div>
-                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
-                  className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
-                  <option value="all">All status</option>
-                  <option value="open">Open</option>
-                  <option value="claimed">Claimed</option>
-                  <option value="submitted">Submitted</option>
-                  <option value="completed">Completed</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
-              </label>
-              <label className="block">
-                <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Kind</div>
-                <select value={kindFilter} onChange={(e) => setKindFilter(e.target.value)}
-                  className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
-                  <option value="all">All kinds</option>
-                  <option value="request">Request</option>
-                  <option value="offer">Offer</option>
-                </select>
-              </label>
-              <label className="block">
-                <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Category</div>
-                <select value={catFilter} onChange={(e) => setCatFilter(e.target.value)}
-                  className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
-                  {CATEGORIES.map((c) => <option key={c} value={c}>{c === 'all' ? 'All categories' : c.charAt(0).toUpperCase() + c.slice(1)}</option>)}
-                </select>
-              </label>
-              <label className="block">
-                <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Reports</div>
-                <select value={reportFilter} onChange={(e) => setReportFilter(e.target.value as 'all' | 'reported')}
-                  className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
-                  <option value="all">All services</option>
-                  <option value="reported">Reported only (has flags)</option>
-                </select>
-              </label>
-            </div>
-            <button onClick={() => void refresh()} disabled={busy}
-              className="h-11 rounded-2xl bg-brand-600 px-4 text-sm font-black text-white shadow-soft hover:bg-brand-700 disabled:opacity-70">
-              {busy ? 'Loading…' : 'Refresh'}
-            </button>
+        {err && (
+          <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
+            {err}
           </div>
+        )}
 
-          {err && <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">{err}</div>}
-
-          {/* Table */}
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[1100px] border-separate border-spacing-y-2">
-              <thead>
-                <tr className="text-left text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  <th className="px-3 py-2">Service</th>
-                  <th className="px-3 py-2">Kind</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Price</th>
-                  <th className="px-3 py-2">Author</th>
-                  <th className="px-3 py-2">Taker</th>
-                  <th className="px-3 py-2">Reports</th>
-                  <th className="px-3 py-2">Date</th>
-                  <th className="px-3 py-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((s) => (
-                  <tr key={s.id} className="cursor-pointer border border-slate-200 bg-slate-50/60 hover:bg-slate-100/80 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900/60"
-                    onClick={() => openDetail(s)}>
-                    <td className="px-3 py-3">
-                      <div className="max-w-[240px] truncate text-sm font-black text-slate-900 dark:text-slate-100">{s.title}</div>
-                      <div className="mt-0.5 max-w-[240px] truncate text-xs font-semibold text-slate-500 dark:text-slate-400">{s.service_category || '—'}</div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className={`inline-flex rounded-xl px-2.5 py-1 text-xs font-bold ${KIND_COLORS[s.service_kind] || ''}`}>{s.service_kind}</span>
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className={`inline-flex rounded-xl px-2.5 py-1 text-xs font-bold ${STATUS_COLORS[s.service_status] || ''}`}>{s.service_status}</span>
-                      {s.cancel_requested_by && <span className="ml-1 text-xs text-rose-500" title="Cancel requested">⚠️</span>}
-                    </td>
-                    <td className="px-3 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200 whitespace-nowrap">{fmtPrice(s)}</td>
-                    <td className="px-3 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">{s.author_name || '—'}</td>
-                    <td className="px-3 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">{s.claimer_name || '—'}</td>
-                    <td className="px-3 py-3">
-                      {(s.report_count ?? 0) > 0 ? (
-                        <span className="inline-flex rounded-xl bg-rose-100 px-2.5 py-1 text-xs font-bold text-rose-800 dark:bg-rose-900/30 dark:text-rose-300">
-                          🚩 {s.report_count}
-                        </span>
-                      ) : <span className="text-xs text-slate-400">—</span>}
-                    </td>
-                    <td className="px-3 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap tabular-nums">{fmt(s.created_at)}</td>
-                    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex justify-end gap-1.5">
-                        {s.service_status !== 'cancelled' && s.service_status !== 'completed' && (
-                          <button onClick={() => handleAction('cancel', s.id)}
-                            className="rounded-xl border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-black text-rose-800 hover:bg-rose-100 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-200">
-                            Cancel
-                          </button>
-                        )}
-                        <button onClick={() => handleAction('delete', s.id)}
-                          className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {filtered.length === 0 && !busy && (
-                  <tr><td colSpan={9} className="px-3 py-6 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">No services found.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-            {filtered.length} service{filtered.length !== 1 ? 's' : ''}
-          </div>
-        </div>
-      </MotionPanel>
-
-      {/* Detail modal */}
-      {/* Drawn into document.body: the admin layout animates with transforms,
-          which trapped this fixed overlay inside the page (you had to scroll to it). */}
-      {selected && createPortal(
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
-          <button className="absolute inset-0 bg-black/40" onClick={() => setSelected(null)} aria-label="Close" />
-          <div className="relative z-10 w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900">
-            <button onClick={() => setSelected(null)} className="absolute right-4 top-4 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-lg font-black">✕</button>
-
-            <div className="text-xl font-black text-slate-900 dark:text-slate-100 pr-8">{selected.title}</div>
-            <div className="mt-1 flex flex-wrap gap-2">
-              <span className={`rounded-xl px-2.5 py-1 text-xs font-bold ${KIND_COLORS[selected.service_kind]}`}>{selected.service_kind}</span>
-              <span className={`rounded-xl px-2.5 py-1 text-xs font-bold ${STATUS_COLORS[selected.service_status]}`}>{selected.service_status}</span>
-              {selected.service_category && <span className="rounded-xl bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">{selected.service_category}</span>}
-            </div>
-
-            {selected.body && <p className="mt-3 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{selected.body}</p>}
-
-            {/* Info grid */}
-            <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
-                <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Price</div>
-                <div className="mt-1 font-black text-slate-900 dark:text-slate-100">{fmtPrice(selected)}</div>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
-                <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Deadline</div>
-                <div className="mt-1 font-semibold text-slate-900 dark:text-slate-100">{selected.deadline_at ? fmt(selected.deadline_at) : '—'}</div>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
-                <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Author</div>
-                <div className="mt-1 font-semibold text-slate-900 dark:text-slate-100">{selected.author_name}</div>
-                <div className="text-xs text-slate-400 font-mono truncate">{selected.author_id}</div>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
-                <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Taker</div>
-                <div className="mt-1 font-semibold text-slate-900 dark:text-slate-100">{selected.claimer_name || '—'}</div>
-                {selected.claimed_by && <div className="text-xs text-slate-400 font-mono truncate">{selected.claimed_by}</div>}
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
-                <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Revisions</div>
-                <div className="mt-1 font-black text-slate-900 dark:text-slate-100">{selected.revision_count} / {selected.max_revisions}</div>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
-                <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Offers</div>
-                <div className="mt-1 font-black text-slate-900 dark:text-slate-100">{selected.offer_count ?? 0}</div>
-              </div>
-            </div>
-
-            {/* Location (university, campus, specific place) */}
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40">
-              <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Location</div>
-              <dl className="mt-3 space-y-2 text-sm">
-                <div className="flex gap-2">
-                  <dt className="shrink-0 font-semibold text-slate-500 dark:text-slate-400">University</dt>
-                  <dd className="min-w-0 flex-1 font-semibold text-slate-900 dark:text-slate-100">
-                    {selected.university_name || selected.university_id || '—'}
-                  </dd>
-                </div>
-                <div className="flex gap-2">
-                  <dt className="shrink-0 font-semibold text-slate-500 dark:text-slate-400">Campus</dt>
-                  <dd className="min-w-0 flex-1 font-semibold text-slate-900 dark:text-slate-100">{selected.campus || '—'}</dd>
-                </div>
-                <div className="flex gap-2">
-                  <dt className="shrink-0 font-semibold text-slate-500 dark:text-slate-400">Specific place</dt>
-                  <dd className="min-w-0 flex-1 font-semibold text-slate-900 dark:text-slate-100">{selected.location || '—'}</dd>
-                </div>
-              </dl>
-            </div>
-
-            {/* Delivery */}
-            {selected.delivery_note && (
-              <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-3 dark:border-blue-900/40 dark:bg-blue-950/30">
-                <div className="text-xs font-black uppercase tracking-wide text-blue-600 dark:text-blue-300">Delivery Note</div>
-                <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">{selected.delivery_note}</div>
-              </div>
-            )}
-
-            {/* Reports */}
-            <div className="mt-4">
-              <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                User reports ({reports.length})
-              </div>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Each row is a student submission. Use <span className="font-semibold text-slate-700 dark:text-slate-300">Delete service</span> below to permanently remove this listing from the marketplace when moderation confirms a violation.
-              </p>
-              {loadingReports ? (
-                <div className="mt-2 text-sm text-slate-400">Loading…</div>
-              ) : reports.length === 0 ? (
-                <div className="mt-2 text-sm text-slate-400">No reports.</div>
-              ) : (
-                <div className="mt-2 space-y-2">
-                  {reports.map((r) => (
-                    <div key={r.id} className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 dark:border-rose-900/40 dark:bg-rose-950/30">
-                      <div className="text-sm font-semibold text-rose-900 dark:text-rose-100">{r.reason}</div>
-                      <div className="mt-0.5 text-xs text-rose-600 dark:text-rose-300">by {r.reporter_name} · {fmt(r.created_at)}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Admin actions */}
-            <div className="mt-6 flex flex-wrap gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
-              {selected.service_status !== 'completed' && selected.service_status !== 'cancelled' && (
-                <>
-                  <button onClick={() => handleAction('complete', selected.id)}
-                    className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-black text-sky-800 hover:bg-sky-100 dark:border-sky-900/40 dark:bg-sky-950/40 dark:text-sky-200">
-                    ✅ Force Complete
-                  </button>
-                  <button onClick={() => handleAction('reopen', selected.id)}
-                    className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-black text-amber-800 hover:bg-amber-100 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-200">
-                    🔓 Force Reopen
-                  </button>
-                  <button onClick={() => handleAction('cancel', selected.id)}
-                    className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-black text-rose-800 hover:bg-rose-100 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-200">
-                    ❌ Force Cancel
-                  </button>
-                </>
-              )}
-              {reports.length > 0 && (
-                <button onClick={() => handleAction('clearReports', selected.id)}
-                  className="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
-                  🧹 Clear Reports
-                </button>
-              )}
-              <button onClick={() => handleAction('delete', selected.id)}
-                className="rounded-2xl border border-rose-300 bg-rose-100 px-4 py-2 text-sm font-black text-rose-900 hover:bg-rose-200 dark:border-rose-800 dark:bg-rose-950/60 dark:text-rose-200">
-                🗑️ Delete Service
+        {/* List */}
+        <MotionPanel className="mt-4">
+          <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500 dark:text-slate-400">
+            <span>
+              {busy ? 'Loading…' : `${filtered.length} service${filtered.length !== 1 ? 's' : ''}`}
+            </span>
+            {hasFilters && (
+              <button type="button"
+                onClick={() => { setStatusFilter('all'); setKindFilter('all'); setCatFilter('all'); setReportFilter('all'); }}
+                className="font-black text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">
+                Clear filters
               </button>
-            </div>
-
-            <div className="mt-3 text-xs text-slate-400 font-mono break-all">ID: {selected.id}</div>
+            )}
           </div>
-        </div>,
-        document.body,
+
+          <div className="space-y-3">
+            {busy ? (
+              <>
+                <ServiceCardSkeleton />
+                <ServiceCardSkeleton />
+                <ServiceCardSkeleton />
+              </>
+            ) : filtered.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center dark:border-slate-700 dark:bg-slate-900">
+                <div className="text-3xl">🧰</div>
+                <div className="mt-2 text-sm font-black text-slate-900 dark:text-slate-100">No services found</div>
+                <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  {hasFilters || searchQuery.trim() ? 'Try clearing the filters or search.' : 'Nothing has been posted yet.'}
+                </div>
+              </div>
+            ) : (
+              filtered.map((s) => (
+                <ServiceCard key={s.id} service={s} onOpen={(row) => void openDetail(row)}
+                  onAction={(a, id) => void handleAction(a, id)} />
+              ))
+            )}
+          </div>
+        </MotionPanel>
+
+        {/* Detail panel (portal into document.body, see ServiceDetailPanel) */}
+        {selected && (
+          <ServiceDetailPanel
+            service={selected}
+            reports={reports}
+            loadingReports={loadingReports}
+            onClose={() => setSelected(null)}
+            onAction={(a, id) => void handleAction(a, id)}
+          />
+        )}
+      </>
       )}
-    </>
-  )}
-</div>
-);
+    </div>
+  );
 }
 
 // ─── Student Verification Panel ─────────────────────────────────────────────
@@ -511,83 +406,81 @@ function VerificationsPanel() {
 
   return (
     <>
-      {/* Stats */}
-      {stats && (
-        <MotionPanel className="mt-4">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/30">
-              <div className="text-2xl font-black tabular-nums text-emerald-800 dark:text-emerald-200">{stats.total}</div>
-              <div className="mt-0.5 text-xs font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-300">OTP Verified</div>
-            </div>
-          </div>
-        </MotionPanel>
-      )}
-
-      {/* Filters + List */}
-      <MotionPanel className="mt-4">
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex items-end justify-between gap-3">
-            <div className="text-sm font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-              Recent OTP Verifications
-            </div>
-            <button
-              onClick={() => void refresh()}
-              disabled={loading}
-              className="h-11 rounded-2xl bg-brand-600 px-4 text-sm font-black text-white shadow-soft hover:bg-brand-700 disabled:opacity-70"
-            >
-              {loading ? 'Loading…' : 'Refresh'}
-            </button>
-          </div>
-
-          {err && (
-            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
-              {err}
-            </div>
-          )}
-
-          <div className="mt-4 space-y-3">
-            {items.map((v) => (
-              <div
-                key={v.id}
-                className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/40"
-              >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="text-sm font-black text-slate-900 dark:text-slate-100">
-                      {v.user_name || 'Unknown'}
-                    </div>
-                    <div className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                      Student email: <span className="text-slate-700 dark:text-slate-200">{v.student_email}</span>
-                    </div>
-                    <div className="mt-0.5 text-xs text-slate-400 font-mono">
-                      {v.user_id}
-                    </div>
-                  </div>
-                  <span className={`rounded-xl px-2.5 py-1 text-xs font-bold ${VERIFICATION_STATUS_COLORS[v.status] || ''}`}>
-                    {v.status}
-                  </span>
-                </div>
-
-                <div className="mt-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
-                  ✅ Verified via OTP
-                </div>
-
-                <div className="mt-1 text-xs text-slate-400">
-                  Verified on: {v.reviewed_at ? new Date(v.reviewed_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown'}
-                </div>
-              </div>
-            ))}
-
-            {items.length === 0 && !loading && (
-              <div className="py-8 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
-                No OTP verifications found.
+      <MotionPanel className="mt-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {stats && (
+              <div className="inline-flex items-baseline gap-1.5 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 dark:border-emerald-900/40 dark:bg-emerald-950/30">
+                <span className="text-lg font-black tabular-nums text-emerald-700 dark:text-emerald-300">{stats.total}</span>
+                <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300">Verified by email code</span>
               </div>
             )}
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Recent students who confirmed their student email.</span>
           </div>
+          <button type="button" onClick={() => void refresh()} disabled={loading} className={SECONDARY_BTN}>
+            {loading ? 'Loading…' : 'Refresh'}
+          </button>
+        </div>
+      </MotionPanel>
 
-          <div className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
-            {items.length} verified user{items.length !== 1 ? 's' : ''}
-          </div>
+      {err && (
+        <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
+          {err}
+        </div>
+      )}
+
+      <MotionPanel className="mt-4">
+        <div className="space-y-3">
+          {loading && items.length === 0 && (
+            <>
+              <ServiceCardSkeleton />
+              <ServiceCardSkeleton />
+              <ServiceCardSkeleton />
+            </>
+          )}
+
+          {items.map((v) => (
+            <div
+              key={v.id}
+              className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-black text-slate-900 dark:text-slate-100">
+                    {v.user_name || 'Unknown'}
+                  </div>
+                  <div className="mt-0.5 break-all text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    Student email: <span className="text-slate-700 dark:text-slate-200">{v.student_email}</span>
+                  </div>
+                  <div className="mt-0.5 truncate font-mono text-[11px] text-slate-400 dark:text-slate-500">
+                    {v.user_id}
+                  </div>
+                </div>
+                <span className={`shrink-0 rounded-xl px-2.5 py-1 text-xs font-bold ${VERIFICATION_STATUS_COLORS[v.status] || ''}`}>
+                  {v.status}
+                </span>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                <span className="inline-flex rounded-xl bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
+                  ✅ Verified via OTP
+                </span>
+                <span className="inline-flex rounded-xl bg-slate-100 px-2.5 py-1 text-xs font-bold tabular-nums text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                  {v.reviewed_at ? new Date(v.reviewed_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Date unknown'}
+                </span>
+              </div>
+            </div>
+          ))}
+
+          {items.length === 0 && !loading && (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center text-sm font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+              No OTP verifications found.
+            </div>
+          )}
+        </div>
+
+        <div className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
+          {items.length} verified user{items.length !== 1 ? 's' : ''}
         </div>
       </MotionPanel>
     </>
