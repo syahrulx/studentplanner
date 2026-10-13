@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { deleteUitmContributions } from '../lib/adminAlerts';
 import {
   deleteExpiredCrowdsourcedCalendarOffers,
   listCrowdsourcedCalendarOffers,
@@ -30,6 +31,7 @@ export function CrowdsourcedCalendarsRoute() {
   const [deletingOfferId, setDeletingOfferId] = useState<string>('');
   const [deletingExpired, setDeletingExpired] = useState(false);
   const [reviewingUitmId, setReviewingUitmId] = useState('');
+  const [selectedUitmIds, setSelectedUitmIds] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'semester' | 'university' | 'reports'>('newest');
   const [groupBy, setGroupBy] = useState<'none' | 'university' | 'duplicates'>('none');
   const [uitmStatus, setUitmStatus] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
@@ -207,6 +209,34 @@ export function CrowdsourcedCalendarsRoute() {
     } });
   };
 
+  const toggleUitm = (id: string) =>
+    setSelectedUitmIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  const deleteSelectedUitm = () => {
+    const ids = selectedUitmIds.filter((id) => uitmContributions.some((r) => r.id === id));
+    if (!ids.length) return;
+    const chosen = uitmContributions.filter((r) => ids.includes(r.id));
+    const approved = chosen.filter((r) => r.status === 'approved').length;
+    requestSafeAction({
+      title: `Delete ${ids.length} UiTM submission${ids.length === 1 ? '' : 's'}`,
+      operation: 'Delete submissions',
+      affectedCount: ids.length,
+      confirmationText: `DELETE ${ids.length}`,
+      requireReason: true,
+      irreversible: true,
+      subject: `${chosen.filter((r) => r.status === 'pending').length} pending · ${approved} approved · ${chosen.filter((r) => r.status === 'rejected').length} rejected`,
+      warning: approved
+        ? `${approved} of these are APPROVED: UiTM students can see them now, and they will disappear for everyone. Pending and rejected ones are only removed from this list. This cannot be undone.`
+        : 'Removes these submissions for good. No student calendar changes: pending and rejected submissions are not shown to students.',
+      onConfirm: async (reason) => {
+        const n = await deleteUitmContributions(ids, reason);
+        setSelectedUitmIds([]);
+        await refreshHistory();
+        setOkMsg(`${n} UiTM submission${n === 1 ? '' : 's'} deleted.`);
+        return { affected: n, failed: Math.max(0, ids.length - n) };
+      },
+    });
+  };
+
   const reviewUitmContribution = async (row: UitmCalendarContributionRow, status: 'approved' | 'rejected') => {
     const action = status === 'approved' ? 'Approve' : 'Reject';
     const ok = window.confirm(
@@ -303,16 +333,42 @@ export function CrowdsourcedCalendarsRoute() {
           <div className="mt-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
             Each pending submission shows a suggestion. It is only advice: you still press Approve or Reject.
           </div>
+          {visibleUitm.length ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2 rounded-2xl border border-violet-200 bg-white px-3 py-2 text-xs font-black dark:border-violet-900/50 dark:bg-slate-950/40">
+              <label className="flex items-center gap-2 text-slate-700 dark:text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={visibleUitm.every((r) => selectedUitmIds.includes(r.id))}
+                  onChange={(e) => setSelectedUitmIds(e.target.checked ? visibleUitm.map((r) => r.id) : [])}
+                />
+                Select all shown ({visibleUitm.length})
+              </label>
+              {visibleUitm.some((r) => uitmVerdicts.get(r.id)?.verdict === 'reject') ? (
+                <button type="button" onClick={() => setSelectedUitmIds(visibleUitm.filter((r) => uitmVerdicts.get(r.id)?.verdict === 'reject').map((r) => r.id))}
+                  className="rounded-xl border border-slate-200 px-3 py-1.5 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
+                  Tick suggested “Reject” ({visibleUitm.filter((r) => uitmVerdicts.get(r.id)?.verdict === 'reject').length})
+                </button>
+              ) : null}
+              <button type="button" disabled={selectedUitmIds.length === 0} onClick={deleteSelectedUitm}
+                className="ml-auto rounded-xl bg-red-600 px-3 py-1.5 text-white hover:bg-red-700 disabled:opacity-40">
+                Delete selected ({selectedUitmIds.length})
+              </button>
+            </div>
+          ) : null}
           <div className="mt-4 space-y-3">
             {visibleUitm.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-violet-200 px-4 py-5 text-sm font-semibold text-violet-900 dark:border-violet-900/60 dark:text-violet-100">{uitmContributions.length === 0 ? 'No UiTM community submissions yet.' : `No ${uitmStatus} submissions.`}</div>
             ) : visibleUitm.map((row) => (
               <div key={row.id} className="rounded-2xl border border-violet-100 bg-white p-4 dark:border-violet-900/40 dark:bg-slate-950/40">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 items-start gap-3">
+                  <input type="checkbox" className="mt-1 h-4 w-4 shrink-0" aria-label={`Select ${row.semester_label}`}
+                    checked={selectedUitmIds.includes(row.id)} onChange={() => toggleUitm(row.id)} />
                   <div className="min-w-0">
                     <div className="font-black text-slate-900 dark:text-slate-100">{row.semester_label}</div>
                     <div className="mt-1 text-xs font-semibold text-slate-600 dark:text-slate-300">{row.start_date} to {row.end_date} · {row.total_weeks} weeks · Group {row.group_code} · {row.calendar_variant === 'kkt' ? 'Kedah/Kelantan/Terengganu' : 'Standard'}</div>
                     <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Submitted by {row.user_profile?.full_name || row.user_profile?.email || 'Unknown user'} · {new Date(row.created_at).toLocaleString()}</div>
+                  </div>
                   </div>
                   <span className={`self-start rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${row.status === 'approved' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200' : row.status === 'rejected' ? 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200'}`}>{row.status}</span>
                 </div>

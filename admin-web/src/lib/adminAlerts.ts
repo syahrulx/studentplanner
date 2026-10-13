@@ -21,7 +21,7 @@ export type AdminAlertKey =
 export type AdminAlerts = Record<AdminAlertKey, number>;
 
 export const ALERT_LABEL: Record<AdminAlertKey, string> = {
-  user_reports: 'reports waiting or with a new user reply',
+  user_reports: 'open reports',
   confessions: 'flagged or suspect confessions to review',
   share_rewards: 'share reward claims to check',
   services: 'reported services',
@@ -77,4 +77,17 @@ export function useAdminAlerts(): AdminAlerts {
     };
   }, []);
   return alerts;
+}
+
+/** Bulk-delete UiTM community calendar submissions (admins only, logged). Returns how many were deleted. */
+export async function deleteUitmContributions(ids: string[], reason: string): Promise<number> {
+  const { data, error } = await supabase.rpc('admin_delete_uitm_calendar_contributions', { p_ids: ids, p_reason: reason });
+  if (error) {
+    if (error.code === 'PGRST202' || /could not find the function/i.test(error.message)) {
+      throw new Error('Bulk delete needs gradeup-mobile migration 20261013000005_admin_badges_and_uitm_bulk_delete.sql. Run it in the Supabase SQL Editor.');
+    }
+    throw new Error(error.message);
+  }
+  void refreshAdminAlerts();
+  return Number(data ?? 0);
 }
