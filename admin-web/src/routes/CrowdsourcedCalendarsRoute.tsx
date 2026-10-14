@@ -43,7 +43,6 @@ export function CrowdsourcedCalendarsRoute() {
   const [heaPage, setHeaPage] = useState<HeaPage | null>(null);
   const [heaErr, setHeaErr] = useState('');
   const [heaLoading, setHeaLoading] = useState(false);
-  const [heaChecks, setHeaChecks] = useState<Map<string, HeaCheck>>(new Map());
 
   const refreshHistory = async () => {
     setBusy(true);
@@ -99,17 +98,10 @@ export function CrowdsourcedCalendarsRoute() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uitmContributions.length]);
 
-  useEffect(() => {
-    if (!heaPage) return;
-    let cancelled = false;
-    void (async () => {
-      const next = new Map<string, HeaCheck>();
-      for (const row of uitmContributions) next.set(row.id, await compareWithHea(row, heaPage));
-      if (!cancelled) setHeaChecks(next);
-    })();
-    return () => {
-      cancelled = true;
-    };
+  const heaChecks = useMemo(() => {
+    const checks = new Map<string, HeaCheck>();
+    if (heaPage) for (const row of uitmContributions) checks.set(row.id, compareWithHea(row, heaPage));
+    return checks;
   }, [heaPage, uitmContributions]);
 
   const uitmVerdicts = useMemo(() => uitmSuggestions(uitmContributions, today), [uitmContributions, today]);

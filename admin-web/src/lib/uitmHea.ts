@@ -1,9 +1,9 @@
 // Compare-only check: does a UiTM community calendar submission match UiTM's
 // official HEA calendar? Shown to the admin as a hint. It never approves or
-// rejects anything. Uses the same HEA reader as the app (vendor/uitm, kept in
+// rejects anything. Uses the same HEA parser as the app (vendor/uitm, kept in
 // sync by scripts/sync-uitm-hea-parser.mjs).
 import { getUitmHeaPage, type UitmCalendarContributionRow } from './api';
-import { fetchUitmAcademicCalendar, setHeaFetch } from '../vendor/uitm/uitmAcademicCalendar';
+import { parseUitmAcademicCalendar } from '../vendor/uitm/uitmHeaParser';
 
 /** Dates within this many days count as the same. */
 const TOLERANCE_DAYS = 3;
@@ -29,14 +29,13 @@ function dayDiff(a: string, b: string): number {
 // Parts of the semester itself (not the break or registration after it).
 const TERM_TYPES = new Set(['lecture', 'test', 'revision', 'exam']);
 
-export async function compareWithHea(row: UitmCalendarContributionRow, page: HeaPage): Promise<HeaCheck> {
+export function compareWithHea(row: UitmCalendarContributionRow, page: HeaPage): HeaCheck {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(row.start_date) || !/^\d{4}-\d{2}-\d{2}$/.test(row.end_date)) {
     return { kind: 'unavailable', reason: 'submission has no clear dates' };
   }
-  setHeaFetch(async () => new Response(page.html, { status: 200 }));
   let hea;
   try {
-    hea = await fetchUitmAcademicCalendar(row.group_code, {
+    hea = parseUitmAcademicCalendar(page.html, row.group_code, {
       targetDateISO: row.start_date,
       preferredTermCode: row.term_code ?? undefined,
       variant: row.calendar_variant,
