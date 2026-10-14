@@ -19,7 +19,7 @@ import { BTN_DARK, BTN_LIGHT, CARD, FIELD, when } from './format';
 import { ErrorBox, Field, Modal } from './ui';
 
 type PackInput = Omit<CoinPack, 'id' | 'updated_at'>;
-const EMPTY: PackInput = { name: '', coins: 100, bonus_coins: 0, price_myr: 1.9, status: 'coming_soon', best_value: false, sort_order: 100 };
+const EMPTY: PackInput = { name: '', coins: 100, bonus_coins: 0, price_myr: 1.9, status: 'coming_soon', best_value: false, sort_order: 100, fpx_allowed: true };
 const rm = (n: number | null | undefined) => (n == null ? '—' : `RM ${Number(n).toFixed(2)}`);
 
 const ORDER_STATUS: Record<CoinOrderStatus, { label: string; tone: string }> = {
@@ -158,7 +158,7 @@ export function PaymentsPanel() {
                   const gets = packCoins(p, rate);
                   return (
                     <tr key={p.id} className="border-t border-slate-100 dark:border-slate-800/70">
-                      <td className="px-5 py-3 font-black text-slate-900 dark:text-white">{p.name}{p.best_value ? <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase text-amber-800">Best value</span> : null}</td>
+                      <td className="px-5 py-3 font-black text-slate-900 dark:text-white">{p.name}{p.best_value ? <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase text-amber-800">Best value</span> : null}{p.fpx_allowed === false ? <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase text-slate-600 dark:bg-slate-800 dark:text-slate-300" title="Checkout hides FPX for this pack">No FPX</span> : null}</td>
                       <td className="px-5 py-3 font-semibold">
                         {gets.total.toLocaleString()} coins
                         {p.bonus_coins ? <span className="text-emerald-600"> (incl. +{p.bonus_coins})</span> : null}
@@ -232,16 +232,16 @@ export function PaymentsPanel() {
         </div>
         <table className="w-full text-left text-sm">
           <thead className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-            <tr><th className="px-5 py-2">When</th><th className="px-5 py-2">Player</th><th className="px-5 py-2">Pack</th><th className="px-5 py-2">Coins</th><th className="px-5 py-2">Status</th><th className="px-5 py-2">Curlec payment</th></tr>
+            <tr><th className="px-5 py-2">When</th><th className="px-5 py-2">Player</th><th className="px-5 py-2">Pack</th><th className="px-5 py-2">Coins</th><th className="px-5 py-2">Status</th><th className="px-5 py-2">Paid with</th><th className="px-5 py-2">Curlec payment</th></tr>
           </thead>
           <tbody>
-            {loading ? <tr><td colSpan={6} className="px-5 py-6 text-center text-slate-400">Loading…</td></tr>
-              : coinError ? <tr><td colSpan={6} className="px-5 py-6 text-center text-slate-400">{coinError}</td></tr>
-              : orders.length === 0 ? <tr><td colSpan={6} className="px-5 py-6 text-center text-slate-400">No coin purchases yet.</td></tr>
+            {loading ? <tr><td colSpan={7} className="px-5 py-6 text-center text-slate-400">Loading…</td></tr>
+              : coinError ? <tr><td colSpan={7} className="px-5 py-6 text-center text-slate-400">{coinError}</td></tr>
+              : orders.length === 0 ? <tr><td colSpan={7} className="px-5 py-6 text-center text-slate-400">No coin purchases yet.</td></tr>
               : orders.map((o) => (
                 <tr key={o.id} className="border-t border-slate-100 dark:border-slate-800/70">
                   <td className="px-5 py-3 text-xs font-semibold text-slate-500">{when(o.paid_at ?? o.created_at)}</td>
-                  <td className="px-5 py-3 font-mono text-xs" title={o.user_id}>{o.user_id.slice(0, 8)}</td>
+                  <td className="px-5 py-3 font-mono text-xs" title={o.user_id ?? 'Account deleted'}>{o.user_id ? o.user_id.slice(0, 8) : <span className="font-sans text-slate-400">deleted</span>}</td>
                   <td className="px-5 py-3 font-semibold">{o.pack_name} <span className="text-slate-400">· {rm(o.price_myr)}</span></td>
                   <td className="px-5 py-3 font-semibold">
                     {o.coins.toLocaleString()}
@@ -255,6 +255,12 @@ export function PaymentsPanel() {
                   <td className="px-5 py-3">
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${ORDER_STATUS[o.status].tone}`}>{ORDER_STATUS[o.status].label}</span>
                     {o.refunded_sen ? <div className="mt-1 text-[11px] text-slate-500">{rm(o.refunded_sen / 100)} refunded</div> : null}
+                  </td>
+                  <td className="px-5 py-3 text-xs font-semibold uppercase text-slate-500">
+                    {o.payment_method ?? '—'}
+                    {o.payment_method === 'fpx' && o.fpx_allowed === false ? (
+                      <div className="text-[11px] normal-case text-amber-600" title="Checkout hid FPX for this pack; the coins were still given.">FPX on a no-FPX pack</div>
+                    ) : null}
                   </td>
                   <td className="px-5 py-3 font-mono text-xs text-slate-500">{o.razorpay_payment_id ?? '—'}</td>
                 </tr>
@@ -315,6 +321,13 @@ function PackEditor({ id, initial, rate, onClose, onSaved }: { id: string | null
         <Field label="Order"><input type="number" value={v.sort_order} onChange={(e) => setV({ ...v, sort_order: Math.floor(Number(e.target.value) || 0) })} className={FIELD} /></Field>
       </div>
       <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={v.best_value} onChange={(e) => setV({ ...v, best_value: e.target.checked })} className="h-4 w-4 accent-slate-900" /> Mark as best value</label>
+      <label className="flex items-start gap-2 text-sm font-bold">
+        <input type="checkbox" checked={v.fpx_allowed !== false} onChange={(e) => setV({ ...v, fpx_allowed: e.target.checked })} className="mt-0.5 h-4 w-4 accent-slate-900" />
+        <span>
+          Allow FPX
+          <span className="block text-xs font-semibold text-slate-500">Curlec charges at least RM1 per FPX payment, so turn this off for small packs. Players then pay by card or e-wallet (or DuitNow if it is switched on in Curlec); the price stays the same.</span>
+        </span>
+      </label>
       <p className="text-xs font-semibold text-slate-500">
         “Available” puts the pack on sale for real money in the RenTaman shop. {!sellable ? <span className="text-rose-600">Price must be at least RM 1.00 to sell.</span> : null}
       </p>
