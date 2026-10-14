@@ -122,6 +122,72 @@ const twinkle = (p: Painter, spots: number[][]) =>
     } else if (v > 0.35) p.px(x, y, v > 0.7 ? "#ffffff" : "#fff6c8");
   });
 
+/** Bright gold for the surge spikes. */
+const SURGE = { c: "#ffd23a", l: "#fff3a6", s: "#e6a81e", d: "#b97c0c" };
+
+/**
+ * A spike as a triangle: base corners (ax, ay) and (bx, by), tip (tx, ty),
+ * in grid units (pixel corners). The half on the right of the centre line is
+ * a shade darker, so spikes look faceted. Returns the pixel nearest the tip.
+ */
+const spike = (p: Painter, s: number[]): [number, number] => {
+  const [ax, ay, bx, by, tx, ty] = s;
+  const side = (x1: number, y1: number, x2: number, y2: number, x: number, y: number) =>
+    (x2 - x1) * (y - y1) - (y2 - y1) * (x - x1);
+  const mx = (ax + bx) / 2;
+  const my = (ay + by) / 2;
+  const turn = side(ax, ay, bx, by, tx, ty);
+  let tip: [number, number] = [Math.floor(tx), Math.floor(ty)];
+  let best = Infinity;
+  const x0 = Math.floor(Math.min(ax, bx, tx));
+  const x1 = Math.ceil(Math.max(ax, bx, tx));
+  const y0 = Math.floor(Math.min(ay, by, ty));
+  const y1 = Math.ceil(Math.max(ay, by, ty));
+  for (let y = y0; y < y1; y++)
+    for (let x = x0; x < x1; x++) {
+      const cx = x + 0.5;
+      const cy = y + 0.5;
+      const e1 = side(ax, ay, bx, by, cx, cy) * turn;
+      const e2 = side(bx, by, tx, ty, cx, cy) * turn;
+      const e3 = side(tx, ty, ax, ay, cx, cy) * turn;
+      if (e1 < 0 || e2 < 0 || e3 < 0) continue;
+      p.px(x, y, side(mx, my, tx, ty, cx, cy) * turn > 0 ? SURGE.s : SURGE.c);
+      const d = (cx - tx) ** 2 + (cy - ty) ** 2;
+      if (d < best) {
+        best = d;
+        tip = [x, y];
+      }
+    }
+  return tip;
+};
+
+/** Mirror a spike to the other side of the body (seen from behind). */
+const flipSpike = (s: number[]) => [24 - s[0], s[1], 24 - s[2], s[3], 24 - s[4], s[5]];
+
+/** Big top spikes facing front: swept over to one side. */
+const SURGE_TOP = [
+  [4.5, 3.5, 8, 2, 3.5, -3],
+  [7, 2, 11, 1, 8.5, -5],
+  [10, 1, 14, 1, 13.5, -5],
+  [13, 1, 17, 2, 18.5, -4],
+  [16, 2, 19.5, 4.5, 22.5, -1],
+];
+/** Facing right the spikes sweep back, and two more jut from the back of the head. */
+const SURGE_SIDE = [
+  [14, 1.5, 18.5, 4, 14.5, -4],
+  [10.5, 1, 15, 1.5, 9.5, -5],
+  [7, 1.5, 11.5, 1, 4, -4],
+  [5, 4, 8, 1.5, 0.5, -0.5],
+  [5.5, 3.5, 5.5, 8, 0, 5],
+  [5.5, 7, 5.5, 11, 1, 10.5],
+];
+
+/** The tips of the spikes flicker bright, each in its own time. */
+const surgeTip = (t: number, i: number) => {
+  const v = Math.sin(t / 140 + i * 1.9);
+  return v > 0.55 ? "#ffffff" : v > -0.25 ? SURGE.l : SURGE.c;
+};
+
 /** New hair items (see types.ts for how drawing works). */
 export const HAIR: CategoryItems = {
   items: [
@@ -135,6 +201,7 @@ export const HAIR: CategoryItems = {
     { id: "hime", name: "Hime cut", tier: "plus" },
     { id: "flame", name: "Flame tips", tier: "pro" },
     { id: "starlight", name: "Starlight", tier: "pro" },
+    { id: "surgespikes", name: "Surge Spikes", tier: "coins", price: 200 },
   ],
   draw: {
     bob: {
@@ -549,6 +616,97 @@ export const HAIR: CategoryItems = {
             Math.sin(ph * Math.PI) * 0.8,
           ),
         ),
+    },
+    // Power-up spikes in bright gold: big spikes swept over the top, a spiky
+    // fringe with one long lock, and spikes flaring out behind the head. The
+    // tips flicker white, a soft glow breathes round the head and a few
+    // sparks drift up.
+    surgespikes: {
+      animated: true,
+      behind: (p) => {
+        if (p.back || p.fx) return;
+        // Volume poking out either side of the head.
+        [
+          [6, 2.5, 6, 7, 1, 2],
+          [6, 6, 6, 10.5, 1.5, 10],
+        ].forEach((s) => {
+          spike(p, s);
+          spike(p, flipSpike(s));
+        });
+      },
+      draw: (p) => {
+        const { R, px, t, fx } = p;
+        const G = SURGE;
+        const tops = p.back ? SURGE_TOP.map(flipSpike) : fx ? SURGE_SIDE : SURGE_TOP;
+        // Cap over the head.
+        rows(
+          p,
+          [
+            [1, 7, 16],
+            [2, 6, 17],
+            [3, 5, 18],
+            [4, 5, 18],
+            [5, 5, 18],
+          ],
+          G.c,
+        );
+        R(8, 2, 3, 1, G.l);
+        R(7, 3, 2, 1, G.l);
+        R(18, 3, 1, 3, G.s);
+        if (p.back) {
+          // Back of the head, with spikes pointing down at the nape.
+          R(5, 6, 14, 7, G.c);
+          R(5, 6, 1, 7, G.s);
+          R(18, 6, 1, 7, G.s);
+          [8, 12, 16].forEach((x) => R(x, 7, 1, 5, G.s));
+          R(6, 6, 2, 1, G.l);
+          [
+            [5, 12.5, 8.5, 12.5, 6, 15.5],
+            [8.5, 12.5, 12, 12.5, 10, 16],
+            [12, 12.5, 15.5, 12.5, 14, 16],
+            [15.5, 12.5, 19, 12.5, 18, 15.5],
+            [5, 5, 5, 10, 2, 6],
+            [19, 5, 19, 10, 22, 6],
+          ].forEach((s) => spike(p, s));
+        } else if (fx) {
+          // The side of the head and a sideburn.
+          R(5, 4, 4, 8, G.c);
+          R(5, 4, 1, 8, G.s);
+          R(7, 5, 1, 2, G.l);
+          spike(p, [6, 10, 9, 10, 7.5, 14]);
+        } else {
+          // Sideburns flicking down.
+          spike(p, [4.5, 5, 6.5, 5, 5, 10.5]);
+          spike(p, [17.5, 5, 19.5, 5, 19, 10.5]);
+        }
+        tops.forEach((s, i) => {
+          const [x, y] = spike(p, s);
+          if (y < 1) px(x, y, surgeTip(t, i));
+        });
+        if (p.back) return;
+        // Spiky fringe: column lengths across the forehead, one long lock.
+        const lens = fx
+          ? [2, 3, 1, 2, 4, 2, 1, 2, 3, 1, 2]
+          : [3, 2, 1, 2, 3, 4, 2, 1, 2, 3, 2, 1, 2, 3];
+        const x0 = fx ? 8 : 5;
+        lens.forEach((n, i) => {
+          R(x0 + i, 6, 1, n, G.c);
+          if (n > 1) px(x0 + i, 5 + n, G.s);
+          if (n === 4) px(x0 + i, 6, G.l);
+        });
+        R(5, 6, 1, 4, G.c);
+        px(5, 9, G.s);
+      },
+      fxFront: (c, k) => {
+        k.glow(k.X(12), k.Y(-0.5), 9 * k.s, "255,214,90", 0.18 + 0.08 * Math.sin(k.t / 260));
+        k.particles(4, 1400, (i, ph) => {
+          c.globalAlpha = Math.sin(ph * Math.PI) * 0.9;
+          c.fillStyle = i % 2 ? "#fff3a6" : "#ffffff";
+          const x = k.X(5 + ((i * 7) % 15) + Math.sin(ph * 5 + i) * 0.7);
+          c.fillRect(Math.round(x), Math.round(k.Y(-1 - ph * 6)), k.s, k.s);
+          c.globalAlpha = 1;
+        });
+      },
     },
   },
 };

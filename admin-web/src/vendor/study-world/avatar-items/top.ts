@@ -66,6 +66,13 @@ export const TOP: CategoryItems = {
     { id: "songket", name: "Baju Melayu Songket", tier: "coins", price: 180 },
     { id: "kebaya", name: "Batik Kebaya", tier: "coins", price: 180 },
     { id: "magicalgirl", name: "Magical Girl Dress", tier: "coins", price: 250 },
+    { id: "forgearmor", name: "Forge Armor Suit", tier: "coins", price: 300 },
+    { id: "nightsuit", name: "Night Suit", tier: "coins", price: 220 },
+    { id: "solarsuit", name: "Solar Suit", tier: "coins", price: 220 },
+    { id: "rangertunic", name: "Ranger Tunic", tier: "coins", price: 180 },
+    { id: "trooparmor", name: "Trooper Armor", tier: "coins", price: 260 },
+    { id: "moonhaori", name: "Wave Haori", tier: "coins", price: 260 },
+    { id: "pilotsuit", name: "Pilot Suit", tier: "coins", price: 240 },
     { id: "labcoat", name: "Lab coat", tier: "plus" },
     { id: "leather", name: "Leather jacket", tier: "plus" },
     { id: "sailor", name: "Sailor top", tier: "plus" },
@@ -539,6 +546,441 @@ export const TOP: CategoryItems = {
           const col = ["#fff6a8", "#ffffff", "#ffc4e6", "#bfe6ff"][i];
           k.star(Math.round(x), Math.round(y), k.s / 2, col, Math.sin(ph * Math.PI) * 0.9);
         });
+      },
+    },
+    forgearmor: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t } = p;
+        const cu = "#b8693a";
+        const cuL = "#e3a06a";
+        const cuS = "#8c4a29";
+        const cuD = "#5c2f1c";
+        const te = "#2aa79b";
+        const teL = "#8ff0e4";
+        const teS = "#1b746d";
+        const under = "#2c2f38";
+        // The core (and the back vents) breathe slowly.
+        const pulse = (Math.sin(t / 320) + 1) / 2;
+        p.torso(cu);
+        p.armsLong(cu, cuD);
+        R(16, 16, 1, 8, cuS);
+        R(18, 16, 1, 7, cuS);
+        // Round shoulder plates with a teal rim.
+        R(4, 15, 3, 3, cu);
+        R(17, 15, 3, 3, cu);
+        R(19, 15, 1, 3, cuS);
+        px(4, 15, cuL);
+        px(5, 15, cuL);
+        px(17, 15, cuL);
+        R(4, 17, 3, 1, te);
+        R(17, 17, 3, 1, teS);
+        // Teal elbow bands and dark gauntlet cuffs.
+        R(5, 20, 2, 1, te);
+        R(17, 20, 2, 1, teS);
+        px(5, 19, cuL);
+        R(6, 18, 1, 2, cuS);
+        px(6, 21, cuS);
+        R(5, 22, 2, 1, cuD);
+        R(17, 22, 2, 1, cuD);
+        // Neck seal, plate seams and a teal belt.
+        R(9, 16, 6, 1, under);
+        R(7, 21, 10, 1, cuS);
+        R(7, 23, 10, 1, teS);
+        [9, 14].forEach((x) => px(x, 22, cuS));
+        if (p.back) {
+          // Spine plate with two vents that glow with the core.
+          const vent = p.hsl(174, 75, 30 + pulse * 28);
+          R(11, 17, 2, 4, cuS);
+          px(11, 17, cuD);
+          R(8, 18, 2, 2, teS);
+          R(14, 18, 2, 2, teS);
+          px(8, 19, vent);
+          px(9, 19, vent);
+          px(14, 19, vent);
+          px(15, 19, vent);
+          px(8, 17, cuL);
+          return;
+        }
+        const m = mid(p);
+        // Teal chest plate edges and a polished highlight.
+        R(8, 20, 2, 1, te);
+        R(14, 20, 2, 1, teS);
+        R(8, 17, 1, 2, cuL);
+        px(8, 22, cuL);
+        px(12 + m, 23, teL);
+        // The round core: a dark rim that lights up at the top of each pulse.
+        const rim = pulse > 0.72 ? te : teS;
+        [
+          [11, 17],
+          [12, 17],
+          [10, 18],
+          [13, 18],
+          [10, 19],
+          [13, 19],
+          [11, 20],
+          [12, 20],
+        ].forEach(([x, y]) => px(x + m, y, rim));
+        R(11 + m, 18, 2, 2, p.hsl(174, 85, 48 + pulse * 26));
+        px(11 + m, 18, pulse > 0.55 ? "#ffffff" : teL);
+      },
+    },
+    nightsuit: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t } = p;
+        const ch = "#2f2d38";
+        const chS = "#211f28";
+        const chL = "#47434f";
+        const pl = "#6a2f66";
+        const plL = "#93509a";
+        const plS = "#47204a";
+        const owl = "#cbb8de";
+        const belt = "#56505f";
+        const brass = "#d6ac4a";
+        p.torso(ch);
+        p.armsLong(ch, pl);
+        R(16, 16, 1, 8, chS);
+        R(18, 16, 1, 7, chS);
+        // Plum shoulders, then plum gauntlets with little feather fins.
+        R(5, 16, 2, 2, pl);
+        R(17, 16, 2, 2, plS);
+        px(5, 16, plL);
+        R(5, 20, 2, 3, pl);
+        R(17, 20, 1, 3, pl);
+        R(18, 20, 1, 3, plS);
+        px(4, 20, pl);
+        px(4, 21, plS);
+        px(19, 20, plS);
+        px(19, 21, plS);
+        px(5, 20, plL);
+        // Plum collar and side panels.
+        R(8, 16, 8, 1, pl);
+        R(7, 17, 1, 5, pl);
+        R(16, 17, 1, 5, plS);
+        // Utility belt: pouches either side of a brass buckle.
+        R(7, 22, 10, 1, belt);
+        const pouch = "#3f3a48";
+        if (p.back) {
+          R(8, 16, 8, 2, pl);
+          R(9, 18, 6, 1, pl);
+          R(10, 19, 4, 1, plS);
+          // Folded wing shapes down the back.
+          px(9, 20, chL);
+          px(14, 20, chL);
+          px(10, 21, chL);
+          px(13, 21, chL);
+          R(8, 22, 2, 2, pouch);
+          R(11, 22, 2, 2, pouch);
+          R(14, 22, 2, 2, pouch);
+          px(11, 22, brass);
+          return;
+        }
+        const m = mid(p);
+        R(10, 16, 4, 1, p.skS);
+        R(8, 22, 2, 2, pouch);
+        R(14 + m, 22, 2, 2, pouch);
+        px(8, 22, brass);
+        px(15 + m, 22, brass);
+        R(11 + m, 22, 2, 1, brass);
+        px(12 + m, 22, "#a8822e");
+        // The owl emblem: ear tufts, two round eyes that blink now and then, a beak.
+        const blink = t % 4200 < 160;
+        const eye = blink ? owl : "#ffd25a";
+        const o = 9 + m;
+        px(o, 17, owl);
+        px(o + 5, 17, owl);
+        R(o, 18, 6, 2, owl);
+        px(o + 1, 19, eye);
+        px(o + 4, 19, eye);
+        R(o + 1, 20, 4, 1, owl);
+        R(o + 2, 20, 2, 1, "#e09a2c");
+        R(o + 2, 21, 2, 1, owl);
+      },
+    },
+    solarsuit: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t } = p;
+        const W = "#f7f5ef";
+        const WS = "#d6d0c2";
+        const gold = "#f2c14e";
+        const goldS = "#c9952a";
+        const sun = "#f28c28";
+        const sunL = "#ffd84d";
+        p.torso(W);
+        p.armsLong(W, gold);
+        R(16, 16, 1, 8, WS);
+        R(18, 16, 1, 7, WS);
+        // Gold shoulder caps, gold-edged cuffs and gloves.
+        R(5, 16, 2, 1, gold);
+        R(17, 16, 2, 1, goldS);
+        R(5, 22, 2, 1, goldS);
+        R(17, 22, 2, 1, goldS);
+        // High gold collar and a gold belt.
+        R(9, 16, 6, 1, gold);
+        R(7, 22, 10, 1, gold);
+        R(16, 22, 1, 1, goldS);
+        // Side seams so the arms read apart from the body.
+        R(7, 17, 1, 5, WS);
+        // The rays take turns to shine: straight ones, then the diagonals.
+        const turn = Math.floor(t / 420) % 2;
+        const straight = turn ? sunL : gold;
+        const diag = turn ? gold : sunL;
+        /** Sun emblem 8 wide from x = o: a round disc with a bright middle, and rays. */
+        const sunAt = (o: number) => {
+          R(o + 3, 17, 2, 1, sun);
+          R(o + 2, 18, 4, 2, sun);
+          R(o + 3, 20, 2, 1, sun);
+          R(o + 3, 18, 2, 2, sunL);
+          px(o + 3, 18, "#fff6c8");
+          R(o, 18, 1, 2, straight);
+          R(o + 7, 18, 1, 2, straight);
+          R(o + 3, 21, 2, 1, straight);
+          px(o + 1, 17, diag);
+          px(o + 6, 17, diag);
+          px(o + 1, 20, diag);
+          px(o + 6, 20, diag);
+        };
+        if (p.back) {
+          // The same sun between the shoulders.
+          sunAt(8);
+          return;
+        }
+        const m = mid(p);
+        R(11 + m, 22, 2, 1, sun);
+        sunAt(8 + m);
+      },
+    },
+    rangertunic: {
+      draw: (p) => {
+        const { R, px } = p;
+        const moss = "#5f7f3a";
+        const mossL = "#82a552";
+        const mossS = "#456029";
+        const mossD = "#33461e";
+        const lea = "#7a4a26";
+        const leaL = "#a06838";
+        const leaD = "#55311a";
+        const buckle = "#d9b44a";
+        p.torso(moss);
+        p.armsLong(moss);
+        R(16, 16, 1, 8, mossS);
+        // Leather bracers on the forearms.
+        R(5, 21, 2, 2, lea);
+        R(17, 21, 1, 2, lea);
+        R(18, 21, 1, 2, leaD);
+        px(5, 21, leaL);
+        px(5, 22, leaD);
+        // A short mantle over the shoulders.
+        R(5, 16, 14, 2, mossS);
+        R(6, 15, 12, 1, mossD);
+        px(5, 16, mossL);
+        R(18, 16, 1, 2, mossD);
+        // Tunic skirt over the hips (split in the front), with a notched hem.
+        const m = mid(p);
+        const split = (x: number) => !p.back && (x === 11 + m || x === 12 + m);
+        for (let x = 6; x <= 17; x++) {
+          if (x > 6 && x < 17) px(x, 23, x === 16 ? mossS : moss);
+          if (split(x)) continue;
+          px(x, 24, x >= 16 ? mossS : moss);
+          px(x, 25, [6, 8, 10, 13, 15, 17].includes(x) ? mossD : mossS);
+        }
+        // Leather belt.
+        R(7, 22, 10, 1, lea);
+        R(16, 22, 1, 1, leaD);
+        if (p.back) {
+          // The hood lying on the back, coming to a point.
+          R(8, 17, 8, 2, mossD);
+          R(9, 19, 6, 1, mossD);
+          R(10, 20, 4, 1, mossD);
+          R(11, 21, 2, 1, mossD);
+          R(9, 17, 6, 1, mossS);
+          R(11, 22, 2, 1, leaD);
+          return;
+        }
+        // The split's edge.
+        px(11 + m, 23, mossS);
+        px(12 + m, 23, mossS);
+        // Laced neck and a leaf clasp holding the mantle.
+        R(10, 16, 4, 1, p.skS);
+        px(12 + m, 19, leaL);
+        px(11 + m, 20, leaL);
+        px(12 + m, 21, leaL);
+        // Leaf clasp: a bright leaf on a little gold stem.
+        px(11 + m, 17, "#c4e88a");
+        px(12 + m, 17, "#a8d070");
+        px(11 + m, 18, "#a8d070");
+        px(10 + m, 18, buckle);
+        // Belt buckle and a small pouch.
+        R(10 + m, 22, 2, 1, buckle);
+        px(10 + m, 22, "#a8822e");
+        R(14, 22, 2, 2, leaL);
+        px(14, 23, lea);
+        px(8, 18, mossL);
+        px(8, 19, mossL);
+      },
+    },
+    trooparmor: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t } = p;
+        const W = "#eef1f4";
+        const WS = "#c5ccd6";
+        const WD = "#9aa4b2";
+        const sl = "#4b5668";
+        const slD = "#333b48";
+        const gold = "#e2b23f";
+        // Slate undersuit and gloves.
+        p.torso(sl);
+        p.armsLong(sl, slD);
+        R(16, 16, 1, 8, slD);
+        R(18, 16, 1, 7, slD);
+        // White shoulder plates and forearm plates.
+        R(4, 15, 3, 3, W);
+        R(17, 15, 3, 3, W);
+        R(19, 15, 1, 3, WS);
+        R(4, 17, 3, 1, WD);
+        R(17, 17, 3, 1, WD);
+        R(5, 20, 2, 2, W);
+        R(17, 20, 1, 2, W);
+        R(18, 20, 1, 2, WS);
+        // Belt with white boxes.
+        R(7, 22, 10, 1, slD);
+        R(8, 22, 2, 1, WS);
+        R(14, 22, 2, 1, WS);
+        // A lamp on one shoulder (the same shoulder from behind) blinks.
+        const on = t % 1200 < 260;
+        px(p.back ? 5 : 18, 15, on ? "#ff8f1f" : "#6b5a58");
+        if (p.back) {
+          // Back plate with a power pack.
+          R(8, 16, 8, 5, W);
+          R(15, 16, 1, 5, WS);
+          R(9, 17, 6, 4, WD);
+          R(10, 18, 4, 2, sl);
+          px(10, 18, "#6c788c");
+          R(8, 21, 8, 1, gold);
+          return;
+        }
+        const m = mid(p);
+        // White chest plate edged with the gold trim stripe.
+        R(8, 16, 8, 5, W);
+        R(15, 16, 1, 5, WS);
+        R(10, 16, 4, 1, slD);
+        R(8, 20, 8, 1, gold);
+        R(15, 20, 1, 1, "#b58a2a");
+        // Vents and a centre ridge.
+        R(9, 18, 2, 1, WD);
+        R(13 + m, 18, 2, 1, WD);
+        R(11 + m, 17, 1, 3, WS);
+        px(9, 17, "#ffffff");
+        // Ab plates under the chest.
+        R(9, 21, 2, 1, WS);
+        R(13, 21, 2, 1, WS);
+        R(11 + m, 22, 2, 1, WD);
+      },
+    },
+    moonhaori: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t } = p;
+        const uni = "#23232f";
+        const uniS = "#17171f";
+        const ind = "#2c3d8c";
+        const indD = "#1f2b66";
+        const indL = "#4d63b8";
+        const foam = "#eef2fb";
+        // Rows of white wave arcs (like fish scales) on indigo, every four
+        // rows, drifting slowly sideways; each arc has a light glint inside.
+        const shift = Math.floor(t / 450);
+        const arc = [2, 1, 0, 0, 1, 2];
+        const wave = (x: number, y: number) => {
+          const u = (x + shift + 60) % 6;
+          const k = (y - 16 - arc[u] + 40) % 4;
+          const c = k === 0 ? foam : k === 1 && (u === 2 || u === 3) ? indL : ind;
+          return x === 16 || x === 19 ? p.shade(c, -0.18) : c;
+        };
+        // The dark uniform underneath.
+        p.torso(uni);
+        // Wide haori sleeves and bare hands.
+        R(4, 16, 3, 7, wave);
+        R(17, 16, 3, 7, wave);
+        R(4, 22, 3, 1, indD);
+        R(17, 22, 3, 1, indD);
+        R(5, 23, 2, 1, p.sk);
+        R(17, 23, 2, 1, p.sk);
+        if (p.back) {
+          // One long back panel down past the hips.
+          R(7, 16, 10, 10, wave);
+          R(7, 25, 10, 1, indD);
+          R(8, 16, 8, 1, indD);
+          return;
+        }
+        const m = mid(p);
+        // Open front: the haori hangs down each side past the hips.
+        R(7, 16, 3, 10, wave);
+        R(14, 16, 3, 10, wave);
+        R(9, 16, 1, 10, indD);
+        R(14, 16, 1, 10, indD);
+        R(7, 25, 3, 1, indD);
+        R(14, 25, 3, 1, indD);
+        // Uniform: stand collar, gold buttons, a white belt.
+        R(10, 16, 4, 1, uniS);
+        R(11, 16, 2, 1, p.skS);
+        px(11 + m, 18, "#d9b44a");
+        px(11 + m, 20, "#d9b44a");
+        R(10, 22, 4, 1, "#e8e4da");
+        R(13, 22, 1, 1, "#c9c3b5");
+      },
+    },
+    pilotsuit: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t } = p;
+        const W = "#f4f2f8";
+        const WS = "#d4cfe0";
+        const vi = "#7a4fd8";
+        const viS = "#56339f";
+        const viD = "#3a2470";
+        // Seams glow lilac, with a brighter pulse running down from the shoulders.
+        const seam = (y: number) =>
+          p.hsl(282, 100, 62 + 26 * Math.max(0, Math.cos((y - 16) * 0.7 - t / 140)));
+        p.torso(W);
+        p.armsLong(W, vi);
+        R(16, 16, 1, 8, WS);
+        R(18, 16, 1, 7, WS);
+        // Violet forearms and gloves.
+        R(5, 21, 2, 2, vi);
+        R(17, 21, 1, 2, vi);
+        R(18, 21, 1, 2, viS);
+        // Violet sides and hips.
+        R(7, 17, 1, 7, vi);
+        R(16, 17, 1, 7, viS);
+        R(7, 22, 10, 2, vi);
+        R(16, 22, 1, 2, viS);
+        // Glowing seams along the arms, down the sides and round the waist.
+        [18, 19, 20].forEach((y) => {
+          px(5, y, seam(y));
+          px(18, y, seam(y));
+          px(8, y, seam(y));
+          px(15, y, seam(y));
+        });
+        R(8, 21, 8, 1, seam(21));
+        if (p.back) {
+          // Violet spine with glowing nodes.
+          R(9, 16, 6, 1, viD);
+          R(11, 17, 2, 4, vi);
+          [17, 19].forEach((y) => R(11, y, 2, 1, seam(y)));
+          return;
+        }
+        const m = mid(p);
+        // Neck ring, a small violet V and a glowing chest node.
+        R(9, 16, 6, 1, viS);
+        R(10, 16, 4, 1, viD);
+        R(10, 17, 4, 1, vi);
+        R(11, 18, 2, 1, vi);
+        px(11 + m, 18, seam(18));
+        px(9, 17, WS);
       },
     },
     labcoat: {

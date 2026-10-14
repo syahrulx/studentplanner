@@ -85,8 +85,12 @@ export type FxKit = {
   ) => void;
   /** n particles; phase goes 0→1 over `ms`, staggered. */
   particles: (n: number, ms: number, draw: (i: number, phase: number) => void) => void;
-  /** True when the avatar is sitting (skip foot effects). */
+  /** True when the avatar is sitting or lying in bed (skip foot effects). */
   seated: boolean;
+  /** Walking or running right now (left out where it isn't known). */
+  moving?: boolean;
+  /** Which way the avatar faces: f front, b back, l left, r right. */
+  dir?: "f" | "b" | "l" | "r";
 };
 
 export type ExtraItem = {

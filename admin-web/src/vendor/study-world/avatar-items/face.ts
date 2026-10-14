@@ -94,6 +94,7 @@ export const FACE: CategoryItems = {
     { id: "kitsunemask", name: "Fox mask", tier: "pro" },
     { id: "ninjascarf", name: "Ninja Scarf", tier: "coins", price: 220 },
     { id: "holomask", name: "Holo Mask", tier: "coins", price: 280 },
+    { id: "cloudscarf", name: "Shinobi Scarf", tier: "coins", price: 180 },
   ],
   draw: {
     // Round tortoiseshell frames with a little bridge.
@@ -453,6 +454,70 @@ export const FACE: CategoryItems = {
             [b + 2, 11],
           ].forEach(([x, y]) => dot(p, x, y, hud));
         }
+      },
+    },
+
+    // Charcoal mask-scarf pulled up to a point over the bridge of the nose,
+    // with a light-grey cloud stitched on the cheek. One long end hangs over
+    // the shoulder (facing front) or trails behind (side view) and sways.
+    cloudscarf: {
+      animated: true,
+      draw: (p) => {
+        const f = p.fx;
+        const c = "#454955";
+        const l = "#666c79";
+        const s = "#25272d";
+        const st = "#cfd4dc";
+        // The wrap: a peak over the nose, the lower face and the neck.
+        p.R(10 + f, 11, 4, 1, c);
+        p.R(11 + f, 11, 2, 1, l);
+        p.R(5, 12, 14, 2, c);
+        p.R(6, 14, 12, 1, c);
+        p.R(7, 15, 10, 1, c);
+        p.R(6, 16, 12, 1, s);
+        p.R(7, 16, 10, 1, (x) => (x % 4 === 1 ? l : c));
+        // Light along the top edge, rising to the peak.
+        for (let x = 5; x <= 18; x++) if (x < 10 + f || x > 13 + f) dot(p, x, 12, l);
+        // Folds and shade on the far side.
+        dot(p, 14 + f, 14, s);
+        dot(p, 15 + f, 15, s);
+        p.R(18, 12, 1, 2, s);
+        p.px(17, 14, s);
+        p.px(16, 15, s);
+        // Little cloud stitched on the cheek (the near cheek in the 3/4 view).
+        const cx = f ? 6 : 14;
+        dot(p, cx + 1, 12, st);
+        dot(p, cx + 2, 12, "#aab1bc");
+        p.R(cx, 13, 4, 1, st);
+        dot(p, cx + 3, 13, "#aab1bc");
+        // The long end: a wave runs down it, bigger towards the tip.
+        const len = f ? 6 : 7;
+        let prev = 15;
+        let endX = 5;
+        for (let i = 0; i < len; i++) {
+          const a = p.t / 210 - i * 0.7;
+          const w = Math.round(Math.sin(a) * 1.3 * (i / len));
+          const tip = i === len - 1;
+          const shade = i % 3 === 2 ? s : c;
+          if (f) {
+            // Side view: streams back from the nape, drooping.
+            const x = 5 - i;
+            const y = 15 + Math.round(i * 0.55) + w;
+            for (let yy = Math.min(prev, y) + 1; yy < Math.max(prev, y); yy++) p.px(x, yy, c);
+            p.px(x, y, Math.cos(a) > 0.3 ? l : shade);
+            if (!tip) p.px(x, y + 1, s);
+            prev = y;
+          } else {
+            // Front: hangs over the shoulder.
+            const x = 5 + w;
+            const y = 16 + i;
+            endX = x;
+            p.px(x, y, Math.cos(a) > 0.3 ? l : shade);
+            if (!tip) p.px(x + 1, y, shade === s ? s : c);
+          }
+        }
+        // Tassel of grey thread at the end.
+        if (!f) p.px(endX, 16 + len, st);
       },
     },
   },

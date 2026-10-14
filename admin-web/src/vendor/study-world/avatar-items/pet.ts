@@ -58,6 +58,7 @@ export const PET: CategoryItems = {
     { id: "mochi", name: "Chibi Mochi", tier: "coins", price: 300 },
     { id: "slime", name: "Pixel Slime", tier: "coins", price: 350 },
     { id: "robobuddy", name: "Robo Buddy", tier: "coins", price: 380 },
+    { id: "blockbuddy", name: "Block Buddy", tier: "coins", price: 300 },
   ],
   draw: {
     puppy: {
@@ -507,6 +508,68 @@ export const PET: CategoryItems = {
         const f = Math.floor(t / 90) % 3;
         Q(6, 12, 2, 1, f === 0 ? "#ffd84d" : "#7fe7ff");
         if (f !== 2) Q0(6 + (f % 2), 13, 1, 1, "#ff9b3d");
+      },
+    },
+    blockbuddy: {
+      animated: true,
+      // Little grass-topped block with a leaf sprout: squashes, hops and blinks.
+      pet: (Q, t) => {
+        const [w0, h0, up0] = hopShape(t, 1600, 300);
+        // Keep it boxy (a touch wider or taller, never round) and the sprout in the grid.
+        const w = w0 - 2;
+        const h = Math.min(h0, 8);
+        const up = Math.min(up0, 2);
+        const x = 7 - w / 2;
+        const bottom = 11 - up;
+        const top = bottom - h + 1;
+        const dirt = "#b07a45";
+        const dirtD = "#8a5a30";
+        const grass = "#6cc24a";
+        // Feet tuck up while in the air.
+        if (!up) {
+          Q(x + 1, 12, 2, 1, dirtD);
+          Q(x + w - 3, 12, 2, 1, dirtD);
+        }
+        Q(x, top, w, h, dirt);
+        Q(x + w - 1, top + 2, 1, h - 2, dirtD);
+        Q(x, bottom, w, 1, dirtD);
+        // Speckles of soil.
+        Q(x + 1, bottom - 2, 1, 1, "#c99560");
+        Q(x + 2, top + h - 4, 1, 1, dirtD);
+        // Grass top with drips down the sides.
+        Q(x, top, w, 2, grass);
+        Q(x + 1, top, w - 2, 1, "#8fdc5e");
+        Q(x, top + 2, 1, 1, grass);
+        Q(x + 3, top + 2, 1, 1, grass);
+        Q(x + w - 2, top + 2, 1, 1, "#4fa33a");
+        // Leaf sprout that wiggles.
+        const sway = Math.sin(t / 260) > 0 ? 1 : 0;
+        Q(x + 2, top - 1, 1, 1, "#4fa33a");
+        Q(x + 2 + sway, top - 2, 2, 1, "#8fdc5e");
+        // Face towards the front (right); eyes squeeze shut on a squash.
+        const ey = top + Math.max(3, Math.floor(h / 2));
+        const e1 = x + w - 5;
+        const e2 = x + w - 2;
+        if (h < 6) {
+          // Squashed flat: happy shut eyes and blush just under the grass.
+          Q(e1, top + 2, 2, 1, EYE);
+          Q(e2, top + 2, 1, 1, EYE);
+          Q(e1 - 1, top + 3, 1, 1, BLUSH);
+          Q(e2, top + 3, 1, 1, BLUSH);
+          return;
+        }
+        if (now(t, 3200, 140, 900)) {
+          Q(e1, ey + 1, 2, 1, EYE);
+          Q(e2, ey + 1, 1, 1, EYE);
+        } else {
+          Q(e1, ey, 1, 2, EYE);
+          Q(e2, ey, 1, 2, EYE);
+          Q(e1, ey, 1, 1, "#ffffff");
+          Q(e2, ey, 1, 1, "#ffffff");
+        }
+        Q(e1 + 1, ey + 2, 1, 1, "#5a2f1f");
+        Q(e1 - 1, ey + 2, 1, 1, BLUSH);
+        Q(e2 + 1, ey + 2, 1, 1, BLUSH);
       },
     },
   },

@@ -49,7 +49,12 @@ export type FurnitureUse =
   | "fridge"
   | "tv"
   | "pet"
-  | "coffee";
+  | "coffee"
+  /**
+   * Beds: E (or a click) lies you down in it. The bed's seats are the sleep
+   * spots, so others see you asleep through the normal seat in move state.
+   */
+  | "sleep";
 
 export const FURNITURE: Furniture[] = [
   // Free
@@ -63,6 +68,7 @@ export const FURNITURE: Furniture[] = [
       { dx: 1, dy: 1, kind: "sofa" },
       { dx: 2, dy: 1, kind: "sofa" },
     ],
+    use: "sleep",
   },
   {
     id: "desk",
@@ -156,6 +162,7 @@ export const FURNITURE: Furniture[] = [
       { dx: 1, dy: 1, kind: "sofa" },
       { dx: 2, dy: 1, kind: "sofa" },
     ],
+    use: "sleep",
   },
   // Pro
   { id: "aquarium", name: "Grand aquarium", tier: "pro", w: 3, h: 1, use: "tank" },
@@ -205,6 +212,7 @@ export const FURNITURE: Furniture[] = [
       { dx: 1, dy: 1, kind: "sofa" },
       { dx: 2, dy: 1, kind: "sofa" },
     ],
+    use: "sleep",
   },
   {
     id: "studiosofa",

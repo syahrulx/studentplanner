@@ -435,8 +435,11 @@ type Grid = (string | null)[][];
 
 export type Facing = "f" | "b" | "l" | "r";
 
-/** An action emote being played: which one, and ms since it started. */
-export type AvatarPose = { kind: ActionKey; t: number };
+/**
+ * An action emote being played: which one, and ms since it started.
+ * "sleep": lying in a dorm bed (eyes shut whatever the eye style).
+ */
+export type AvatarPose = { kind: ActionKey | "sleep"; t: number };
 
 type Pt = readonly [number, number];
 /** A posed arm: the 2×2 elbow and hand blocks (top-left corners, body coords). */
@@ -445,7 +448,7 @@ type PoseSpec = {
   /** Arms left out keep the top's own arm. l is screen-left (x 5–6). */
   l?: ArmPose;
   r?: ArmPose;
-  eyes?: "arc" | "sad" | "heart" | "heartSmall" | "up";
+  eyes?: "arc" | "sad" | "heart" | "heartSmall" | "up" | "shut";
   mouth?: "smile" | "grin" | "laugh" | "open" | "frown" | "hmm";
   tears?: boolean;
 };
@@ -454,9 +457,11 @@ const mirrorPt = ([x, y]: Pt): Pt => [22 - x, y];
 const mirrorArm = (a: ArmPose): ArmPose => ({ el: mirrorPt(a.el), hd: mirrorPt(a.hd) });
 
 /** Where the arms go and what the face does, p ms into an action. */
-function poseSpec(kind: ActionKey, p: number, fx: number): PoseSpec {
+function poseSpec(kind: AvatarPose["kind"], p: number, fx: number): PoseSpec {
   const tick = (ms: number) => Math.floor(p / ms) % 2;
   switch (kind) {
+    case "sleep":
+      return { eyes: "shut" };
     case "wave":
       // Arm up beside the head, the hand swinging left and right.
       return { r: { el: [19, 13], hd: [19 + tick(200), 6] }, eyes: "arc", mouth: "smile" };
@@ -1203,6 +1208,13 @@ export function buildAvatar(
           px(x + 2, 11, c);
         }
       });
+    } else if (pe === "shut") {
+      // Asleep: closed, curved down like a contented smile.
+      [a, b].forEach((x) => {
+        px(x - 1, 9, d);
+        R(x, 10, 2, 1, d);
+        px(x + 2, 9, d);
+      });
     } else if (pe === "up") {
       // Glancing up and to the side.
       [a - 1, b - 1].forEach((x) => {
@@ -1840,6 +1852,7 @@ function adminAura(
   s: number,
   t: number,
   front: boolean,
+  seated = false,
 ) {
   const cx = ox + 14 * s;
   const feet = oy + (OY + 31) * s;
@@ -1847,12 +1860,15 @@ function adminAura(
   if (look.effect === "shadow") {
     if (!front) {
       glow(c, cx, mid, 18 * s, "138,63,252", 0.22 + Math.sin(t / 500) * 0.06);
-      c.globalAlpha = 0.45;
-      c.fillStyle = "#1a0f2e";
-      c.beginPath();
-      c.ellipse(cx, feet, 12 * s, 3.4 * s, 0, 0, Math.PI * 2);
-      c.fill();
-      c.globalAlpha = 1;
+      // Ground shadow only when standing (it would cover the chair).
+      if (!seated) {
+        c.globalAlpha = 0.45;
+        c.fillStyle = "#1a0f2e";
+        c.beginPath();
+        c.ellipse(cx, feet, 12 * s, 3.4 * s, 0, 0, Math.PI * 2);
+        c.fill();
+        c.globalAlpha = 1;
+      }
     }
     orbit(
       3,
@@ -1919,11 +1935,13 @@ function adminAura(
   if (look.effect === "cyber") {
     if (!front) {
       glow(c, cx, mid, 17 * s, "0,229,255", 0.16 + Math.sin(t / 400) * 0.05);
-      c.strokeStyle = "rgba(0,229,255,.55)";
-      c.lineWidth = s / 2;
-      c.beginPath();
-      c.ellipse(cx, feet, 12 * s, 3.4 * s, 0, 0, Math.PI * 2);
-      c.stroke();
+      if (!seated) {
+        c.strokeStyle = "rgba(0,229,255,.55)";
+        c.lineWidth = s / 2;
+        c.beginPath();
+        c.ellipse(cx, feet, 12 * s, 3.4 * s, 0, 0, Math.PI * 2);
+        c.stroke();
+      }
     }
     // Hologram halo above the head.
     orbit(
@@ -1990,6 +2008,7 @@ function extraFx(
   t: number,
   front: boolean,
   seated: boolean,
+  motion?: AvatarMotion,
 ) {
   // Hair effects (flames, sparkles) don't show when a hijab covers the hair.
   const hairHidden = Boolean(extra("head", look.head)?.hidesHair);
@@ -2003,6 +2022,8 @@ function extraFx(
     s,
     t,
     seated,
+    moving: motion?.moving,
+    dir: motion?.dir,
     star: (x, y, size, col, a) => star(c, x, y, size, col, a),
     heart: (x, y, size, col, a) => heart(c, x, y, size, col, a),
     glow: (x, y, r, rgb, a) => glow(c, x, y, r, rgb, a),
@@ -2018,7 +2039,13 @@ function extraFx(
   });
 }
 
-/** Glows drawn behind the avatar. (ox, oy) is the sprite's top-left on screen. */
+/** How the avatar is moving, for effects that react to it (all optional). */
+export type AvatarMotion = { moving?: boolean; dir?: Facing };
+
+/**
+ * Glows drawn behind the avatar. (ox, oy) is the sprite's top-left on screen.
+ * seated: sitting or in bed, so ground rings and foot effects are left out.
+ */
 export function drawEffectsBehind(
   c: CanvasRenderingContext2D,
   look: AvatarLook,
@@ -2026,6 +2053,8 @@ export function drawEffectsBehind(
   oy: number,
   s: number,
   t: number,
+  seated = false,
+  motion?: AvatarMotion,
 ) {
   if (look.head === "halo") {
     c.globalAlpha = (0.55 + Math.sin(t / 300) * 0.25) * 0.4;
@@ -2035,9 +2064,9 @@ export function drawEffectsBehind(
     c.fill();
     c.globalAlpha = 1;
   }
-  adminAura(c, look, ox, oy, s, t, false);
-  extraFx(c, look, ox, oy, s, t, false, false);
-  if (look.effect === "sparkle") {
+  adminAura(c, look, ox, oy, s, t, false, seated);
+  extraFx(c, look, ox, oy, s, t, false, seated, motion);
+  if (look.effect === "sparkle" && !seated) {
     c.globalAlpha = 0.2;
     c.fillStyle = "#f2c14e";
     c.beginPath();
@@ -2056,6 +2085,7 @@ export function drawEffectsFront(
   s: number,
   t: number,
   seated = false,
+  motion?: AvatarMotion,
 ) {
   if (look.head === "halo") {
     c.strokeStyle = "#f2c14e";
@@ -2111,8 +2141,8 @@ export function drawEffectsFront(
       c.fillStyle = "#ffe0ec";
       c.fillRect(x, y, s, s);
     });
-  adminAura(c, look, ox, oy, s, t, true);
-  extraFx(c, look, ox, oy, s, t, true, seated);
+  adminAura(c, look, ox, oy, s, t, true, seated);
+  extraFx(c, look, ox, oy, s, t, true, seated, motion);
   if (look.effect === "snow")
     particles(9, (i, ph) => {
       c.fillStyle = "#ffffff";

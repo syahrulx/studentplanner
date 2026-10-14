@@ -216,6 +216,272 @@ const sparkle = (p: Painter, x: number, y: number, big: boolean, c: string) => {
   p.px(x, y, big ? "#ffffff" : c);
 };
 
+/** From behind, the avatar's sides swap: mirrors one pixel's x in the back view. */
+const flipX = (p: Painter) => (x: number) => (p.back ? 23 - x : x);
+/** Pixel art from rows of palette keys ("." is empty), top-left at (x, y); mirrored from behind. */
+const art = (p: Painter, rows: string[], x: number, y: number, pal: Record<string, string>) => {
+  const X = flipX(p);
+  rows.forEach((row, j) => {
+    for (let i = 0; i < row.length; i++) {
+      const c = pal[row[i]];
+      if (c) p.px(X(x + i), y + j, c);
+    }
+  });
+};
+/** Calls `dot` at each pixel of the line (x0, y0)→(x1, y1); u goes 0→1 along it. */
+const along = (
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  dot: (x: number, y: number, u: number) => void,
+) => {
+  const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
+  for (let i = 0; i <= n; i++)
+    dot(Math.round(x0 + ((x1 - x0) * i) / n), Math.round(y0 + ((y1 - y0) * i) / n), i / n);
+};
+
+/** What a cape pixel is, for colouring it. */
+type CapeSpot = {
+  /** The bottom row of the hem. */
+  hem: boolean;
+  /** The outer face shows (from behind, from the side and along the edges). */
+  outer: boolean;
+  /** The two side edges. */
+  edge: boolean;
+};
+type CapeStyle = {
+  /** Bottom row of the hem at rest. */
+  len: number;
+  /** Rows added to the hem at column x (scallops, jagged cuts). */
+  hemShape?: (x: number) => number;
+  /** How far it swings and streams (1 = normal). */
+  flow?: number;
+  paint: (x: number, y: number, s: CapeSpot) => string;
+};
+/**
+ * A cape hanging from the shoulders. It swings with each step, ripples at the
+ * hem, and streams out behind (to the left) in the three-quarter view.
+ * Returns how far row y has swung, for emblems painted on the back.
+ */
+const cape = (p: Painter, o: CapeStyle) => {
+  const { t, back } = p;
+  const walking = p.frame !== 1;
+  const flow = o.flow ?? 1;
+  const side = p.fx > 0 && !back;
+  const step = p.frame === 0 ? 1 : p.frame === 2 ? -1 : 0;
+  const swing = step * flow + Math.sin(t / 900) * 0.45;
+  const base = (y: number) => (y <= 15 ? 6 : y === 16 ? 5 : y < 20 ? 4 : 3);
+  const lean = (y: number) =>
+    side ? 0 : Math.round((swing * Math.max(0, y - 19)) / Math.max(4, o.len - 19));
+  const trail = (y: number) =>
+    side && y > 17
+      ? Math.max(
+          0,
+          Math.round((y - 17) * (walking ? 0.38 : 0.16) * flow + Math.sin(t / 260 + y * 0.5) * 0.6),
+        )
+      : 0;
+  const left = (y: number) => base(y) + lean(y) - trail(y);
+  // From the side the far edge stays tucked behind the body.
+  const right = (y: number) => (side ? 14 : 23 - base(y) + lean(y));
+  const hem = (x: number) =>
+    Math.min(
+      31,
+      o.len +
+        (o.hemShape?.(x) ?? 0) +
+        Math.round(Math.sin(t / 280 + x * 0.55) * (walking ? 1 : 0.5) * flow) -
+        (side && x < 6 ? Math.round((6 - x) * (walking ? 0.45 : 0.2) * flow) : 0),
+    );
+  for (let y = 15; y <= Math.min(31, o.len + 3); y++) {
+    const l = left(y);
+    const r = right(y);
+    for (let x = l; x <= r; x++) {
+      const h = hem(x);
+      if (y > h) continue;
+      const edge = x === l || x === r;
+      p.px(x, y, o.paint(x, y, { hem: y === h, outer: back || side || edge, edge }));
+    }
+  }
+  return lean;
+};
+
+/** Stone war hammer: head over the shoulder, handle slanting across the back. */
+const STORM_HEAD = ["DLLLLLD", "DSSrSSD", "DSrSrSD", "DSSrSSD", "DdddddD"];
+/** Where sparks can jump around the hammer head (front-view x, y). */
+const STORM_SPARKS: [number, number][] = [
+  [-1, 2],
+  [5, 2],
+  [-2, 8],
+  [4, 11],
+  [2, 1],
+  [-1, 11],
+];
+const stormHammer = (p: Painter) => {
+  const X = flipX(p);
+  const zap = p.t % 1700 < 260;
+  const burst = Math.floor(p.t / 1700);
+  // Leather-wrapped handle with a steel pommel.
+  for (let y = 10; y <= 25; y++) {
+    const x = 1 + Math.round((y - 10) * 0.6);
+    const wrap = Math.floor(y / 2) % 2 ? "#8a5a33" : "#6b4426";
+    p.px(X(x), y, y === 25 ? "#c3cad3" : wrap);
+    p.px(X(x + 1), y, y === 25 ? "#8a94a0" : "#5a3820");
+  }
+  art(p, STORM_HEAD, -1, 5, {
+    D: "#5d6671",
+    L: "#b7bfc9",
+    S: "#8f98a3",
+    d: "#737c87",
+    r: zap ? "#9ff4ff" : "#4f86b8",
+  });
+  if (!zap) return;
+  // A couple of little sparks crackle around the head.
+  for (let i = 0; i < 2; i++) {
+    const [sx, sy] = STORM_SPARKS[(burst * 2 + i) % STORM_SPARKS.length];
+    const flick = Math.floor(p.t / 80) % 2;
+    p.px(X(sx), sy, "#ffffff");
+    p.px(X(sx + (flick ? 1 : -1)), sy + 1, "#9fe8ff");
+    if (i === 0) p.px(X(sx), sy + 2, "#ffe680");
+  }
+};
+
+/** Sun emblem (8×8), painted on the back of the solar cape. */
+const SUN = [
+  "...rr...",
+  ".r....r.",
+  "..dddd..",
+  "r.dccd.r",
+  "r.dccd.r",
+  "..dddd..",
+  ".r....r.",
+  "...rr...",
+];
+/** Small owl face (6×5), stitched on the back of the night cape. */
+const OWL = ["t....t", ".tttt.", "tGttGt", ".tbbt.", "..tt.."];
+
+/** Chunky pickaxe: head over the shoulder, handle across the back. */
+const pickaxe = (p: Painter) => {
+  const X = flipX(p);
+  // Blocky two-pixel handle with a wrapped grip at the end.
+  along(-1, 6, 17, 24, (x, y, u) => {
+    const grip = u > 0.8;
+    const blk = Math.floor((x + 1) / 2) % 2;
+    p.px(X(x), y, grip ? "#4d5c70" : blk ? "#d49a5e" : "#c08447");
+    p.px(X(x + 1), y, grip ? "#3d4a5c" : blk ? "#a06c3a" : "#94612f");
+    p.px(X(x + 2), y, grip ? "#2c3646" : "#6e4a28");
+  });
+  // Curved head, built from a ring cut on the handle side.
+  const cx = 3;
+  const cy = 10;
+  for (let y = 2; y <= 16; y++)
+    for (let x = -2; x <= 10; x++) {
+      const dx = x + 0.5 - cx;
+      const dy = y + 0.5 - cy;
+      const d = Math.hypot(dx, dy);
+      const u = -(dx + dy) / (Math.SQRT2 * Math.max(d, 0.01));
+      if (u < 0.42) continue;
+      const tip = u < 0.62;
+      if (d < (tip ? 5.2 : 4.4) || d > (tip ? 6.3 : 6.7)) continue;
+      const c = d > 5.9 ? "#e6ecf2" : d < 5 ? "#6f7a87" : "#aab4bf";
+      p.px(X(x), y, c);
+    }
+  // A rivet where the head meets the handle.
+  p.px(X(-1), 6, "#f2c14e");
+};
+
+/** Carved leaf (6×6) on the ranger's shield. */
+const LEAF = ["...GGG", "..GLvG", ".GLvGG", "GLvGG.", "GvGG..", "s....."];
+/** Short bow slung diagonally: limb bowed out, straight string. */
+const shortBow = (p: Painter) => {
+  const X = flipX(p);
+  along(1, 8, 19, 26, (x, y) => p.px(X(x), y, "#f4f1ea"));
+  for (let i = 0; i <= 30; i++) {
+    const u = i / 30;
+    const bulge = Math.sin(u * Math.PI) * 2.6;
+    const x = Math.round(1 + 18 * u + bulge * 0.71);
+    const y = Math.round(8 + 18 * u - bulge * 0.71);
+    const grip = u > 0.44 && u < 0.56;
+    p.px(X(x), y, grip ? "#4a3426" : u < 0.08 || u > 0.92 ? "#d9b26a" : "#8a5530");
+  }
+};
+/** Round wooden shield centred on (cx, 19) in front-view x. */
+const woodShield = (p: Painter, cx: number) => {
+  const X = flipX(p);
+  for (let y = 12; y <= 26; y++)
+    for (let x = cx - 7; x <= cx + 7; x++) {
+      const d = Math.hypot(x - cx, y - 19);
+      if (d > 6.7) continue;
+      let c: string;
+      if (d > 5.7) c = x + y < cx + 19 ? "#b8c0ca" : "#7d8794";
+      else if ((x - cx + 9) % 3 === 0) c = "#7d5228";
+      else c = Math.floor((x - cx + 9) / 3) % 2 ? "#b98450" : "#a8743f";
+      p.px(X(x), y, c);
+    }
+  art(p, LEAF, cx - 3, 16, {
+    G: "#5fae4a",
+    L: "#8fdc6e",
+    v: "#3f7a33",
+    s: "#6e4a28",
+  });
+};
+
+/** Moon-guard katana: hilt over the shoulder, bare blade down the back. */
+const moonBlade = (p: Painter) => {
+  const X = flipX(p);
+  // Shimmer: a soft light runs from guard to tip every couple of seconds.
+  const run = (p.t % 2200) / 1300;
+  along(2, 10, 12, 27, (x, y, u) => {
+    const near = Math.abs(u - run) < 0.09;
+    p.px(X(x), y, near ? "#ffffff" : u > 0.94 ? "#e8f2ff" : "#cfdcec");
+    p.px(X(x + 1), y, near ? "#bfe6ff" : (y + Math.floor(p.t / 400)) % 5 ? "#7fa8d8" : "#a8d4ff");
+  });
+  // Wrapped hilt with a diamond pattern and a gold cap.
+  along(0, 2, 1, 6, (x, y) => {
+    p.px(X(x), y, y % 2 ? "#3a2f5c" : "#d8d2f0");
+    p.px(X(x + 1), y, y % 2 ? "#d8d2f0" : "#3a2f5c");
+  });
+  p.px(X(0), 1, "#f2c14e");
+  p.px(X(1), 1, "#c99a32");
+  // Crescent-moon guard, horns up towards the hilt.
+  art(p, ["M....M", "Mm..mM", ".mMMm."], -2, 7, { M: "#fff1bf", m: "#f2c14e" });
+};
+
+/** Ninja's scroll, kunai pouch, cloud tag and fluttering cloth. */
+const CLOUD_TAG = [".ww.", "wwww", "bwwb"];
+const kunaiKit = (p: Painter) => {
+  const X = flipX(p);
+  const walking = p.frame !== 1;
+  // Rolled scroll across the back, with wooden ends and red ties.
+  p.R(3, 18, 18, 3, "#efe2c0");
+  p.R(3, 20, 18, 1, "#d8c79e");
+  p.R(2, 18, 1, 3, "#7a4a2a");
+  p.R(21, 18, 1, 3, "#7a4a2a");
+  p.R(4, 18, 1, 3, "#c8463d");
+  p.R(19, 18, 1, 3, "#c8463d");
+  if (p.back) {
+    // Pouch with two kunai rings poking out, and a cloud tag on a cord.
+    [10, 13].forEach((x) => {
+      p.px(x, 19, "#c3cad3");
+      p.px(x, 20, "#2a2a33");
+    });
+    p.R(9, 21, 6, 4, "#3a3f63");
+    p.R(9, 21, 6, 1, "#2c3050");
+    p.R(9, 24, 6, 1, "#2c3050");
+    p.R(11, 22, 2, 1, "#f2c14e");
+    const sw = Math.round(Math.sin(p.t / 420) * (walking ? 1 : 0.6));
+    p.px(13, 25, "#d8c79e");
+    art(p, CLOUD_TAG, 12 + sw, 26, { w: "#f8fbff", b: "#9fd0ff" });
+  }
+  // A cloth ribbon knotted round the scroll end, its tail fluttering out.
+  p.px(X(3), 21, "#2d7f7a");
+  for (let i = 1; i <= 5; i++) {
+    const wave = Math.sin(p.t / 170 + i * 0.9) * (0.3 + i * 0.2);
+    const y = 21 + Math.round(i * (walking ? 0.35 : 0.8) + wave);
+    p.px(X(3 - i), y, i === 5 ? "#2d7f7a" : "#3fa7a0");
+    if (i < 5) p.px(X(3 - i), y + 1, "#2d7f7a");
+  }
+};
+
 export const BACK: CategoryItems = {
   items: [
     { id: "tote", name: "Tote bag", tier: "free" },
@@ -233,6 +499,13 @@ export const BACK: CategoryItems = {
     { id: "crystalstaff", name: "Crystal Staff", tier: "coins", price: 420 },
     { id: "foxtails", name: "Spirit Fox Tails", tier: "coins", price: 550 },
     { id: "cosmiccape", name: "Cosmic Cape", tier: "coins", price: 600 },
+    { id: "stormhammer", name: "Storm Hammer & Cape", tier: "coins", price: 450 },
+    { id: "owlcape", name: "Night Cape", tier: "coins", price: 400 },
+    { id: "solarcape", name: "Solar Cape", tier: "coins", price: 380 },
+    { id: "woodshield", name: "Wooden Shield", tier: "coins", price: 200 },
+    { id: "pickaxe", name: "Pickaxe", tier: "coins", price: 150 },
+    { id: "kunaipouch", name: "Kunai Pouch", tier: "coins", price: 160 },
+    { id: "moonblade", name: "Moon Blade", tier: "coins", price: 380 },
   ],
   draw: {
     tote: {
@@ -789,6 +1062,136 @@ export const BACK: CategoryItems = {
       fxBehind: (_c, k) => {
         k.glow(k.X(12), k.Y(23), 12 * k.s, "120,90,255", 0.16 + Math.sin(k.t / 420) * 0.05);
       },
+    },
+    stormhammer: {
+      animated: true,
+      behind: (p) => {
+        if (!p.back) stormHammer(p);
+        cape(p, {
+          len: 25,
+          hemShape: (x) => [0, 1, 0, -1][(x + 8) % 4],
+          paint: (x, y, s) => {
+            if (s.hem) return "#3f4650";
+            if (!s.outer) return y <= 16 ? "#6b7480" : "#7d8896";
+            if (s.edge) return "#4d5661";
+            return x === 8 || x === 15 ? "#4d5661" : "#5d6773";
+          },
+        });
+        if (!p.back) return;
+        // Fur mantle across the shoulders.
+        for (let x = 5; x <= 18; x++) {
+          p.px(x, 15, x % 2 ? "#c8bfb0" : "#a99f90");
+          p.px(x, 16, x % 3 ? "#a99f90" : "#8f8676");
+        }
+        stormHammer(p);
+      },
+      front: (p) => {
+        sash(p, 8, 1, 8, "#4a3426");
+        p.px(8, 16, "#c3cad3");
+        p.px(15, 16, "#c3cad3");
+      },
+    },
+    owlcape: {
+      animated: true,
+      behind: (p) => {
+        const plum = "#3b1d4a";
+        const lining = "#6a3a7e";
+        const feather = "#55306a";
+        // The scallops shuffle as the cape sways.
+        const ph = p.frame === 1 ? 0 : p.frame;
+        const lean = cape(p, {
+          len: 28,
+          hemShape: (x) => ((x + ph + 40) % 4 >= 2 ? 1 : 0),
+          paint: (x, y, s) => {
+            if (s.hem) return "#2a1236";
+            // Rows of overlapping feathers: a chain of little scallops every few rows.
+            const row = y - 18;
+            const k = (x + Math.floor(row / 4) * 2 + 40) % 4;
+            const featherLine = row > 0 && (row % 4 === 2 ? k === 0 : row % 4 === 3 && k > 0);
+            if (!s.outer) return featherLine ? "#4e2a62" : lining;
+            if (s.edge) return "#2c1438";
+            return featherLine ? feather : plum;
+          },
+        });
+        // High pointed collar beside the jaw.
+        (p.fx && !p.back ? [4] : [4, 19]).forEach((x) => {
+          p.px(x, 13, "#55306a");
+          p.R(x, 14, 1, 2, plum);
+        });
+        if (p.back) {
+          const dx = lean(20);
+          const blink = p.t % 3600 < 150;
+          art(p, OWL, 9 + dx, 19, {
+            t: "#6a3a7e",
+            G: blink ? "#2c1438" : "#f2c14e",
+            b: "#c99a32",
+          });
+        }
+      },
+      front: (p) => {
+        // Feather clasps.
+        p.px(8, 16, "#c9a2e0");
+        p.px(15, 16, "#c9a2e0");
+      },
+    },
+    solarcape: {
+      animated: true,
+      behind: (p) => {
+        const lean = cape(p, {
+          len: 28,
+          flow: 1.3,
+          paint: (x, y, s) => {
+            if (s.hem) return "#e0a93a";
+            if (!s.outer) return y <= 16 ? "#e0a93a" : "#f6cd5c";
+            if (s.edge) return p.back ? "#f2c14e" : "#f7f8fc";
+            return x === 8 || x === 15 ? "#dfe4ee" : "#f7f8fc";
+          },
+        });
+        if (p.back) {
+          const glow = Math.sin(p.t / 500) > 0.4;
+          art(p, SUN, 8 + lean(22), 18, {
+            r: glow ? "#ffb13d" : "#f0a830",
+            d: "#f2c14e",
+            c: glow ? "#fff3b0" : "#ffe58a",
+          });
+        }
+      },
+      front: (p) => {
+        // Sun clasp at the collar.
+        p.px(10, 16, "#f0a830");
+        p.px(13, 16, "#f0a830");
+        p.R(11, 16, 2, 2, "#f2c14e");
+        p.px(11, 16, "#fff3b0");
+        p.px(11, 18, "#f0a830");
+        p.px(12, 18, "#f0a830");
+      },
+    },
+    woodshield: {
+      behind: (p) => {
+        if (!p.back) {
+          woodShield(p, 14);
+          shortBow(p);
+          return;
+        }
+        shortBow(p);
+        woodShield(p, 14);
+      },
+      front: (p) => sash(p, 8, 1, 8, "#6e4a28"),
+    },
+    pickaxe: {
+      behind: (p) => pickaxe(p),
+      front: (p) => sash(p, 8, 1, 7, "#4a3426"),
+    },
+    kunaipouch: {
+      animated: true,
+      behind: (p) => kunaiKit(p),
+      // The cord the scroll hangs from.
+      front: (p) => sash(p, 8, 1, 6, "#c8463d"),
+    },
+    moonblade: {
+      animated: true,
+      behind: (p) => moonBlade(p),
+      front: (p) => sash(p, 8, 1, 7, "#2a2340"),
     },
   },
 };

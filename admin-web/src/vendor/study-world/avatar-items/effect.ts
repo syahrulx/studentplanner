@@ -482,6 +482,436 @@ function debris(c: C, k: FxKit, front: boolean) {
   }
 }
 
+/* ---------- Forge sparks ---------- */
+
+/**
+ * A tiny armour plate, centred on (x, y). `face` is how square-on it is to us
+ * (1 = flat, 0 = edge-on), so plates seem to turn as they circle.
+ */
+function hexPlate(c: C, s: number, x: number, y: number, face: number, copper: boolean, a: number) {
+  const base = copper ? "#d9822b" : "#2fbfb0";
+  const lit = copper ? "#ffc58a" : "#9ff7ee";
+  const dark = copper ? "#9c5418" : "#1b8077";
+  const dot = copper ? "#7ff5e8" : "#ff9a4d";
+  if (face > 0.7) {
+    // A flat hexagon, 5 wide and 4 tall, lit from the top left.
+    rect(c, x - s, y - s, 3 * s, s, lit, a);
+    rect(c, x - 2 * s, y, 5 * s, 2 * s, base, a);
+    rect(c, x - 2 * s, y, s, s, lit, a);
+    rect(c, x + 2 * s, y + s, s, s, dark, a);
+    rect(c, x - s, y + 2 * s, 3 * s, s, dark, a);
+    rect(c, x, y, s, s, dot, a);
+  } else if (face > 0.35) {
+    rect(c, x - s, y - s, 3 * s, 4 * s, base, a);
+    rect(c, x - s, y - s, s, 3 * s, lit, a);
+    rect(c, x + s, y + s, s, 2 * s, dark, a);
+    rect(c, x, y, s, s, dot, a);
+  } else {
+    rect(c, x, y - s, s, 4 * s, lit, a);
+    rect(c, x, y + 2 * s, s, s, dark, a);
+  }
+}
+
+/** Five plates on a tilted ring round the waist; front/back by depth. */
+function forgePlates(c: C, k: FxKit, front: boolean) {
+  const s = k.s;
+  for (let i = 0; i < 5; i++) {
+    const a = k.t / 1300 + (i * Math.PI * 2) / 5;
+    if (Math.sin(a) >= 0 !== front) continue;
+    const x = sx(k, k.X(11.5 + Math.cos(a) * 11));
+    const y = sy(k, k.Y(19 + Math.sin(a) * 3.5 + Math.sin(k.t / 400 + i * 1.7) * 0.8));
+    if (front) k.glow(x, y, 3 * s, "90,240,220", 0.25);
+    hexPlate(c, s, x, y, Math.abs(Math.sin(a)), i % 2 === 1, front ? 1 : 0.8);
+  }
+}
+
+/** Where the welding sparks fly off: shoulders, elbows, hips and knees (grid). */
+const SPARK_FROM = [
+  [4, 16],
+  [19, 16],
+  [4, 21],
+  [19, 21],
+  [7, 26],
+  [16, 26],
+];
+
+/** Sparks popping off the armour, arcing out and falling. Never near the face. */
+function forgeSparks(c: C, k: FxKit) {
+  const s = k.s;
+  k.particles(9, 900, (i, ph) => {
+    const cycle = Math.floor(k.t / 900 + i / 9);
+    // Each spark fires during the first 55% of its cycle, from a new spot each time.
+    if (ph > 0.55 || rnd(cycle * 5 + i) < 0.25) return;
+    const p = ph / 0.55;
+    const [ox, oy] = SPARK_FROM[Math.floor(rnd(cycle * 11 + i * 3) * SPARK_FROM.length)];
+    const dir = ox < 12 ? -1 : 1;
+    const v = 3 + rnd(cycle * 7 + i) * 3;
+    const at = (q: number) => [sx(k, k.X(ox + dir * v * q)), sy(k, k.Y(oy - 2.5 * q + 7 * q * q))];
+    const teal = rnd(cycle * 3 + i) < 0.35;
+    const [x, y] = at(p);
+    const [tx, ty] = at(Math.max(0, p - 0.12));
+    const a = 1 - p * 0.7;
+    // A tiny flash where it leaps off the suit.
+    if (p < 0.15) {
+      const fx = sx(k, k.X(ox));
+      const fy = sy(k, k.Y(oy));
+      rect(c, fx - s, fy, 3 * s, s, "#ffe3c4", 0.8);
+      rect(c, fx, fy - s, s, 3 * s, "#ffe3c4", 0.8);
+      rect(c, fx, fy, s, s, "#ffffff");
+    }
+    rect(c, tx, ty, s, s, teal ? "#2fbfb0" : "#d9822b", a * 0.6);
+    rect(c, x, y, s, s, teal ? "#bffcf6" : "#ffd9a8", a);
+  });
+}
+
+/* ---------- Thunderstorm ---------- */
+
+/** The storm cloud as rows of spans: [grid y, x from, x to, tone 0 light – 2 dark]. */
+const CLOUD: [number, number, number, number][] = [
+  [-6, 6, 9, 0],
+  [-6, 14, 16, 0],
+  [-5, 3, 10, 0],
+  [-5, 12, 18, 0],
+  [-4, 1, 21, 1],
+  [-4, 4, 8, 0],
+  [-4, 13, 17, 0],
+  [-4, 20, 21, 0],
+  [-3, 0, 23, 1],
+  [-3, 10, 11, 2],
+  [-2, 0, 23, 1],
+  [-2, 5, 7, 2],
+  [-2, 15, 17, 2],
+  [-1, 1, 22, 2],
+  [0, 2, 5, 2],
+  [0, 9, 14, 2],
+  [0, 18, 21, 2],
+];
+
+/** 0 when no bolt is showing, otherwise which side (-1 left, 1 right) is lit. */
+function stormFlash(t: number) {
+  const p = t % 2300;
+  if (!(p < 70 || (p > 120 && p < 210))) return 0;
+  return rnd(Math.floor(t / 2300)) < 0.5 ? -1 : 1;
+}
+
+function stormCloud(c: C, k: FxKit) {
+  const s = k.s;
+  const lit = stormFlash(k.t) !== 0;
+  const bob = Math.sin(k.t / 900) > 0 ? 0 : 1;
+  const tones = lit ? ["#b9c3e8", "#7c88b3", "#4c5578"] : ["#6b7596", "#4a5270", "#30364d"];
+  k.glow(k.X(11.5), k.Y(-2), 13 * s, lit ? "200,210,255" : "60,70,110", lit ? 0.45 : 0.22);
+  CLOUD.forEach(([gy, a, b, tone]) =>
+    rect(c, k.X(a), k.Y(gy + bob), (b - a + 1) * s, s, tones[tone], 0.95),
+  );
+  // A faint flicker inside the cloud between bolts.
+  if (!lit && Math.floor(k.t / 140) % 9 === 0) {
+    const gx = 3 + Math.floor(rnd(Math.floor(k.t / 140)) * 18);
+    rect(c, k.X(gx), k.Y(-3 + bob), 2 * s, s, "#9aa6d6", 0.8);
+  }
+}
+
+/** Light rain falling behind the avatar (the body hides the drops in front of it). */
+function stormRain(c: C, k: FxKit) {
+  const s = k.s;
+  k.particles(12, 750, (i, ph) => {
+    const cycle = Math.floor(k.t / 750 + i / 12);
+    const gx = Math.floor(rnd(cycle * 13 + i) * 24);
+    const y = sy(k, k.Y(1 + ph * 29));
+    rect(c, k.X(gx), y, s, 2 * s, "#86b9f5", 0.5 * (1 - ph * 0.4));
+    if (ph > 0.9) {
+      rect(c, k.X(gx - 1), k.Y(30), s, s, "#bfe0ff", 0.4);
+      rect(c, k.X(gx + 1), k.Y(30), s, s, "#bfe0ff", 0.4);
+    }
+  });
+}
+
+/** A short bolt flicking down one side of the body (drawn behind it). */
+function stormBolt(c: C, k: FxKit) {
+  const side = stormFlash(k.t);
+  if (!side) return;
+  const s = k.s;
+  const seed = Math.floor(k.t / 2300);
+  const base = side < 0 ? 1 : 22;
+  k.glow(k.X(base), k.Y(6), 9 * s, "190,180,255", 0.4);
+  // `out` is how far the bolt has wandered away from the body (-1 to 2 cells).
+  let out = 0;
+  let dir = 1;
+  const len = 11 + Math.floor(rnd(seed * 3) * 4);
+  for (let r = 0; r < len; r++) {
+    if (rnd(seed * 17 + r) < 0.35) dir = -dir;
+    if (r % 2) out = Math.max(-1, Math.min(2, out + dir));
+    const x = k.X(base + side * out);
+    const y = k.Y(r);
+    rect(c, x - s, y, 3 * s, s, "#c9b8ff", 0.55);
+    rect(c, x, y, s, s, "#ffffff");
+  }
+  // A little fork near the bottom, pointing away from the body.
+  const fy = k.Y(len - 3);
+  const fx = k.X(base + side * (out + 1));
+  rect(c, fx, fy, s, s, "#e4dcff");
+  rect(c, fx + side * s, fy + s, s, s, "#c9b8ff", 0.8);
+}
+
+/* ---------- Solar glow ---------- */
+
+const SUN_X = 11.5;
+const SUN_Y = 12.5;
+const SUN_RX = 10;
+const SUN_RY = 13.5;
+
+/** The halo ring's cells (grid x, y, angle, inner/outer edge), worked out once. */
+const SUN_RING: [number, number, number, boolean][] = [];
+for (let gy = -3; gy < 29; gy++)
+  for (let gx = -2; gx < 26; gx++) {
+    const dx = gx + 0.5 - SUN_X;
+    const dy = gy + 0.5 - SUN_Y;
+    const d = (Math.hypot(dx / SUN_RX, dy / SUN_RY) - 1) * 12;
+    if (d > -1.5 && d < 0.6) SUN_RING.push([gx, gy, Math.atan2(dy, dx), d < -0.45]);
+  }
+
+function solarRing(c: C, k: FxKit) {
+  const s = k.s;
+  const breathe = 0.85 + 0.15 * Math.sin(k.t / 700);
+  k.glow(k.X(SUN_X), k.Y(SUN_Y), 15 * s, "255,190,70", 0.22 * breathe);
+  // Ring, with a bright shine sliding slowly round it.
+  SUN_RING.forEach(([gx, gy, ang, inner]) => {
+    const sh = Math.sin(ang * 2 - k.t / 600);
+    const col = inner
+      ? sh > 0.6
+        ? "#ffffff"
+        : "#ffe9a0"
+      : sh > 0.75
+        ? "#fff6c8"
+        : sh > -0.2
+          ? "#ffc533"
+          : "#ec9a24";
+    rect(c, k.X(gx), k.Y(gy), s, s, col, inner ? 0.9 : 1);
+  });
+  // Twelve rays turning slowly, long and short in turn.
+  for (let i = 0; i < 12; i++) {
+    const ang = (i * Math.PI) / 6 + k.t / 5000;
+    const len = i % 2 ? 2 : 3;
+    const pulse = 0.65 + 0.35 * Math.sin(k.t / 500 + i * 1.3);
+    for (let d = 0; d < len; d++) {
+      const x = sx(k, k.X(SUN_X + Math.cos(ang) * (SUN_RX + 1.5 + d)));
+      const y = sy(k, k.Y(SUN_Y + Math.sin(ang) * (SUN_RY + 1.5 + d)));
+      rect(c, x, y, s, s, d === 0 ? "#ffd24d" : "#ffb52e", (0.95 - d * 0.25) * pulse);
+    }
+  }
+}
+
+/** Sun motes drifting up beside the body (kept clear of the face). */
+function sunMotes(c: C, k: FxKit) {
+  k.particles(6, 3200, (i, ph) => {
+    const x = sx(k, k.X([-1, 23, 1, 21, 3, 20][i]) + Math.sin(ph * 6 + i) * k.s);
+    const y = sy(k, k.Y(27 - ph * 24));
+    const a = fade(ph, 0.3);
+    if (i % 3 === 0) k.star(x, y, Math.max(1, Math.round(k.s / 2)), "#fff6c8", a);
+    else rect(c, x, y, k.s, k.s, i % 2 ? "#ffd84d" : "#fff1a8", a);
+  });
+}
+
+/* ---------- Volt trail ---------- */
+
+/**
+ * The kit doesn't say yet whether the avatar is walking or which way it faces.
+ * If avatar.ts ever adds `moving` and `dir` to FxKit, the trail uses them;
+ * until then it shows a gentle crackle on both sides (works for any facing).
+ */
+type MotionKit = FxKit & { moving?: boolean; dir?: "f" | "b" | "l" | "r" };
+
+const VOLT = ["#ffffff", "#fff27a", "#ffd400", "#ffd400", "#7fd4ff", "#3ab0ff", "#2a7dff"];
+
+/**
+ * One lightning streak, `len` cells long, starting at grid (x0, y0) and running
+ * along (dx, dy) — one of them is 0. It jags sideways a cell at a time.
+ */
+function voltStreak(
+  c: C,
+  k: FxKit,
+  x0: number,
+  y0: number,
+  dx: number,
+  dy: number,
+  len: number,
+  seed: number,
+  a: number,
+) {
+  const s = k.s;
+  let off = 0;
+  for (let d = 0; d < len; d++) {
+    if (d % 2 && rnd(seed + d) < 0.45) off = off ? 0 : rnd(seed * 3 + d) < 0.5 ? -1 : 1;
+    const gx = x0 + dx * d + (dx ? 0 : off);
+    const gy = y0 + dy * d + (dy ? 0 : off);
+    const col = VOLT[Math.min(VOLT.length - 1, Math.floor((d / len) * VOLT.length))];
+    const al = a * (1 - (d / len) * 0.65);
+    // A blue fringe on both sides of the bright core.
+    if (d < len - 2) {
+      rect(c, k.X(gx + (dx ? 0 : 1)), k.Y(gy + (dy ? 0 : 1)), s, s, "#3ab0ff", al * 0.35);
+      rect(c, k.X(gx - (dx ? 0 : 1)), k.Y(gy - (dy ? 0 : 1)), s, s, "#3ab0ff", al * 0.35);
+    }
+    rect(c, k.X(gx), k.Y(gy), s, s, col, al);
+  }
+}
+
+/** The trail itself; front = the part drawn over the avatar (walking away only). */
+function voltTrail(c: C, k: FxKit, front: boolean) {
+  const m = k as MotionKit;
+  const tick = Math.floor(k.t / 70);
+  const len = (j: number, n: number) => n - Math.floor(rnd(tick * 7 + j) * 2);
+  if (m.moving === undefined) {
+    // Fallback: short crackles on both sides of the legs, flickering.
+    if (front) return;
+    k.glow(k.X(11.5), k.Y(24), 10 * k.s, "255,220,60", 0.12);
+    [-1, 1].forEach((side) =>
+      [21, 26].forEach((gy, j) => {
+        if (rnd(tick * 5 + j + side * 9) < 0.35) return;
+        const x0 = side < 0 ? 4 : 19;
+        voltStreak(c, k, x0, gy, side, 0, len(j + side, 4), tick * 13 + j * 5 + side, 0.6);
+      }),
+    );
+    return;
+  }
+  if (!m.moving) return;
+  const seed = tick * 17;
+  if (m.dir === "r" || m.dir === "l") {
+    // Streaks shoot out behind: to the left when facing right, and the other way.
+    if (front) return;
+    const side = m.dir === "r" ? -1 : 1;
+    const x0 = side < 0 ? 4 : 19;
+    k.glow(k.X(x0), k.Y(20), 9 * k.s, "255,220,60", 0.25);
+    [13, 18, 23, 27].forEach((gy, j) =>
+      voltStreak(c, k, x0, gy, side, 0, len(j, j === 0 ? 5 : 7), seed + j * 31, 0.95),
+    );
+  } else if (m.dir === "f" || m.dir === "b") {
+    // Coming towards us the trail rises up behind; going away it runs down past
+    // the feet towards us (no face to cover from behind).
+    const up = m.dir === "f";
+    if (up === front) return;
+    k.glow(k.X(11.5), k.Y(up ? 4 : 27), 9 * k.s, "255,220,60", 0.22);
+    const lanes = up
+      ? [
+          [2, 26, 20],
+          [21, 26, 20],
+          [8, 0, 6],
+          [15, 0, 6],
+        ]
+      : [
+          [2, 18, 14],
+          [21, 18, 14],
+          [7, 27, 6],
+          [16, 27, 6],
+        ];
+    lanes.forEach(([gx, gy, n], j) =>
+      voltStreak(c, k, gx, gy, 0, up ? -1 : 1, len(j, n), seed + j * 31, 0.95),
+    );
+  }
+}
+
+/** Little sparks crackling round the feet. */
+function voltFeet(c: C, k: FxKit) {
+  if (k.seated) return;
+  const s = k.s;
+  const tick = Math.floor(k.t / 80);
+  const m = k as MotionKit;
+  const n = m.moving === false ? 2 : 4;
+  for (let j = 0; j < n; j++) {
+    if (rnd(tick * 3 + j) < 0.3) continue;
+    const gx = 4 + Math.floor(rnd(tick * 7 + j) * 16);
+    const gy = 29 + Math.floor(rnd(tick * 11 + j) * 2);
+    const dir = rnd(tick + j * 5) < 0.5 ? 1 : -1;
+    const col = j % 2 ? "#7fd4ff" : "#fff27a";
+    rect(c, k.X(gx), k.Y(gy), s, s, "#ffffff", 0.95);
+    rect(c, k.X(gx + dir), k.Y(gy - 1), s, s, col, 0.85);
+    rect(c, k.X(gx - dir), k.Y(gy + 1), s, s, col, 0.6);
+  }
+}
+
+/* ---------- Golden surge ---------- */
+
+/** How far the aura reaches out from the middle on each row (before the flames). */
+function surgeWidth(gy: number) {
+  if (gy < 0) return [2, 3.5, 5, 6.5, 8][gy + 5];
+  if (gy < 15) return 9.5;
+  if (gy < 23) return 10;
+  if (gy < 28) return 9;
+  return 8;
+}
+
+/** Aura colours from the outer edge inwards, with their opacity. */
+const SURGE: [string, number][] = [
+  ["#ff9d00", 0.95],
+  ["#ffc21a", 0.95],
+  ["#ffe680", 0.85],
+];
+
+/** The flickering spiky aura behind the body: flame tongues licking upwards. */
+function surgeAura(c: C, k: FxKit) {
+  const s = k.s;
+  const tick = Math.floor(k.t / 70);
+  const flick = 0.85 + 0.15 * rnd(tick);
+  k.glow(k.X(11.5), k.Y(14), 17 * s, "255,200,40", 0.22 * flick);
+  const u = k.t / 55;
+  // Sawtooth tongues that scroll upwards; each side has its own rhythm.
+  const tongue = (gy: number, ph: number, n: number) => 1 - ((((gy + u + ph) % n) + n) % n) / n;
+  for (let gy = -5; gy <= 30; gy++) {
+    const w = surgeWidth(gy);
+    const jit = (side: number) => (rnd(tick * 31 + gy * 3 + side) < 0.15 ? 1 : 0);
+    const reach = gy < 0 ? 1.2 : 2.6;
+    const L = Math.round(11.5 - w - reach * tongue(gy, 0, 4) - jit(0));
+    const R = Math.round(11.5 + w + reach * tongue(gy, 2, 5) + jit(1));
+    // A flame band 3 cells thick on each side: orange tips, gold, pale gold.
+    // It never goes past the middle (above the head the two sides meet).
+    for (let j = 0; j < SURGE.length; j++) {
+      const [col, al] = SURGE[j];
+      if (L + j <= 11) rect(c, k.X(L + j), k.Y(gy), s, s, col, al * flick);
+      if (R - j >= 12) rect(c, k.X(R - j), k.Y(gy), s, s, col, al * flick);
+    }
+    // Close the pointed top so there's no gap in the middle over the head.
+    if (gy < 0 && R - L > 5) rect(c, k.X(L + 3), k.Y(gy), (R - L - 5) * s, s, "#ffe680", flick);
+  }
+  // Three flame tips flaring over the head now and then.
+  for (let i = 0; i < 3; i++) {
+    const h = Math.floor(rnd(Math.floor(k.t / 120) * 3 + i) * 3);
+    // Kept at or below grid y -6, the top of the shop preview.
+    if (!h) continue;
+    const gx = [7, 11, 16][i] + (i === 1 ? 0 : Math.round(Math.sin(k.t / 300 + i)));
+    rect(c, k.X(gx), k.Y(-4 - h), s, h * s, "#ffc21a", 0.85 * flick);
+    rect(c, k.X(gx), k.Y(-4 - h), s, s, "#fff3b5", 0.9 * flick);
+  }
+}
+
+/** Energy streaks rising fast; front ones stay beside the body, clear of the face. */
+function surgeRise(c: C, k: FxKit, front: boolean) {
+  const s = k.s;
+  const cols = front ? [-1, 23, 1, 22, 3, 20] : [7, 16, 10, 13, 5, 18];
+  k.particles(6, front ? 1100 : 1400, (i, ph) => {
+    const x = k.X(cols[i]);
+    const y = sy(k, k.Y(30 - ph * 32));
+    const a = fade(ph, 0.35) * (front ? 0.9 : 0.7);
+    rect(c, x, y + s, s, 2 * s, "#ffc93d", a * 0.6);
+    rect(c, x, y, s, s, "#fffbe0", a);
+  });
+}
+
+/** A ring of light rippling out across the ground; front/back half by depth. */
+function surgeRing(c: C, k: FxKit, front: boolean) {
+  const s = k.s;
+  const ph = (k.t % 1400) / 1400;
+  const rx = 5 + ph * 7.5;
+  const ry = 1.2 + ph * 1.8;
+  const seen = new Set<number>();
+  for (let j = 0; j < 48; j++) {
+    const b = (j / 48) * Math.PI * 2;
+    if (Math.sin(b) >= 0 !== front) continue;
+    const gx = Math.round(11.5 + Math.cos(b) * rx);
+    const gy = Math.round(30 + Math.sin(b) * ry);
+    if (seen.has(gx * 100 + gy)) continue;
+    seen.add(gx * 100 + gy);
+    rect(c, k.X(gx), k.Y(gy), s, s, ph < 0.3 ? "#fff6c8" : "#ffd24d", 0.85 * (1 - ph));
+  }
+}
+
 export const EFFECT: CategoryItems = {
   items: [
     { id: "bubbles", name: "Bubbles", tier: "free" },
@@ -498,6 +928,11 @@ export const EFFECT: CategoryItems = {
     { id: "sakurastorm", name: "Sakura Storm", tier: "coins", price: 480 },
     { id: "trophyaura", name: "Trophy Aura", tier: "coins", price: 400 },
     { id: "blackhole", name: "Black Hole", tier: "coins", price: 1000 },
+    { id: "forgesparks", name: "Forge Sparks", tier: "coins", price: 380 },
+    { id: "stormbolt", name: "Thunderstorm", tier: "coins", price: 480 },
+    { id: "solarglow", name: "Solar Glow", tier: "coins", price: 420 },
+    { id: "voltdash", name: "Volt Trail", tier: "coins", price: 500 },
+    { id: "goldensurge", name: "Golden Surge", tier: "coins", price: 600 },
   ],
   draw: {
     bubbles: {
@@ -763,6 +1198,56 @@ export const EFFECT: CategoryItems = {
         debris(c, k, false);
       },
       fxFront: (c, k) => debris(c, k, true),
+    },
+    forgesparks: {
+      animated: true,
+      // Teal and copper armour plates circling the waist, sparks popping off the suit.
+      fxBehind: (c, k) => {
+        k.glow(k.X(11.5), k.Y(16), 15 * k.s, "60,220,200", 0.14 + Math.sin(k.t / 600) * 0.04);
+        forgePlates(c, k, false);
+      },
+      fxFront: (c, k) => {
+        forgePlates(c, k, true);
+        forgeSparks(c, k);
+      },
+    },
+    stormbolt: {
+      animated: true,
+      // A dark storm cloud above the head with faint rain; lightning flicks down the sides.
+      // All of it sits behind the avatar, so nothing ever covers the face.
+      fxBehind: (c, k) => {
+        stormRain(c, k);
+        stormBolt(c, k);
+        stormCloud(c, k);
+      },
+    },
+    solarglow: {
+      animated: true,
+      // A golden sun ring behind the body with slowly turning rays and drifting motes.
+      fxBehind: (c, k) => solarRing(c, k),
+      fxFront: (c, k) => sunMotes(c, k),
+    },
+    voltdash: {
+      animated: true,
+      // Yellow and blue lightning streaking behind the runner, crackling at the feet.
+      fxBehind: (c, k) => voltTrail(c, k, false),
+      fxFront: (c, k) => {
+        voltTrail(c, k, true);
+        voltFeet(c, k);
+      },
+    },
+    goldensurge: {
+      animated: true,
+      // A flickering golden flame aura, energy rising and a ring rippling across the ground.
+      fxBehind: (c, k) => {
+        surgeAura(c, k);
+        surgeRise(c, k, false);
+        surgeRing(c, k, false);
+      },
+      fxFront: (c, k) => {
+        surgeRise(c, k, true);
+        if (!k.seated) surgeRing(c, k, true);
+      },
     },
   },
 };
