@@ -325,7 +325,7 @@ function PackEditor({ id, initial, rate, onClose, onSaved }: { id: string | null
         <input type="checkbox" checked={v.fpx_allowed !== false} onChange={(e) => setV({ ...v, fpx_allowed: e.target.checked })} className="mt-0.5 h-4 w-4 accent-slate-900" />
         <span>
           Allow FPX
-          <span className="block text-xs font-semibold text-slate-500">Curlec charges at least RM1 per FPX payment, so turn this off for small packs. Players then pay by card or e-wallet (or DuitNow if it is switched on in Curlec); the price stays the same.</span>
+          <span className="block text-xs font-semibold text-slate-500">Curlec charges at least RM1 per FPX payment, so turn this off for small packs. Players then pay by card or e-wallet; the price stays the same.</span>
         </span>
       </label>
       <p className="text-xs font-semibold text-slate-500">
