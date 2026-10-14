@@ -11,7 +11,6 @@ import {
   Switch,
   Modal,
   TextInput,
-  KeyboardAvoidingView,
   ActivityIndicator,
   Animated,
   Easing,
@@ -19,6 +18,9 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
+import { useProfileCard } from '@/hooks/useProfileCard';
+import { ProfileBannerView } from '@/components/ProfileBannerView';
+import { resolveProfileBanner, UNSET_BANNER_COLOR } from '@/src/lib/profileBanners';
 import { useApp } from '@/src/context/AppContext';
 import { useCommunity } from '@/src/context/CommunityContext';
 import { useTranslations } from '@/src/i18n';
@@ -33,6 +35,7 @@ import * as communityApi from '@/src/lib/communityApi';
 import type { SharedTask } from '@/src/types';
 import { studyingStatusDetailText } from '@/src/lib/timetableCurrentSlot';
 import NowPlayingCard from '@/components/NowPlayingCard';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 
 function getActivityLabel(type?: string): string {
@@ -204,6 +207,12 @@ function ProfileAvatar({ name, avatarUrl, size = 96 }: { name?: string; avatarUr
   );
 }
 
+/** The banner strip above their name. */
+const BANNER_H = 112;
+/** Status bar + a little air — what the old header strip used to occupy. */
+const HEADER_INSET = Platform.OS === 'ios' ? 56 : 40;
+/** The ring that separates the photo from the banner behind it. */
+const AVATAR_RING = 4;
 export default function FriendProfileScreen() {
   const theme = useTheme();
   const { language } = useApp();
@@ -213,6 +222,10 @@ export default function FriendProfileScreen() {
   const { friendsWithStatus, sendReaction, sendBump, userId, refreshFriends, shareStreams, toggleShareStream } = useCommunity();
 
   const friend = friendsWithStatus.find((f) => f.id === friendId);
+  const friendCard = useProfileCard(friendId);
+  // `undefined` plan on purpose — their subscription is not ours to read, so
+  // we draw the banner they chose. See resolveProfileBanner.
+  const friendBanner = resolveProfileBanner(friendCard?.banner, undefined, friendId);
   const [sentFeedback, setSentFeedback] = useState<string | null>(null);
   const [sharedTasks, setSharedTasks] = useState<SharedTask[]>([]);
 
@@ -360,11 +373,41 @@ export default function FriendProfileScreen() {
 
   return (
     <ScrollView style={[s.root, { backgroundColor: theme.background }]} contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-      <SafeHeader theme={theme} />
+      {/* ── their banner, then who they are ──
+          The banner is theirs, not ours: the same strip their profile card
+          shows.
 
-      {/* ── identity + status bubble ── */}
+          It runs to the very top of the screen, behind the status bar, rather
+          than starting below a header. A back button on its own strip left a
+          band of page colour above the banner, so the thing meant to be the
+          top of the profile had something above it. The button now floats on
+          the banner instead, and the banner is taller by exactly the inset it
+          took over. */}
+      <View style={[s.bannerWrap, { backgroundColor: theme.card }]}>
+        <ProfileBannerView
+          banner={friendBanner}
+          themeColor={UNSET_BANNER_COLOR}
+          height={BANNER_H + HEADER_INSET}
+        />
+        <Pressable
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          style={({ pressed }) => [
+            s.backBtn,
+            s.backOnBanner,
+            { backgroundColor: theme.card, borderColor: theme.border },
+            pressed && { opacity: 0.75 },
+          ]}
+        >
+          <Feather name="chevron-left" size={22} color={theme.text} />
+        </Pressable>
+      </View>
+
       <View style={s.identity}>
-        <ProfileAvatar name={friend.name} avatarUrl={friend.avatar_url} size={96} />
+        <View style={[s.avatarRing, { borderColor: theme.background, backgroundColor: theme.background }]}>
+          <ProfileAvatar name={friend.name} avatarUrl={friend.avatar_url} size={96} />
+        </View>
 
         {/* status pill */}
         <View style={[s.bubble, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -566,7 +609,7 @@ export default function FriendProfileScreen() {
         transparent
         onRequestClose={() => !reportBusy && setReportOpen(false)}
       >
-        <KeyboardAvoidingView
+        <KeyboardAvoidingScreen
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={s.reportBackdrop}
         >
@@ -649,7 +692,7 @@ export default function FriendProfileScreen() {
               </Pressable>
             </View>
           </View>
-        </KeyboardAvoidingView>
+        </KeyboardAvoidingScreen>
       </Modal>
     </ScrollView>
   );
@@ -676,7 +719,25 @@ const s = StyleSheet.create({
   backBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
 
   /* identity */
-  identity: { alignItems: 'center', paddingTop: 12, paddingBottom: 24 },
+  // Pulled up out of the scroll's own top so the banner starts at pixel zero.
+  bannerWrap: { marginHorizontal: -20, overflow: 'hidden' },
+  backOnBanner: { position: 'absolute', left: 20, top: HEADER_INSET - 8 },
+  /**
+   * Straddles the banner's bottom edge, the same as the profile card.
+   *
+   * An earlier attempt overlapped by only the ring's width, which left four
+   * points of page colour showing over the banner and read as a crescent-
+   * shaped rendering fault. Half the photo over the edge is not that — it is
+   * the deliberate shape the card already uses, and the ring reads as a frame
+   * rather than a sliver.
+   */
+  avatarRing: {
+    borderRadius: 56,
+    borderWidth: AVATAR_RING,
+    marginTop: -(96 / 2 + AVATAR_RING),
+    overflow: 'hidden',
+  },
+  identity: { alignItems: 'center', paddingTop: 0, paddingBottom: 24 },
   name: { fontSize: 28, fontWeight: '800', letterSpacing: -0.6, marginTop: 14 },
   subtitle: { fontSize: 14, fontWeight: '500', marginTop: 6, textAlign: 'center' },
   bio: { fontSize: 14, fontStyle: 'italic', marginTop: 12, textAlign: 'center', lineHeight: 22, paddingHorizontal: 20 },

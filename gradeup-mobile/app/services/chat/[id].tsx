@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, Alert, Modal } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Platform, ActivityIndicator, Alert, Modal } from 'react-native';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -13,6 +13,7 @@ import { Avatar } from '@/components/Avatar';
 import * as servicesApi from '@/src/lib/servicesApi';
 import { uploadPostImage } from '@/src/lib/eventsApi';
 import type { ServicePost, ServiceMessage } from '@/src/lib/servicesApi';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 export default function ServiceChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -190,7 +191,7 @@ export default function ServiceChatScreen() {
         </View>
       </View>
 
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingScreen 
         style={s.container} 
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
@@ -317,7 +318,7 @@ export default function ServiceChatScreen() {
             </Pressable>
           </View>
         )}
-      </KeyboardAvoidingView>
+      </KeyboardAvoidingScreen>
 
       <Modal visible={!!fullscreenImage} transparent animationType="fade" onRequestClose={() => setFullscreenImage(null)}>
         <View style={s.modalOverlay}>

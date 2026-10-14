@@ -44,9 +44,9 @@ import {
   setThemePreviewExpiry as persistThemePreviewExpiry,
   setRevisionSettings as persistRevision,
   getCompletedStudyKeys,
-  setCompletedStudyKeys as persistCompletedStudies,
+  setCompletedStudyKeys as persistCompletedStudiesLocal,
   getPinnedTaskIds,
-  setPinnedTaskIds as persistPinnedTaskIds,
+  setPinnedTaskIds as persistPinnedTaskIdsLocal,
   getSubjectColors,
   setSubjectColors as persistSubjectColors,
   getCourses,
@@ -94,6 +94,7 @@ import {
   rescheduleAttendanceNotifications,
 } from '../attendanceNotifications';
 import { ensureAttendanceCategory, flushPendingAttendanceEvents } from '../attendanceRecording';
+import { reconcilePlannerState, recordLocalChange } from '../lib/plannerStateSync';
 import { supabase } from '../lib/supabase';
 import * as studyDb from '../lib/studyDb';
 import { deleteHandwritingCache, flushHandwritingOutbox } from '../lib/handwritingDb';
@@ -478,6 +479,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [revisionSettingsList, setRevisionSettingsList] = useState<RevisionSettings[]>([]);
   const [completedStudyKeys, setCompletedStudyKeys] = useState<string[]>([]);
   const [pinnedTaskIds, setPinnedTaskIds] = useState<string[]>([]);
+  /**
+   * Saved on the phone and sent to the student's account, so a pin or a
+   * study tick shows on their other devices too (see plannerStateSync).
+   */
+  const plannerOwnerRef = useRef<string | null>(null);
+  const persistPinnedTaskIds = useCallback(async (ids: string[]) => {
+    await persistPinnedTaskIdsLocal(ids);
+    void recordLocalChange(plannerOwnerRef.current, 'pinned', ids.slice(0, 2)).catch(() => {});
+  }, []);
+  const persistCompletedStudies = useCallback(async (keys: string[]) => {
+    await persistCompletedStudiesLocal(keys);
+    void recordLocalChange(plannerOwnerRef.current, 'completed', keys).catch(() => {});
+  }, []);
   const [subjectColors, setSubjectColorsState] = useState<Record<string, string>>({});
   /** The device's colours, readable from inside the remote load without going stale. */
   const subjectColorsRef = useRef<Record<string, string>>({});
@@ -504,7 +518,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const academicCalendarRef = useRef<AcademicCalendar | null>(null);
   const userRef = useRef(user);
   const wasSemesterBreakRef = useRef(false);
-  const loadRemoteDataRef = useRef<(uid: string, authFallbackName?: string) => Promise<void>>(async () => {});
+  const loadRemoteDataRef = useRef<
+    (uid: string, authFallbackName?: string, opts?: { quiet?: boolean }) => Promise<void>
+  >(async () => {});
+  /** Remote loads currently running, so a foreground refresh never stacks on one. */
+  const remoteLoadsInFlightRef = useRef(0);
+  /** When the last remote load started (0 = none yet this session). Throttles foreground refreshes. */
+  const lastRemoteLoadStartedAtRef = useRef(0);
+  /**
+   * The lists as this render holds them. A quiet refresh compares against the
+   * copy it saw at the start and leaves alone any list the student changed
+   * while it was out, instead of putting the older server copy back.
+   */
+  const localListsRef = useRef<{
+    tasks: Task[];
+    notes: Note[];
+    flashcards: Flashcard[];
+    courses: Course[];
+    timetable: TimetableEntry[];
+    revisionSettingsList: RevisionSettings[];
+  } | null>(null);
   /** Unsubscribe for the current session's RevenueCat live-update listener. */
   const revenueCatUnsubscribeRef = useRef<() => void>(() => {});
   const homeWidgetInputsRef = useRef({
@@ -856,14 +889,51 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     let remoteLoadGeneration = 0;
 
     // Helper to load all remote data for a given user id (including profile, calendar, subjects)
-    const loadRemoteData = (uid: string, authFallbackName?: string) => {
-      const gen = ++remoteLoadGeneration;
+    //
+    // `quiet` is the foreground refresh: the data is already on screen, so it
+    // skips seeding from the cache (the cache can trail what is in memory),
+    // skips the once-per-sign-in background work (RevenueCat, Classroom check,
+    // calendar auto-sync), and leaves alone anything with no outbox to tell an
+    // unsynced local change from an older server copy.
+    const loadRemoteData = (uid: string, authFallbackName?: string, opts?: { quiet?: boolean }) => {
+      const quiet = opts?.quiet === true;
+      // A quiet refresh does not claim a new generation: it must not cancel the
+      // background work (calendar auto-sync) of the load that came before it,
+      // while any real load or a sign-out still supersedes it.
+      const gen = quiet ? remoteLoadGeneration : ++remoteLoadGeneration;
       const mutationVersionAtStart = offlineMutationVersionRef.current;
+      const listsAtStart = localListsRef.current;
+      /** Quiet refresh only: true while the student has not changed this list since the load began. */
+      const untouched = <K extends keyof NonNullable<typeof listsAtStart>>(key: K) =>
+        !quiet || !listsAtStart || localListsRef.current?.[key] === listsAtStart[key];
       remoteUserIdRef.current = uid;
+      remoteLoadsInFlightRef.current += 1;
+      plannerOwnerRef.current = uid;
+      if (!quiet) {
+        // Pins and study ticks from the student's other devices. Runs beside
+        // the main load; a failure leaves the phone's own copy on screen.
+        void (async () => {
+          const [localPinned, localCompleted] = await Promise.all([getPinnedTaskIds(), getCompletedStudyKeys()]);
+          const r = await reconcilePlannerState(uid, { pinned: localPinned, completed: localCompleted });
+          if (gen !== remoteLoadGeneration || remoteUserIdRef.current !== uid) return;
+          if (r.pinned) {
+            const ids = r.pinned.slice(0, 2);
+            setPinnedTaskIds(ids);
+            await persistPinnedTaskIdsLocal(ids);
+          }
+          if (r.completed) {
+            setCompletedStudyKeys(r.completed);
+            await persistCompletedStudiesLocal(r.completed);
+          }
+        })().catch((e) => {
+          if (__DEV__) console.warn('[Rencana] planner state sync failed:', e);
+        });
+      }
+      lastRemoteLoadStartedAtRef.current = Date.now();
       // Show the last confirmed local snapshot immediately. Remote results are
       // merged over it only when the request actually succeeds, so an offline
       // relaunch never turns a user's planner or notes into an empty screen.
-      const cachedReady = Promise.all([
+      const cachedReady = quiet ? Promise.resolve() : Promise.all([
         offlineSync.loadCachedTasks(uid),
         offlineSync.loadCachedNotes(uid),
         offlineSync.loadCachedTaskCompletions(uid),
@@ -881,13 +951,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // successful flush and briefly overwrite the just-synced local version.
       return Promise.all([cachedReady, retryOfflineSync().catch(() => {})]).then(() => Promise.allSettled([
         studyDb.getNotesStrict(uid),
-        studyDb.getFlashcards(uid),
+        // Strict: a failed request must reject, not look like "no cards",
+        // or an offline start would blank the library and its cache.
+        studyDb.getFlashcardsStrict(uid),
         taskDb.getTasksStrict(uid),
-        studyTimeDb.getAllStudySettings(uid),
+        studyTimeDb.getAllStudySettingsStrict(uid),
         coursesDb.getCourses(uid),
         profileDb.getProfile(uid),
         academicCalendarDb.getActiveCalendar(uid),
-        timetableDb.getTimetable(uid),
+        timetableDb.getTimetableStrict(uid),
         timetableDb.getUniversityConnection(uid),
       ])).then(async (results) => {
         if (gen !== remoteLoadGeneration || remoteUserIdRef.current !== uid) return;
@@ -917,14 +989,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           // An empty course response is ambiguous when the transport layer
           // cannot expose its error. Preserve the last local course view rather
           // than emptying it during a connection problem.
-          if (loadedCourses.length > 0) {
-            setCourses(loadedCourses);
+          if (loadedCourses.length > 0 && untouched('courses')) {
+            if (quiet) {
+              // Subjects have no outbox, so one added here that never reached
+              // the server only exists on this device. Keep it on a foreground
+              // refresh; a full reload still applies the server list as before.
+              const serverIds = new Set(loadedCourses.map((c) => c.id.toUpperCase()));
+              const localOnly = (listsAtStart?.courses ?? []).filter((c) => !serverIds.has(c.id.toUpperCase()));
+              setCourses([...loadedCourses, ...localOnly]);
+            } else {
+              setCourses(loadedCourses);
+            }
           }
         }
 
         let loadedNotes: import('../types').Note[] = [];
-        if (r0.status === 'fulfilled' && !localMutatedDuringLoad) {
+        let notesApplied = false;
+        if (r0.status === 'fulfilled' && !localMutatedDuringLoad && untouched('notes')) {
           loadedNotes = await offlineSync.mergePendingNotes(uid, r0.value);
+          notesApplied = true;
           // Notes whose subject is missing from the course list used to be
           // hidden here. Nothing was deleted — the rows stayed in Supabase —
           // but from inside the app the work was simply gone, with no route
@@ -942,7 +1025,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           void offlineSync.cacheNotes(uid, loadedNotes);
         }
 
-        if (r1.status === 'fulfilled' && !localMutatedDuringLoad) {
+        if (r1.status === 'fulfilled' && !localMutatedDuringLoad && untouched('flashcards')) {
           const loadedCards = r1.value;
           // Soft-hide cards whose parent note is genuinely absent, but ONLY when
           // the notes request itself succeeded. If notes failed to load we have
@@ -950,7 +1033,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           // flashcard library vanish on a flaky connection. Never auto-delete
           // from Supabase — a missing note can simply mean the note row hasn't
           // synced yet.
-          const notesLoadedOk = r0.status === 'fulfilled';
+          // `notesApplied`, not just "the request succeeded": a quiet refresh
+          // can skip notes the student just edited, and an empty loadedNotes
+          // here would then hide every card.
+          const notesLoadedOk = notesApplied;
           // Queued reviews and edits win over the server copy, or a fetch that
           // lands before the outbox drains would show the pre-review schedule.
           const mergedCards = await offlineSync.mergePendingFlashcards(uid, loadedCards);
@@ -961,7 +1047,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setFlashcards(visibleCards);
           void offlineSync.cacheFlashcards(uid, visibleCards);
         }
-        if (r2.status === 'fulfilled' && !localMutatedDuringLoad) {
+        if (r2.status === 'fulfilled' && !localMutatedDuringLoad && untouched('tasks')) {
           const loadedTasks = await offlineSync.mergePendingTasks(uid, r2.value);
           setTasks(loadedTasks);
           void offlineSync.cacheTasks(uid, loadedTasks);
@@ -985,7 +1071,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           .catch((err) => {
             if (__DEV__) console.warn('[Rencana] failed to load task_completions:', err);
           });
-        if (r3.status === 'fulfilled') {
+        // A rejected request (offline, RLS, timeout) leaves the current list and
+        // its reminders exactly as they are. Only a real answer replaces them.
+        if (r3.status === 'fulfilled' && untouched('revisionSettingsList')) {
           const studyList = r3.value;
           setRevisionSettingsList(studyList);
           setRevisionState(studyList.length > 0 ? studyList[0] : defaultRevision);
@@ -995,7 +1083,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           void rescheduleAllRevisionNotifications(studyList).catch(() => {});
         }
         // (r4 is already processed and set above)
-        if (r7.status === 'fulfilled') {
+        if (r7.status === 'fulfilled' && untouched('timetable')) {
           const tt = r7.value ?? [];
           setTimetable(tt);
           rescheduleAttendanceNotifications(uid, tt, { academicCalendar: academicCalendarRef.current }).catch(() => {});
@@ -1004,7 +1092,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const profile = r5.status === 'fulfilled' ? r5.value : undefined;
         const uniConn = r8.status === 'fulfilled' ? r8.value : null;
 
-        if (profile?.themePreferences) {
+        // Appearance has no outbox either: a theme or colour picked while
+        // offline would look exactly like an older server value and be undone.
+        // A quiet refresh leaves both alone; a full load applies them as before.
+        if (!quiet && profile?.themePreferences) {
           const tp = profile.themePreferences;
           const validThemes: ThemeId[] = ['light', 'dark', 'blush', 'midnight', 'emerald'];
           const validPacks: ThemePackId[] = ['none', 'cat', 'mono', 'spider', 'purple', 'custom'];
@@ -1029,7 +1120,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
         // Subject colours are last-write-wins: the server map replaces the
         // local one outright.
-        if (profile?.subjectColors && typeof profile.subjectColors === 'object') {
+        if (quiet) {
+          // See above.
+        } else if (profile?.subjectColors && typeof profile.subjectColors === 'object') {
           const remote: Record<string, string> = {};
           for (const [courseId, color] of Object.entries(profile.subjectColors)) {
             if (typeof color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(color)) remote[courseId] = color;
@@ -1225,6 +1318,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setDataReady(true);
         }
 
+        // Already done for this sign-in; repeating it on every foreground would
+        // re-init RevenueCat and could re-fire the Classroom notification.
+        if (quiet) return;
+
         void (async () => {
         // Auto-sync academic calendar via university provider (once per session)
         if (!calendarAutoSyncedRef.current) {
@@ -1337,6 +1434,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           }
         } catch {}
         })();
+      }).finally(() => {
+        remoteLoadsInFlightRef.current = Math.max(0, remoteLoadsInFlightRef.current - 1);
       });
     };
 
@@ -1352,7 +1451,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           void flushPendingAttendanceEvents();
           // Ensure attendance notifications are scheduled only after permission is granted.
           // This avoids silent failures when timetable loads before the permission prompt resolves.
-          rescheduleAttendanceNotifications(uid, timetable, { academicCalendar: academicCalendarRef.current }).catch(() => {});
+          // Read the live timetable, not this mount-time closure (always []): an
+          // empty list cancels every check-in, which on an offline start would
+          // leave none until the timetable next loaded.
+          const entries = timetableForAttendanceRef.current;
+          if (entries.length > 0) {
+            rescheduleAttendanceNotifications(uid, entries, { academicCalendar: academicCalendarRef.current }).catch(() => {});
+          }
         }
       })
       .catch(() => {});
@@ -1439,6 +1544,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           });
           setTasks([]);
           setTaskCompletionKeys(new Set());
+          // Off screen only: the phone copy keeps its owner tag, so the next
+          // account neither sees nor uploads these (see plannerStateSync).
+          plannerOwnerRef.current = null;
+          setPinnedTaskIds([]);
+          setCompletedStudyKeys([]);
           setNotes(initialNotes);
           setFlashcards(initialFlashcards);
           setRevisionSettingsList([]);
@@ -1487,6 +1597,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   homeWidgetInputsRef.current = { tasks, courses, timetable, pinnedTaskIds, userName: user.name, theme, themePack, customThemeColors };
+  localListsRef.current = { tasks, notes, flashcards, courses, timetable, revisionSettingsList };
 
   // Solution C: Gate widget sync — only push to widgets once real data is loaded
   useEffect(() => {
@@ -1567,6 +1678,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await loadRemoteDataRef.current(uid, getAuthFallbackName(session));
   }, []);
 
+  /** Serialises theme_preferences writes; see syncThemePreferencesToProfile. */
+  const themePrefsWriteChainRef = useRef<Promise<void>>(Promise.resolve());
+
   const syncThemePreferencesToProfile = useCallback(
     async (prefs: {
       theme: ThemeId;
@@ -1577,15 +1691,41 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }) => {
       const uid = user.id?.trim();
       if (!uid) return;
-      try {
-        await profileDb.updateProfile(uid, { themePreferences: prefs });
-      } catch (e) {
-        // Swallowed whole until now, on the guess that the column might not be
-        // migrated. It is, everywhere, and the guess meant a preference that
-        // failed to save looked saved and then came back wrong on the next
-        // device. Report it rather than assume the reason.
-        captureError(e, { where: 'appContext.syncThemePreferencesToProfile' });
-      }
+      // One write at a time, in the order they were made, so a slow earlier
+      // write can never land after a later one and undo it.
+      const run = themePrefsWriteChainRef.current.then(async () => {
+        try {
+          // theme_preferences is written as one whole object, so merge over
+          // what the server holds. Writing only the fields set here used to
+          // wipe the saved flashcard style (and anything the website stores
+          // there) every time the theme changed. If the current value cannot
+          // be read, do not write: a blind write is exactly what loses data,
+          // and the choice is already saved on this device.
+          const { data, error: readError } = await supabase
+            .from('profiles')
+            .select('theme_preferences')
+            .eq('id', uid)
+            .maybeSingle();
+          if (readError) throw readError;
+          const raw = (data as { theme_preferences?: unknown } | null)?.theme_preferences;
+          const existing =
+            raw && typeof raw === 'object' && !Array.isArray(raw)
+              ? (raw as profileDb.ThemePreferencesRow)
+              : {};
+          const updates = Object.fromEntries(
+            Object.entries(prefs).filter(([, value]) => value !== undefined),
+          ) as Partial<typeof prefs>;
+          await profileDb.updateProfile(uid, { themePreferences: { ...existing, ...updates } });
+        } catch (e) {
+          // Swallowed whole until now, on the guess that the column might not be
+          // migrated. It is, everywhere, and the guess meant a preference that
+          // failed to save looked saved and then came back wrong on the next
+          // device. Report it rather than assume the reason.
+          captureError(e, { where: 'appContext.syncThemePreferencesToProfile' });
+        }
+      });
+      themePrefsWriteChainRef.current = run;
+      await run;
     },
     [user.id],
   );
@@ -1694,15 +1834,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return;
       }
     }
-    setRevisionState(settings);
-    await persistRevision(settings);
-
-    // Persist study settings to Supabase and refresh list so UI shows all saved study times
+    // Persist study settings to Supabase and refresh list so UI shows all saved study times.
+    // Signed in, the server write goes first: if it fails, nothing local has
+    // changed yet (state, stored copy, list, reminders) and the error reaches
+    // the screen, instead of a study time that looks saved but is not.
     const { data: { session } } = await supabase.auth.getSession();
     const uid = session?.user?.id;
     if (uid) {
-      await studyTimeDb.upsertStudySettings(uid, settings);
-      const list = await studyTimeDb.getAllStudySettings(uid);
+      try {
+        await studyTimeDb.upsertStudySettings(uid, settings);
+      } catch (e) {
+        captureError(e, { where: 'appContext.setRevisionSettings' });
+        throw e;
+      }
+    }
+    setRevisionState(settings);
+    await persistRevision(settings);
+
+    if (uid) {
+      let list: RevisionSettings[];
+      try {
+        list = await studyTimeDb.getAllStudySettingsStrict(uid);
+      } catch (e) {
+        // The save already went through; only the re-read failed. Keep the list
+        // and reminders as they are rather than treating the error as "no study
+        // times", which used to blank the list and cancel every study reminder.
+        // The next load rebuilds both from the database.
+        if (__DEV__) console.warn('[Rencana] study times re-read after save failed:', e);
+        return;
+      }
       setRevisionSettingsList(list);
       // Rebuild from the saved list, not from `settings`: the row was just
       // inserted, so only the list carries the DB id each reminder is keyed to.
@@ -1722,7 +1882,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await studyTimeDb.deleteStudySetting(uid, id);
     // Kill this one's reminder up front, so a failed list refresh can't leave it firing.
     await cancelRevisionNotification(id);
-    const list = await studyTimeDb.getAllStudySettings(uid);
+    let list: RevisionSettings[];
+    try {
+      list = await studyTimeDb.getAllStudySettingsStrict(uid);
+    } catch (e) {
+      // The delete is confirmed (it throws otherwise), so drop just that row
+      // from the list we already hold. Leave the other reminders alone: an
+      // error is not "no study times", and rescheduling from it would cancel them.
+      if (__DEV__) console.warn('[Rencana] study times re-read after delete failed:', e);
+      const remaining = revisionListForNotifRef.current.filter((s) => s.id !== id);
+      setRevisionSettingsList(remaining);
+      const fallbackNext = remaining.length > 0 ? remaining[0] : defaultRevision;
+      setRevisionState(fallbackNext);
+      await persistRevision(fallbackNext);
+      return;
+    }
     setRevisionSettingsList(list);
     const next = list.length > 0 ? list[0] : defaultRevision;
     setRevisionState(next);

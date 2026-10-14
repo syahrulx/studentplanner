@@ -138,6 +138,13 @@ export async function ensureAttendanceCategory(): Promise<void> {
   ]);
 }
 
+/** Check-ins saved on this phone that have not reached the server yet. */
+export async function getPendingAttendanceEvents(): Promise<
+  Pick<PendingAttendanceEvent, 'timetableEntryId' | 'scheduledStartAt' | 'status' | 'subjectCode' | 'subjectName'>[]
+> {
+  return loadPending();
+}
+
 async function loadPending(): Promise<PendingAttendanceEvent[]> {
   try {
     const raw = await AsyncStorage.getItem(KEY_PENDING_ATTENDANCE);

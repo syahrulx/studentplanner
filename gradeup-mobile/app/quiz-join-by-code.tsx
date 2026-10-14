@@ -7,13 +7,13 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
 import { useQuiz } from '@/src/context/QuizContext';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 const PAD = 20;
 const RADIUS = 14;
@@ -48,7 +48,7 @@ export default function QuizJoinByCodeScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardAvoidingScreen
       style={[styles.container, { backgroundColor: theme.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
@@ -95,7 +95,7 @@ export default function QuizJoinByCodeScreen() {
           <Text style={styles.btnText}>Join lobby</Text>
         )}
       </Pressable>
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingScreen>
   );
 }
 

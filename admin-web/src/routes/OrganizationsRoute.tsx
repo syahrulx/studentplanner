@@ -1,35 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listOrganizations, createOrganization, updateOrganization, deleteOrganization, type AdminOrganizationRow, listUniversities, type UniversityRow, listCampuses, type AdminCampusRow } from '../lib/api';
 import { Button } from '../ui/Button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/Card';
-import { Label, TextInput } from '../ui/Input';
+import { Select, TextInput } from '../ui/Input';
 import { matchesAdminSearch } from '../lib/adminSearch';
 import { useAdminSearch } from '../state/AdminSearchContext';
-import { MotionPanel, MotionSection, MotionStagger, MotionStaggerItem } from '../ui/motion';
+import { Chip, EmptyState, Notice, PageHeader, Panel, SidePanel, SkeletonRows } from '../ui/page';
+import { Field, ListToolbar, RecordRow } from '../components/institutions/InstitutionUi';
 
-function Input({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-}) {
-  return (
-    <label className="block">
-      <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">{label}</div>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-      />
-    </label>
-  );
-}
+const BLANK_ORGANIZATION: AdminOrganizationRow = {
+  id: '',
+  university_id: '',
+  campus_id: null,
+  name: '',
+  created_at: '',
+};
 
 export function OrganizationsRoute() {
   const { searchQuery } = useAdminSearch();
@@ -38,7 +22,7 @@ export function OrganizationsRoute() {
   const [items, setItems] = useState<AdminOrganizationRow[]>([]);
   const [editing, setEditing] = useState<AdminOrganizationRow | null>(null);
   const [query, setQuery] = useState('');
-  
+
   const [universities, setUniversities] = useState<UniversityRow[]>([]);
   const [campuses, setCampuses] = useState<AdminCampusRow[]>([]);
 
@@ -62,14 +46,7 @@ export function OrganizationsRoute() {
   }, []);
 
   const form = useMemo(() => {
-    const base: AdminOrganizationRow =
-      editing ?? ({
-        id: '',
-        university_id: '',
-        campus_id: null,
-        name: '',
-        created_at: '',
-      });
+    const base: AdminOrganizationRow = editing ?? { ...BLANK_ORGANIZATION };
     return base;
   }, [editing]);
 
@@ -87,159 +64,94 @@ export function OrganizationsRoute() {
     return list;
   }, [items, query, searchQuery]);
 
+  const closeEditor = useCallback(() => setEditing(null), []);
+
   return (
-    <div>
-      <MotionSection>
-        <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Organizations</div>
-        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Manage university clubs and organizations for the community.
-        </div>
-      </MotionSection>
+    <div className="space-y-4">
+      <PageHeader
+        title="Organisations"
+        description="Manage university clubs and organisations for the community."
+        actions={<Button size="sm" onClick={() => setEditing({ ...BLANK_ORGANIZATION })}>Add organisation</Button>}
+      />
 
-      <MotionStagger className="mt-6 grid gap-4 xl:grid-cols-[420px_1fr]">
-        <MotionStaggerItem>
-          <MotionPanel className="h-full">
-            <Card>
-              <CardHeader>
-                <div>
-                  <CardTitle>Organization list</CardTitle>
-                  <CardDescription>{busy ? 'Loading…' : `${filtered.length} shown`}</CardDescription>
-                </div>
-                <Button
-                  size="sm"
-                  onClick={() =>
-                    setEditing({
-                      id: '',
-                      university_id: '',
-                      campus_id: null,
-                      name: '',
-                      created_at: '',
-                    })
+      {err ? <Notice tone="danger">{err}</Notice> : null}
+
+      <Panel padded={false}>
+        <ListToolbar
+          query={query}
+          onQuery={setQuery}
+          placeholder="Search by name or university"
+          searchLabel="Search organisations"
+          shown={filtered.length}
+          busy={busy}
+          topSearchActive={Boolean(searchQuery.trim())}
+        />
+
+        {busy && items.length === 0 ? (
+          <div className="p-5"><SkeletonRows rows={4} height="h-14" /></div>
+        ) : filtered.length === 0 ? (
+          <div className="p-5">
+            <EmptyState title={items.length > 0 && (query.trim() || searchQuery.trim()) ? 'No organisations match your filters' : 'No organisations found'} />
+          </div>
+        ) : (
+          <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+            {filtered.map((u) => {
+              const camp = campuses.find(c => c.id === u.campus_id);
+              return (
+                <RecordRow
+                  key={u.id}
+                  onOpen={() => setEditing(u)}
+                  title={u.name}
+                  chips={
+                    <>
+                      <Chip tone="brand">{u.university_id.toUpperCase()}</Chip>
+                      <Chip>{camp ? camp.name : 'All campuses'}</Chip>
+                    </>
                   }
-                >
-                  + Add
-                </Button>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-3">
-                  <div>
-                    <Label>Search</Label>
-                    <TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name or university" />
-                  </div>
+                  actions={
+                    <>
+                      <Button variant="secondary" size="sm" onClick={() => setEditing(u)}>Edit</Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={async () => {
+                          const ok = confirm(`Delete ${u.name}?`);
+                          if (!ok) return;
+                          setErr('');
+                          try {
+                            await deleteOrganization(u.id);
+                          } catch (e) {
+                            setErr(`Could not delete ${u.name}: ${e instanceof Error ? e.message : 'unknown error'}. Nothing was removed.`);
+                            return;
+                          }
+                          if (editing?.id === u.id) setEditing(null);
+                          await refresh();
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </>
+                  }
+                />
+              );
+            })}
+          </ul>
+        )}
+      </Panel>
 
-                  {err ? (
-                    <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
-                      {err}
-                    </div>
-                  ) : null}
-
-                  <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
-                    <table className="w-full">
-                      <thead className="bg-slate-50 text-left text-[11px] font-black uppercase tracking-wide text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
-                        <tr>
-                          <th className="px-4 py-3">Organization</th>
-                          <th className="px-4 py-3">Location</th>
-                          <th className="px-4 py-3 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {filtered.map((u) => {
-                           const camp = campuses.find(c => c.id === u.campus_id);
-                           return (
-                          <tr
-                            key={u.id}
-                            className="cursor-pointer bg-white transition hover:bg-slate-50 dark:bg-transparent dark:hover:bg-slate-900/40"
-                            onClick={() => setEditing(u)}
-                          >
-                            <td className="px-4 py-3">
-                              <div className="text-sm font-black text-slate-900 dark:text-slate-100">{u.name}</div>
-                            </td>
-                            <td className="px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
-                              {u.university_id.toUpperCase()}
-                              {camp ? ` · ${camp.name}` : ' · All Campuses'}
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <div className="inline-flex gap-2">
-                                <Button variant="secondary" size="sm" onClick={() => setEditing(u)}>
-                                  Edit
-                                </Button>
-                                <Button
-                                  variant="danger"
-                                  size="sm"
-                                  onClick={async (e) => {
-                                    e.stopPropagation();
-                                    const ok = confirm(`Delete ${u.name}?`);
-                                    if (!ok) return;
-                                    await deleteOrganization(u.id);
-                                    if (editing?.id === u.id) setEditing(null);
-                                    await refresh();
-                                  }}
-                                >
-                                  Delete
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
-                        )})}
-
-                        {filtered.length === 0 && !busy ? (
-                          <tr>
-                            <td colSpan={3} className="px-4 py-8 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
-                              {items.length > 0 && (query.trim() || searchQuery.trim())
-                                ? 'No organizations match your filters.'
-                                : 'No organizations found.'}
-                            </td>
-                          </tr>
-                        ) : null}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </MotionPanel>
-        </MotionStaggerItem>
-
-        <MotionStaggerItem>
-          <MotionPanel className="h-full">
-            <Card className="min-h-[420px]">
-              <CardHeader>
-                <div>
-                  <CardTitle>{editing?.id ? 'Edit organization' : 'Setup'}</CardTitle>
-                  <CardDescription>Configure organization details.</CardDescription>
-                </div>
-                {editing ? (
-                  <Button variant="secondary" size="sm" onClick={() => setEditing(null)}>
-                    Close
-                  </Button>
-                ) : null}
-              </CardHeader>
-              <CardContent>
-                {!editing ? (
-                  <div className="grid place-items-center rounded-3xl border border-dashed border-slate-200 p-10 text-center dark:border-slate-800">
-                    <div className="text-sm font-black text-slate-900 dark:text-slate-100">Select an organization</div>
-                    <div className="mt-1 max-w-md text-sm font-semibold text-slate-500 dark:text-slate-400">
-                      Pick one from the list to edit, or click <span className="font-black text-slate-700 dark:text-slate-200">+ Add</span>.
-                    </div>
-                  </div>
-                ) : (
-                  <OrganizationEditor
-                    key={editing.id || 'new'}
-                    initial={form}
-                    universities={universities}
-                    campuses={campuses}
-                    onCancel={() => setEditing(null)}
-                    onSaved={async () => {
-                      setEditing(null);
-                      await refresh();
-                    }}
-                  />
-                )}
-              </CardContent>
-            </Card>
-          </MotionPanel>
-        </MotionStaggerItem>
-      </MotionStagger>
+      {editing ? (
+        <OrganizationEditor
+          key={editing.id || 'new'}
+          initial={form}
+          universities={universities}
+          campuses={campuses}
+          onCancel={closeEditor}
+          onSaved={async () => {
+            setEditing(null);
+            await refresh();
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -275,73 +187,58 @@ function OrganizationEditor({
   }, [universityId, availableCampuses, campusId, initial.id]);
 
   return (
-    <div className="mt-4 space-y-3">
-      <Input label="Organization Name" value={name} onChange={setName} placeholder="e.g. Computer Science Club" />
-      
-      <label className="block">
-        <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">University</div>
-        <select
-          value={universityId}
-          onChange={(e) => setUniversityId(e.target.value)}
-          className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-        >
-          <option value="" disabled>Select University</option>
+    <SidePanel
+      title={initial.id ? 'Edit organisation' : 'Add organisation'}
+      subtitle={initial.id ? `${initial.name} · ${initial.university_id.toUpperCase()}` : 'Configure organisation details.'}
+      onClose={onCancel}
+      width="max-w-lg"
+      footer={
+        <>
+          {err ? <Notice tone="danger" className="w-full py-2">{err}</Notice> : null}
+          <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+          <Button
+            disabled={busy || !name.trim() || !universityId.trim()}
+            onClick={async () => {
+              setBusy(true);
+              setErr('');
+              try {
+                if (initial.id) {
+                  await updateOrganization(initial.id, campusId || null, name.trim());
+                } else {
+                  await createOrganization(universityId.trim(), campusId || null, name.trim());
+                }
+                await onSaved();
+              } catch (e) {
+                setErr(e instanceof Error ? e.message : 'Failed to save');
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Save
+          </Button>
+        </>
+      }
+    >
+      <Field label="Organisation name">
+        <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Computer Science Club" />
+      </Field>
+      <Field label="University">
+        <Select value={universityId} onChange={(e) => setUniversityId(e.target.value)}>
+          <option value="" disabled>Select university</option>
           {universities.map(u => (
             <option key={u.id} value={u.id}>{u.id.toUpperCase()} - {u.name}</option>
           ))}
-        </select>
-      </label>
-
-      <label className="block">
-        <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Campus (Optional)</div>
-        <select
-          value={campusId}
-          onChange={(e) => setCampusId(e.target.value)}
-          className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-        >
-          <option value="">All Campuses</option>
+        </Select>
+      </Field>
+      <Field label="Campus (optional)">
+        <Select value={campusId} onChange={(e) => setCampusId(e.target.value)}>
+          <option value="">All campuses</option>
           {availableCampuses.map(c => (
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
-        </select>
-      </label>
-
-      {err ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
-          {err}
-        </div>
-      ) : null}
-
-      <div className="flex flex-wrap gap-2 pt-4">
-        <button
-          disabled={busy || !name.trim() || !universityId.trim()}
-          className="h-11 rounded-2xl bg-brand-600 px-4 text-sm font-black text-white shadow-soft hover:bg-brand-700 disabled:opacity-70"
-          onClick={async () => {
-            setBusy(true);
-            setErr('');
-            try {
-              if (initial.id) {
-                await updateOrganization(initial.id, campusId || null, name.trim());
-              } else {
-                await createOrganization(universityId.trim(), campusId || null, name.trim());
-              }
-              await onSaved();
-            } catch (e) {
-              setErr(e instanceof Error ? e.message : 'Failed to save');
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          Save
-        </button>
-        <button
-          className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-900 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-          onClick={onCancel}
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
+        </Select>
+      </Field>
+    </SidePanel>
   );
 }

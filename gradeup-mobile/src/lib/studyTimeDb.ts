@@ -26,15 +26,23 @@ export async function getStudySettings(userId: string): Promise<RevisionSettings
 
 /** All study time rows for the user (newest first). Used to display all saved study times in the app. */
 export async function getAllStudySettings(userId: string): Promise<RevisionSettings[]> {
+  try {
+    return await getAllStudySettingsStrict(userId);
+  } catch {
+    return [];
+  }
+}
+
+/** Same query as getAllStudySettings, but preserves network/RLS failures for offline-aware callers. */
+export async function getAllStudySettingsStrict(userId: string): Promise<RevisionSettings[]> {
   const { data, error } = await supabase
     .from(STUDY_TABLE)
     .select('*')
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
 
-  if (error || !data) {
-    return [];
-  }
+  if (error) throw new Error(error.message || 'Failed to load study times');
+  if (!data) return [];
 
   return data.map((row) => rowToRevisionSettings(row as Record<string, unknown>));
 }
@@ -45,7 +53,7 @@ export async function upsertStudySettings(userId: string, settings: RevisionSett
   const mm = (minuteStr ?? '00').padStart(2, '0');
   const time24 = `${hh}:${mm}:00`;
 
-  await supabase.from(STUDY_TABLE).insert(
+  const { error } = await supabase.from(STUDY_TABLE).insert(
     {
       user_id: userId,
       enabled: settings.enabled,
@@ -58,6 +66,9 @@ export async function upsertStudySettings(userId: string, settings: RevisionSett
       single_date: settings.singleDate ?? null,
     }
   );
+  // Was ignored: an insert lost offline or blocked by RLS looked saved, and the
+  // study time then silently disappeared on the next load.
+  if (error) throw new Error(error.message || 'Failed to save study time');
 }
 
 export async function deleteStudySetting(userId: string, id: string): Promise<void> {

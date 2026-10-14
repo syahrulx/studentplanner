@@ -1,0 +1,124 @@
+/**
+ * Plug-in avatar items. Each category file (hair.ts, top.ts, …) lists its new
+ * items and how to draw them; avatar.ts calls these at the right layer.
+ *
+ * Coordinates (same as the built-in items in avatar.ts):
+ *   - The body grid is 24 wide (x 0–23). R/px add the sprite offset for you,
+ *     and anything outside the 28×38 sprite is clipped.
+ *   - Rows: hair tops can go up to y = -5; head skin y 2–15 (face x 5–18);
+ *     eyes y 8–11 at x = 7+fx and 15+fx (2 wide each); cheeks y 12; mouth
+ *     y 13 at x 11+fx; torso y 16–23 (x 7–16); arms x 5–6 and 17–18 (y 16–23);
+ *     legs y 24–28 (left x 8–10, right x 13–15); shoes y 29–30 per foot.
+ *   - `fx` is 2 in the three-quarter view (facing right; facing left is the
+ *     same drawing mirrored), 0 facing front. `back` is true from behind.
+ *   - Everything gets a dark outline automatically; don't draw outlines.
+ */
+
+export type Fill = string | ((x: number, y: number) => string) | null;
+
+/** What a drawing function gets. */
+export type Painter = {
+  /** Fill a rectangle of the body grid (x, y, width, height, colour). */
+  R: (x: number, y: number, w: number, h: number, c: Fill) => void;
+  /** One pixel. */
+  px: (x: number, y: number, c: Fill) => void;
+  back: boolean;
+  /** 2 in the three-quarter view, 0 facing front. */
+  fx: number;
+  /** Milliseconds, for animation. */
+  t: number;
+  /** Walk cycle 0–3. lUp / rUp are 1 when that foot is lifted. */
+  frame: number;
+  lUp: number;
+  rUp: number;
+  /** Skin and its shadow. */
+  sk: string;
+  skS: string;
+  /** Hair colour (may be a function for dyes), shadow, highlight. */
+  hc: Fill;
+  hS: Fill;
+  hH: Fill;
+  /** Chosen top, bottom, shoe and eye colours (+ shadows / lights). */
+  tc: string;
+  tS: string;
+  bc: string;
+  bS: string;
+  sc: string;
+  scD: string;
+  scL: string;
+  ec: string;
+  gold: string;
+  /** Dark line colour used for eyes and details. */
+  ink: string;
+  /** Lighten (amount > 0) or darken (< 0) a #hex colour. */
+  shade: (hex: string, amount: number) => string;
+  hsl: (h: number, s: number, l: number) => string;
+  /** Built-in body parts to reuse. */
+  torso: (c: string) => void;
+  armsShort: (c: string) => void;
+  armsLong: (c: string, hand?: string) => void;
+  legs: (c: Fill, shadow: Fill) => void;
+  /** The basic hair cap over the top of the head (uses the hair colour). */
+  cap: () => void;
+};
+
+/** Canvas helpers for effects (drawn on the screen canvas, not the grid). */
+export type FxKit = {
+  /** Screen x/y of grid point (gx, gy): ox + (gx + 2) * s, oy + (gy + 5) * s. */
+  X: (gx: number) => number;
+  Y: (gy: number) => number;
+  s: number;
+  t: number;
+  star: (x: number, y: number, size: number, col: string, alpha: number) => void;
+  heart: (x: number, y: number, size: number, col: string, alpha: number) => void;
+  /** Soft round glow: rgb like "255,200,80". */
+  glow: (x: number, y: number, r: number, rgb: string, alpha: number) => void;
+  /** n points circling (cx, cy); only those on this side (front/behind) are drawn. */
+  orbit: (
+    n: number,
+    speed: number,
+    draw: (x: number, y: number, i: number) => void,
+    cx: number,
+    cy: number,
+    rx: number,
+    ry: number,
+  ) => void;
+  /** n particles; phase goes 0→1 over `ms`, staggered. */
+  particles: (n: number, ms: number, draw: (i: number, phase: number) => void) => void;
+  /** True when the avatar is sitting (skip foot effects). */
+  seated: boolean;
+};
+
+export type ExtraItem = {
+  /** Main drawing. Hair: the whole hairstyle (call p.cap() yourself in front view). */
+  draw?: (p: Painter) => void;
+  /** Drawn behind the body: long hair down the back, wings, bags (both views). */
+  behind?: (p: Painter) => void;
+  /** Back items: straps etc. over the torso, front view only. */
+  front?: (p: Painter) => void;
+  /** Shoes: draw one shoe with its top-left at (x, y); called once per foot. */
+  shoe?: (p: Painter, x: number, y: number) => void;
+  /** Pets: draw into a 14×14 grid with Q(x, y, w, h, colour), facing right. */
+  pet?: (Q: (x: number, y: number, w: number, h: number, c: string) => void, t: number) => void;
+  /** Screen-canvas effects behind / in front of the avatar (any category). */
+  fxBehind?: (c: CanvasRenderingContext2D, k: FxKit) => void;
+  fxFront?: (c: CanvasRenderingContext2D, k: FxKit) => void;
+  /** Has moving parts (redrawn every few frames). */
+  animated?: boolean;
+  /** Head items that cover all the hair (hijab, hoods). */
+  hidesHair?: boolean;
+  /** Eyes that stay open when blinking. */
+  noBlink?: boolean;
+};
+
+export type ItemTier = "free" | "coins" | "plus" | "pro" | "premium";
+
+export type NewItem = {
+  id: string;
+  name: string;
+  tier: ItemTier;
+  /** Coins only. */
+  price?: number;
+};
+
+export type CategoryItems = { items: NewItem[]; draw: Record<string, ExtraItem> };

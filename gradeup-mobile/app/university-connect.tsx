@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, Pressable, ScrollView, FlatList,
-  StyleSheet, Platform, Alert, ActivityIndicator, KeyboardAvoidingView,
-} from 'react-native';
+  StyleSheet, Platform, Alert, ActivityIndicator, } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
@@ -26,6 +25,7 @@ import {
 import MatricOtpVerify from '@/components/MatricOtpVerify';
 import VerificationErrorModal from '@/components/VerificationErrorModal';
 import type { UniversityConfig, TimetableEntry, DayOfWeek, Course } from '@/src/types';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 type Step =
   | 'university' | 'terms' | 'login' | 'verify'
@@ -443,7 +443,7 @@ export default function UniversityConnectScreen() {
     const isCurrentVerified = !!verifiedMatric && verifiedMatric === currentMatric;
 
     return (
-    <KeyboardAvoidingView style={styles.flex1} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingScreen style={styles.flex1} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView style={styles.scrollBody} contentContainerStyle={styles.scrollContent}>
         <View style={[styles.loginCard, { backgroundColor: theme.card }]}>
           <View style={styles.loginHeader}>
@@ -516,14 +516,14 @@ export default function UniversityConnectScreen() {
           </Text>
         </Pressable>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingScreen>
     );
   };
 
   /* ── Validating login ───────────────────────────────── */
   /* ── Prove the matric belongs to this user ──────────── */
   const renderVerify = () => (
-    <KeyboardAvoidingView style={styles.flex1} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingScreen style={styles.flex1} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
         style={styles.scrollBody}
         contentContainerStyle={styles.scrollContent}
@@ -535,7 +535,7 @@ export default function UniversityConnectScreen() {
           onChangeId={() => setStep('login')}
         />
       </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingScreen>
   );
 
   const renderValidating = () => (

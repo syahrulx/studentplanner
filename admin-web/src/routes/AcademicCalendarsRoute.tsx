@@ -5,11 +5,12 @@ import { CrowdsourcedCalendarsRoute } from './CrowdsourcedCalendarsRoute';
 export function AcademicCalendarsRoute() {
   return (
     <AdminSectionTabs
-      title="Academic Calendars"
-      description="Publish official calendars and review community contributions in one place. Existing calendar data is unchanged."
+      title="Academic calendars"
+      description="Publish official university calendars and review the calendars students send in."
       tabs={[
-        { id: 'official', label: 'Official calendars', description: 'University calendars published by the team.', content: <CalendarUpdatesRoute /> },
-        { id: 'community', label: 'Community submissions', description: 'Crowdsourced and UiTM calendar review.', content: <CrowdsourcedCalendarsRoute /> },
+        { id: 'official', label: 'Official calendars', description: 'Set a university’s semester dates. Students there get them automatically.', content: <CalendarUpdatesRoute /> },
+        { id: 'offers', label: 'Existing offers', description: 'Every published calendar offer, grouped by university.', content: <CalendarUpdatesRoute view="offers" /> },
+        { id: 'community', label: 'Community submissions', description: 'Review UiTM submissions and calendars students published from the app.', content: <CrowdsourcedCalendarsRoute /> },
       ]}
     />
   );

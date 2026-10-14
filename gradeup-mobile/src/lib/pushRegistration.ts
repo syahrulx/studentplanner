@@ -18,7 +18,9 @@ function getExpoProjectId(): string | undefined {
  * That row is shared with the `last_active_at` bump, and concentrated writes on
  * a single row are what turns a busy period into lock contention.
  */
-const PUSH_SYNC_CACHE_KEY = 'push_token_sync_v1';
+// v2: v1 caches could hold a raw device token (see subscribeExpoPushTokenUpdates),
+// so a new key makes every phone re-save its Expo token on the first launch.
+const PUSH_SYNC_CACHE_KEY = 'push_token_sync_v2';
 
 /**
  * How long a successful sync is trusted before we re-check. Rotation does not
@@ -59,6 +61,14 @@ async function writeSyncCache(entry: PushSyncCache): Promise<void> {
   }
 }
 
+/**
+ * Only Expo push tokens can be sent to by our push functions (Expo's push API).
+ * A raw APNs/FCM device token saved here silently stops every push to that
+ * student — about half the students in one campus check on 2026-10-13.
+ */
+const isExpoPushToken = (token: unknown): token is string =>
+  typeof token === 'string' && /^Expo(nent)?PushToken\[.+\]$/.test(token);
+
 function currentPlatform(): string | null {
   return Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : null;
 }
@@ -92,7 +102,7 @@ export async function syncExpoPushTokenToProfile(userId: string): Promise<void> 
     }
 
     const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
-    if (!token) return;
+    if (!isExpoPushToken(token)) return;
 
     // Past the recheck window but the values still match: refresh the local
     // timestamp and leave the row alone.
@@ -121,23 +131,45 @@ export async function syncExpoPushTokenToProfile(userId: string): Promise<void> 
   }
 }
 
-/** Re-save token when Expo rotates it (e.g. reinstall). */
+/**
+ * Re-save the Expo token when the device token rotates (e.g. reinstall).
+ *
+ * The listener is handed the phone's RAW device token (APNs/FCM), not the Expo
+ * token, and it also fires whenever getExpoPushTokenAsync runs at launch. It
+ * used to save that raw token over the Expo one, so pushes to the student
+ * stopped. Now it only takes the event as a signal and asks Expo for the
+ * proper token.
+ */
 export function subscribeExpoPushTokenUpdates(getUserId: () => string | null): () => void {
   const platform = currentPlatform();
-  const sub = Notifications.addPushTokenListener(({ data: token }) => {
+  let busy = false;
+  const sub = Notifications.addPushTokenListener(() => {
     const uid = getUserId();
-    if (!uid || !token) return;
+    const projectId = getExpoProjectId();
+    // Fetching the Expo token fires this listener again; ignore that echo.
+    if (!uid || !projectId || busy) return;
+    busy = true;
     void (async () => {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          expo_push_token: token,
-          expo_push_token_updated_at: new Date().toISOString(),
-          ...(platform ? { device_platform: platform } : {}),
-        })
-        .eq('id', uid);
-      // Keep the cache in step so the next launch does not repeat this write.
-      if (!error) await writeSyncCache({ userId: uid, token, platform, syncedAt: Date.now() });
+      try {
+        const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
+        if (!isExpoPushToken(token)) return;
+        const cached = await readSyncCache();
+        if (cached && cached.userId === uid && cached.token === token && cached.platform === platform) return;
+        const { error } = await supabase
+          .from('profiles')
+          .update({
+            expo_push_token: token,
+            expo_push_token_updated_at: new Date().toISOString(),
+            ...(platform ? { device_platform: platform } : {}),
+          })
+          .eq('id', uid);
+        // Keep the cache in step so the next launch does not repeat this write.
+        if (!error) await writeSyncCache({ userId: uid, token, platform, syncedAt: Date.now() });
+      } catch (e) {
+        if (__DEV__) console.warn('[push] token rotation sync skipped:', e);
+      } finally {
+        busy = false;
+      }
     })();
   });
   return () => sub.remove();

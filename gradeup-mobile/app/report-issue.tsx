@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -19,6 +18,7 @@ import { useApp } from '@/src/context/AppContext';
 import { useTheme } from '@/hooks/useTheme';
 import { useTranslations } from '@/src/i18n';
 import { reportErrorMessage, submitUserReport, uploadSupportScreenshot, type UserReportKind } from '@/src/lib/reportsApi';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 const PAD = 20;
 const RADIUS = 14;
@@ -128,7 +128,7 @@ export default function ReportIssueScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardAvoidingScreen
       style={{ flex: 1, backgroundColor: theme.background }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
@@ -335,7 +335,7 @@ export default function ReportIssueScreen() {
           {T('reportFootnote')}
         </Text>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingScreen>
   );
 }
 

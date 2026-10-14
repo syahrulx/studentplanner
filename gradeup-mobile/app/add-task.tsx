@@ -8,7 +8,6 @@ import {
   Modal,
   Platform,
   ActivityIndicator,
-  KeyboardAvoidingView,
   FlatList,
   ScrollView,
   Alert,
@@ -40,6 +39,7 @@ import { useTheme, useThemeId } from '@/hooks/useTheme';
 import type { ThemePalette } from '@/constants/Themes';
 import SubjectPickerSheet from '@/components/SubjectPickerSheet';
 import ThemedDateTimePicker from '@/components/ThemedDateTimePicker';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 /** Sentinel id used to represent "no subject" (task not tied to a course). */
 const NO_SUBJECT_ID = '';
@@ -531,7 +531,7 @@ export default function AddTask() {
   );
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardAvoidingScreen
       style={[styles.flex, { backgroundColor: theme.backgroundSecondary }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
@@ -1085,7 +1085,7 @@ export default function AddTask() {
           </Pressable>
         </Modal>
       )}
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingScreen>
   );
 }
 

@@ -565,6 +565,8 @@ export interface NotificationPrefs {
   weeklySummaryDay: number;   // 0=Sun … 6=Sat
   weeklySummaryTime: string;  // "HH:mm"
   todaysFocusPref: 'all' | 'task' | 'study' | 'exam';
+  /** What the Home screen shows for a subject: its code (EPPA4023) or its name. */
+  subjectLabel: 'code' | 'name';
 }
 
 const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
@@ -581,6 +583,7 @@ const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   weeklySummaryDay: 0,
   weeklySummaryTime: '20:00',
   todaysFocusPref: 'all',
+  subjectLabel: 'code',
 };
 
 export async function getNotificationPrefs(): Promise<NotificationPrefs> {
@@ -610,6 +613,7 @@ export async function getNotificationPrefs(): Promise<NotificationPrefs> {
           parsed.todaysFocusPref && ['all', 'task', 'study', 'exam'].includes(parsed.todaysFocusPref)
             ? parsed.todaysFocusPref
             : DEFAULT_NOTIFICATION_PREFS.todaysFocusPref,
+        subjectLabel: parsed.subjectLabel === 'name' ? 'name' : 'code',
       };
     }
   } catch {}

@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { deleteUitmContributions } from '../lib/adminAlerts';
 import {
   deleteExpiredCrowdsourcedCalendarOffers,
   listCrowdsourcedCalendarOffers,
@@ -8,13 +9,16 @@ import {
   type CrowdsourcedCalendarRow,
   type UitmCalendarContributionRow,
 } from '../lib/api';
-import { Card, CardContent } from '../ui/Card';
-import { Label, Select, TextInput } from '../ui/Input';
+import { Button } from '../ui/Button';
+import { Select, TextInput } from '../ui/Input';
+import { Chip, EmptyState, Notice, PageHeader, Panel, Pill, PillGroup, SkeletonRows } from '../ui/page';
 import { useAdminSearch } from '../state/AdminSearchContext';
-import { MotionPanel, MotionSection } from '../ui/motion';
 import { AcademicCalendarOfferGraphic } from '../components/AcademicCalendarOfferGraphic';
 import { useSafeActionDialog } from '../components/SafeActionDialog';
-import { duplicateRecordIds, normaliseRecordName } from '../lib/dataQuality';
+import { crowdsourcedDuplicates, uitmSuggestions } from '../lib/calendarReview';
+import { compareWithHea, describeHeaCheck, loadHeaPage, type HeaCheck, type HeaPage } from '../lib/uitmHea';
+import { CleanupBox, Field } from '../components/calendars/calendarUi';
+import { BTN_APPROVE, BTN_DANGER, BTN_DANGER_SOFT, BTN_SECONDARY, CHECKBOX, LINK_SM } from '../components/calendars/calendarStyles';
 
 export function CrowdsourcedCalendarsRoute() {
   const { requestSafeAction, safeActionDialog } = useSafeActionDialog();
@@ -30,6 +34,16 @@ export function CrowdsourcedCalendarsRoute() {
   const [deletingOfferId, setDeletingOfferId] = useState<string>('');
   const [deletingExpired, setDeletingExpired] = useState(false);
   const [reviewingUitmId, setReviewingUitmId] = useState('');
+  const [selectedUitmIds, setSelectedUitmIds] = useState<string[]>([]);
+  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'semester' | 'university' | 'reports'>('newest');
+  const [groupBy, setGroupBy] = useState<'none' | 'university' | 'duplicates'>('none');
+  const [uitmStatus, setUitmStatus] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [deletingDuplicates, setDeletingDuplicates] = useState(false);
+  // Compare-only hint against UiTM's official HEA calendar. Never approves or rejects.
+  const [heaPage, setHeaPage] = useState<HeaPage | null>(null);
+  const [heaErr, setHeaErr] = useState('');
+  const [heaLoading, setHeaLoading] = useState(false);
+  const [heaChecks, setHeaChecks] = useState<Map<string, HeaCheck>>(new Map());
 
   const refreshHistory = async () => {
     setBusy(true);
@@ -61,15 +75,53 @@ export function CrowdsourcedCalendarsRoute() {
 
   const expiredOffers = useMemo(() => offers.filter(isExpired), [offers, today]);
   const expiredIdSet = useMemo(() => new Set(expiredOffers.map((offer) => offer.id)), [expiredOffers]);
-  const redundantIds = useMemo(
-    () => duplicateRecordIds(offers, (offer) => [
-      offer.university_id,
-      offer.campus_id ?? 'all',
-      normaliseRecordName(offer.semester_label),
-      offer.start_date,
-      offer.end_date,
-    ].join('|')),
-    [offers],
+  // Copies students would see as one calendar, with one copy picked to keep.
+  const duplicates = useMemo(() => crowdsourcedDuplicates(offers), [offers]);
+  const redundantIds = useMemo(() => new Set(duplicates.keys()), [duplicates]);
+  const suggestedDeleteIds = useMemo(
+    () => [...duplicates.entries()].filter(([, info]) => !info.keep).map(([id]) => id),
+    [duplicates],
+  );
+  const loadHea = async (refresh = false) => {
+    setHeaLoading(true);
+    setHeaErr('');
+    try {
+      setHeaPage(await loadHeaPage(refresh));
+    } catch (e) {
+      setHeaErr(e instanceof Error ? e.message : 'Could not load HEA');
+    } finally {
+      setHeaLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (uitmContributions.length > 0 && !heaPage && !heaLoading && !heaErr) void loadHea();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uitmContributions.length]);
+
+  useEffect(() => {
+    if (!heaPage) return;
+    let cancelled = false;
+    void (async () => {
+      const next = new Map<string, HeaCheck>();
+      for (const row of uitmContributions) next.set(row.id, await compareWithHea(row, heaPage));
+      if (!cancelled) setHeaChecks(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [heaPage, uitmContributions]);
+
+  const uitmVerdicts = useMemo(() => uitmSuggestions(uitmContributions, today), [uitmContributions, today]);
+  const visibleUitm = useMemo(
+    () =>
+      uitmContributions
+        .filter((row) => uitmStatus === 'all' || row.status === uitmStatus)
+        .sort((a, b) =>
+          (a.status === 'pending' ? 0 : 1) - (b.status === 'pending' ? 0 : 1) ||
+          b.created_at.localeCompare(a.created_at),
+        ),
+    [uitmContributions, uitmStatus],
   );
 
   useEffect(() => {
@@ -99,8 +151,77 @@ export function CrowdsourcedCalendarsRoute() {
         if (!texts.some(t => t.includes(qLocal))) return false;
       }
       return true;
+    }).sort((a, b) => {
+      switch (sortBy) {
+        case 'oldest': return a.created_at.localeCompare(b.created_at);
+        case 'semester': return b.start_date.localeCompare(a.start_date) || b.created_at.localeCompare(a.created_at);
+        case 'university': return a.university_id.localeCompare(b.university_id) || b.start_date.localeCompare(a.start_date);
+        case 'reports': return (b.report_count ?? 0) - (a.report_count ?? 0) || b.created_at.localeCompare(a.created_at);
+        default: return b.created_at.localeCompare(a.created_at);
+      }
     });
-  }, [calendarAge, offers, offersSearch, searchQuery, today, redundantIds]);
+  }, [calendarAge, offers, offersSearch, searchQuery, today, redundantIds, sortBy]);
+
+  // Sections for the list. "Duplicates" puts every same-calendar group together
+  // (kept copy first) and leaves single calendars in a last section.
+  const offerSections = useMemo(() => {
+    if (groupBy === 'university') {
+      const byUni = new Map<string, CrowdsourcedCalendarRow[]>();
+      filteredOffers.forEach((o) => byUni.set(o.university_id, [...(byUni.get(o.university_id) ?? []), o]));
+      return [...byUni.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([uni, items]) => ({ key: uni, title: uni, subtitle: `${items.length} calendar(s)`, items }));
+    }
+    if (groupBy === 'duplicates') {
+      const byGroup = new Map<string, CrowdsourcedCalendarRow[]>();
+      const singles: CrowdsourcedCalendarRow[] = [];
+      filteredOffers.forEach((o) => {
+        const info = duplicates.get(o.id);
+        if (!info) singles.push(o);
+        else byGroup.set(info.groupKey, [...(byGroup.get(info.groupKey) ?? []), o]);
+      });
+      const groups = [...byGroup.values()].map((items) => {
+        const sorted = [...items].sort((a, b) => Number(duplicates.get(b.id)?.keep) - Number(duplicates.get(a.id)?.keep));
+        const first = sorted[0];
+        return {
+          key: duplicates.get(first.id)!.groupKey,
+          title: `${first.university_id} · ${first.start_date} to ${first.end_date}`,
+          subtitle: `${items.length} copies of the same calendar · keep 1, delete ${items.length - 1}`,
+          items: sorted,
+        };
+      });
+      return singles.length
+        ? [...groups, { key: 'singles', title: 'No duplicates', subtitle: `${singles.length} calendar(s)`, items: singles }]
+        : groups;
+    }
+    return [{ key: 'all', title: '', subtitle: '', items: filteredOffers }];
+  }, [filteredOffers, groupBy, duplicates]);
+
+  const deleteSuggestedDuplicates = () => {
+    const ids = suggestedDeleteIds;
+    if (!ids.length) return;
+    requestSafeAction({
+      title: 'Delete suggested duplicates',
+      operation: 'Delete calendars',
+      affectedCount: ids.length,
+      confirmationText: `DELETE ${ids.length}`,
+      requireReason: true,
+      irreversible: true,
+      warning: 'Deletes only the extra copies. One copy of each calendar (the one marked Keep) stays, so students still see it.',
+      onConfirm: async () => {
+        setErr(''); setOkMsg(''); setDeletingDuplicates(true);
+        let deleted = 0;
+        try {
+          for (const id of ids) {
+            try { await deleteUniversityCalendarOffer(id); deleted += 1; } catch { /* counted as failed below */ }
+          }
+          await refreshHistory();
+          setOkMsg(`${deleted} duplicate calendar${deleted === 1 ? '' : 's'} deleted.`);
+          return { affected: deleted, failed: ids.length - deleted };
+        } finally { setDeletingDuplicates(false); }
+      },
+    });
+  };
 
   const allExpiredSelected = expiredOffers.length > 0 && expiredOffers.every((offer) => selectedExpiredIds.includes(offer.id));
 
@@ -126,6 +247,34 @@ export function CrowdsourcedCalendarsRoute() {
     } });
   };
 
+  const toggleUitm = (id: string) =>
+    setSelectedUitmIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  const deleteSelectedUitm = () => {
+    const ids = selectedUitmIds.filter((id) => uitmContributions.some((r) => r.id === id));
+    if (!ids.length) return;
+    const chosen = uitmContributions.filter((r) => ids.includes(r.id));
+    const approved = chosen.filter((r) => r.status === 'approved').length;
+    requestSafeAction({
+      title: `Delete ${ids.length} UiTM submission${ids.length === 1 ? '' : 's'}`,
+      operation: 'Delete submissions',
+      affectedCount: ids.length,
+      confirmationText: `DELETE ${ids.length}`,
+      requireReason: true,
+      irreversible: true,
+      subject: `${chosen.filter((r) => r.status === 'pending').length} pending · ${approved} approved · ${chosen.filter((r) => r.status === 'rejected').length} rejected`,
+      warning: approved
+        ? `${approved} of these are APPROVED: UiTM students can see them now, and they will disappear for everyone. Pending and rejected ones are only removed from this list. This cannot be undone.`
+        : 'Removes these submissions for good. No student calendar changes: pending and rejected submissions are not shown to students.',
+      onConfirm: async (reason) => {
+        const n = await deleteUitmContributions(ids, reason);
+        setSelectedUitmIds([]);
+        await refreshHistory();
+        setOkMsg(`${n} UiTM submission${n === 1 ? '' : 's'} deleted.`);
+        return { affected: n, failed: Math.max(0, ids.length - n) };
+      },
+    });
+  };
+
   const reviewUitmContribution = async (row: UitmCalendarContributionRow, status: 'approved' | 'rejected') => {
     const action = status === 'approved' ? 'Approve' : 'Reject';
     const ok = window.confirm(
@@ -146,270 +295,397 @@ export function CrowdsourcedCalendarsRoute() {
     }
   };
 
+  // ── Button handlers (moved out of the JSX unchanged, so the layout can be read) ──
+
+  const resetAndRefresh = () => {
+    setOffersSearch('');
+    setCalendarAge('all');
+    setSelectedExpiredIds([]);
+    void refreshHistory();
+  };
+
+  const deleteOneOffer = async (h: CrowdsourcedCalendarRow) => {
+    const ok = window.confirm(
+      `Delete this crowdsourced offer from ${h.user_profile?.full_name || 'this user'}?\n\n${h.university_id}\n${h.semester_label}\n\nThis cannot be undone.`,
+    );
+    if (!ok) return;
+    setErr('');
+    setOkMsg('');
+    setDeletingOfferId(h.id);
+    try {
+      await deleteUniversityCalendarOffer(h.id);
+      await refreshHistory();
+      setOkMsg('Crowdsourced offer deleted.');
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Delete failed');
+    } finally {
+      setDeletingOfferId('');
+    }
+  };
+
+  // ── Display-only helpers ──
+
+  const uitmCount = (st: 'pending' | 'approved' | 'rejected' | 'all') =>
+    st === 'all' ? uitmContributions.length : uitmContributions.filter((r) => r.status === st).length;
+  const suggestedRejectRows = visibleUitm.filter((r) => uitmVerdicts.get(r.id)?.verdict === 'reject');
+  const loading = busy && offers.length === 0 && uitmContributions.length === 0;
+
   return (
-    <div className="space-y-8">
-      <MotionSection>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">
-              Crowdsourced Calendars
-            </div>
-            <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-              Academic calendars published by users directly from the mobile app.
-            </div>
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <button
-              type="button"
-              onClick={() => {
-                setOffersSearch('');
-                setCalendarAge('all');
-                setSelectedExpiredIds([]);
-                void refreshHistory();
-              }}
-              className="h-10 rounded-2xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-900 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
-            >
-              {busy ? 'Refreshing...' : 'Refresh'}
-            </button>
-          </div>
-        </div>
-      </MotionSection>
+    <div className="space-y-5">
+      <PageHeader
+        title="Community submissions"
+        description="Academic calendars published by users directly from the mobile app."
+        actions={
+          <Button type="button" variant="secondary" size="sm" onClick={resetAndRefresh}>
+            {busy ? 'Refreshing...' : 'Refresh'}
+          </Button>
+        }
+      />
 
-      {err ? (
-        <MotionPanel>
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
-            {err}
-          </div>
-        </MotionPanel>
-      ) : null}
+      {err ? <Notice tone="danger">{err}</Notice> : null}
+      {okMsg ? <Notice tone="success">{okMsg}</Notice> : null}
 
-      {okMsg ? (
-        <MotionPanel>
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-100">
-            {okMsg}
-          </div>
-        </MotionPanel>
-      ) : null}
-
-      <MotionSection delay={0.05}>
-        <div className="rounded-3xl border border-violet-200 bg-violet-50/60 p-4 dark:border-violet-900/50 dark:bg-violet-950/20">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <div>
-              <div className="text-base font-black text-slate-900 dark:text-slate-100">UiTM community submissions</div>
-              <div className="mt-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                Pending submissions never change a student’s calendar. Approved submissions are shown as an opt-in alternative to HEA.
-              </div>
-            </div>
-            <span className="rounded-full bg-violet-200 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-violet-900 dark:bg-violet-500/20 dark:text-violet-100">
-              {uitmContributions.filter((row) => row.status === 'pending').length} pending
-            </span>
-          </div>
-          <div className="mt-4 space-y-3">
-            {uitmContributions.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-violet-200 px-4 py-5 text-sm font-semibold text-violet-900 dark:border-violet-900/60 dark:text-violet-100">No UiTM community submissions yet.</div>
-            ) : uitmContributions.map((row) => (
-              <div key={row.id} className="rounded-2xl border border-violet-100 bg-white p-4 dark:border-violet-900/40 dark:bg-slate-950/40">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <div className="font-black text-slate-900 dark:text-slate-100">{row.semester_label}</div>
-                    <div className="mt-1 text-xs font-semibold text-slate-600 dark:text-slate-300">{row.start_date} to {row.end_date} · {row.total_weeks} weeks · Group {row.group_code} · {row.calendar_variant === 'kkt' ? 'Kedah/Kelantan/Terengganu' : 'Standard'}</div>
-                    <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Submitted by {row.user_profile?.full_name || row.user_profile?.email || 'Unknown user'} · {new Date(row.created_at).toLocaleString()}</div>
-                  </div>
-                  <span className={`self-start rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${row.status === 'approved' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200' : row.status === 'rejected' ? 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200'}`}>{row.status}</span>
-                </div>
-                <div className="mt-3 flex flex-wrap items-center gap-3 text-xs font-black">
-                  {row.source_url ? <a href={row.source_url} target="_blank" rel="noreferrer" className="text-brand-700 underline underline-offset-2 dark:text-brand-300">Open source</a> : null}
-                  {row.status === 'pending' ? (
-                    <>
-                      <button type="button" disabled={Boolean(reviewingUitmId)} onClick={() => void reviewUitmContribution(row, 'approved')} className="rounded-xl bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700 disabled:opacity-40">{reviewingUitmId === row.id ? 'Saving…' : 'Approve'}</button>
-                      <button type="button" disabled={Boolean(reviewingUitmId)} onClick={() => void reviewUitmContribution(row, 'rejected')} className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-red-700 hover:bg-red-100 disabled:opacity-40 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">Reject</button>
-                    </>
-                  ) : null}
-                </div>
-              </div>
+      {/* ── UiTM community submissions ── */}
+      <Panel
+        title="UiTM submissions"
+        description="Pending submissions never change a student’s calendar. Approved ones are shown as an opt-in alternative to HEA. Each pending one shows a suggestion: it is only advice, you still press Approve or Reject."
+        padded={false}
+      >
+        <div className="space-y-3 px-5 py-4">
+          <PillGroup label="Status">
+            {(['pending', 'approved', 'rejected', 'all'] as const).map((st) => (
+              <Pill key={st} active={uitmStatus === st} count={uitmCount(st)} alert={st === 'pending'} onClick={() => setUitmStatus(st)}>
+                {st === 'all' ? 'All' : st.charAt(0).toUpperCase() + st.slice(1)}
+              </Pill>
             ))}
-          </div>
-        </div>
-      </MotionSection>
-
-      <MotionSection delay={0.1}>
-        <div className="mt-4 rounded-3xl border border-blue-100 bg-blue-50/50 p-4 dark:border-blue-900/30 dark:bg-blue-950/20">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Label className="block">
-              <span className="mb-1 block text-xs font-black uppercase tracking-wide text-blue-600 dark:text-blue-300">
-                Search
+          </PillGroup>
+          {uitmContributions.length ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              <span>
+                {heaLoading
+                  ? 'Checking against UiTM HEA calendar…'
+                  : heaErr
+                    ? `Couldn't load the HEA calendar (${heaErr}). Suggestions below still work.`
+                    : heaPage
+                      ? `Compared with UiTM HEA calendar, read ${new Date(heaPage.fetchedAt).toLocaleString()}${heaPage.stale ? ' (old copy, HEA did not answer)' : ''}. Only a hint.`
+                      : ''}
               </span>
+              <button type="button" disabled={heaLoading} onClick={() => void loadHea(true)} className={LINK_SM}>
+                Check HEA again
+              </button>
+            </div>
+          ) : null}
+          {visibleUitm.length ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-slate-50 px-3 py-2 dark:bg-slate-950/40">
+              <label className="flex cursor-pointer items-center gap-2 text-xs font-black text-slate-700 dark:text-slate-200">
+                <input
+                  type="checkbox"
+                  className={CHECKBOX}
+                  checked={visibleUitm.every((r) => selectedUitmIds.includes(r.id))}
+                  onChange={(e) => setSelectedUitmIds(e.target.checked ? visibleUitm.map((r) => r.id) : [])}
+                />
+                Select all shown ({visibleUitm.length})
+              </label>
+              {visibleUitm.some((r) => uitmVerdicts.get(r.id)?.verdict === 'reject') ? (
+                <button
+                  type="button"
+                  onClick={() => setSelectedUitmIds(visibleUitm.filter((r) => uitmVerdicts.get(r.id)?.verdict === 'reject').map((r) => r.id))}
+                  className={BTN_SECONDARY}
+                >
+                  Tick suggested “Reject” ({suggestedRejectRows.length})
+                </button>
+              ) : null}
+              <button type="button" disabled={selectedUitmIds.length === 0} onClick={deleteSelectedUitm} className={`ml-auto ${BTN_DANGER}`}>
+                Delete selected ({selectedUitmIds.length})
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        {loading ? (
+          <div className="px-5 pb-5"><SkeletonRows rows={2} height="h-24" /></div>
+        ) : visibleUitm.length === 0 ? (
+          <div className="px-5 pb-5">
+            <EmptyState title={uitmContributions.length === 0 ? 'No UiTM community submissions yet.' : `No ${uitmStatus} submissions.`} />
+          </div>
+        ) : (
+          <ul className="divide-y divide-slate-100 border-t border-slate-100 dark:divide-slate-800 dark:border-slate-800">
+            {visibleUitm.map((row) => {
+              const v = uitmVerdicts.get(row.id);
+              const hea = heaChecks.get(row.id);
+              return (
+                <li key={row.id} className="flex gap-3 px-5 py-4">
+                  <input
+                    type="checkbox"
+                    className={`${CHECKBOX} mt-1`}
+                    aria-label={`Select ${row.semester_label}`}
+                    checked={selectedUitmIds.includes(row.id)}
+                    onChange={() => toggleUitm(row.id)}
+                  />
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-black text-slate-900 dark:text-slate-100">{row.semester_label}</div>
+                        <div className="mt-0.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                          {row.start_date} to {row.end_date} · {row.total_weeks} weeks · Group {row.group_code} · {row.calendar_variant === 'kkt' ? 'Kedah/Kelantan/Terengganu' : 'Standard'}
+                        </div>
+                        <div className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                          Submitted by {row.user_profile?.full_name || row.user_profile?.email || 'Unknown user'} · {new Date(row.created_at).toLocaleString()}
+                        </div>
+                      </div>
+                      <Chip tone={row.status === 'approved' ? 'success' : row.status === 'rejected' ? 'neutral' : 'warning'}>
+                        {row.status.charAt(0).toUpperCase() + row.status.slice(1)}
+                      </Chip>
+                    </div>
+                    {v ? (
+                      <div className="flex flex-wrap items-baseline gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                        <Chip tone={v.verdict === 'approve' ? 'success' : v.verdict === 'reject' ? 'danger' : 'warning'}>
+                          {v.verdict === 'approve' ? 'Suggested: Approve' : v.verdict === 'reject' ? 'Suggested: Reject' : 'Check first'}
+                        </Chip>
+                        <span className="min-w-0">{v.reason}</span>
+                      </div>
+                    ) : null}
+                    {hea ? (
+                      <div className="flex flex-wrap items-baseline gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                        <Chip tone={hea.kind === 'match' ? 'success' : hea.kind === 'differs' ? 'warning' : 'neutral'}>
+                          {hea.kind === 'match' ? 'Matches HEA' : hea.kind === 'differs' ? 'Differs from HEA' : hea.kind === 'not_on_hea' ? 'Not on HEA yet' : "Couldn't check HEA"}
+                        </Chip>
+                        <span className="min-w-0">{describeHeaCheck(hea)}</span>
+                      </div>
+                    ) : null}
+                    {row.source_url || row.status === 'pending' ? (
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        {row.status === 'pending' ? (
+                          <>
+                            <button type="button" disabled={Boolean(reviewingUitmId)} onClick={() => void reviewUitmContribution(row, 'approved')} className={BTN_APPROVE}>
+                              {reviewingUitmId === row.id ? 'Saving…' : 'Approve'}
+                            </button>
+                            <button type="button" disabled={Boolean(reviewingUitmId)} onClick={() => void reviewUitmContribution(row, 'rejected')} className={BTN_DANGER_SOFT}>
+                              Reject
+                            </button>
+                          </>
+                        ) : null}
+                        {row.source_url ? (
+                          <a href={row.source_url} target="_blank" rel="noreferrer" className={`${LINK_SM} ml-1`}>
+                            Open source
+                          </a>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Panel>
+
+      {/* ── Crowdsourced calendars (other universities) ── */}
+      <Panel
+        title="Crowdsourced calendars"
+        description="Calendars students published for their university from the app."
+      >
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+            <Field label="Search">
               <TextInput
                 value={offersSearch}
                 onChange={(e) => setOffersSearch(e.target.value)}
                 placeholder="Search university, semester, user email, name…"
-                className="border-blue-200 focus:border-blue-500"
               />
-            </Label>
-            <Label className="block">
-              <span className="mb-1 block text-xs font-black uppercase tracking-wide text-blue-600 dark:text-blue-300">
-                Calendar status
-              </span>
-              <Select value={calendarAge} onChange={(e) => setCalendarAge(e.target.value as 'all' | 'expired' | 'redundant')} className="border-blue-200 focus:border-blue-500">
-                <option value="all">All calendars</option>
-                <option value="expired">Old academic calendars</option>
-                <option value="redundant">Redundant calendars ({redundantIds.size})</option>
+            </Field>
+            <Field label="Sort by">
+              <Select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}>
+                <option value="newest">Newest submitted</option>
+                <option value="oldest">Oldest submitted</option>
+                <option value="semester">Semester start (latest first)</option>
+                <option value="university">University A–Z</option>
+                <option value="reports">Most reported</option>
               </Select>
-            </Label>
+            </Field>
           </div>
-          <div className="mt-2 text-xs font-semibold text-blue-500 dark:text-blue-400">
-            Showing <span className="font-black">{filteredOffers.length}</span> crowdsourced offer(s)
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            <PillGroup label="Show">
+              <Pill active={calendarAge === 'all'} onClick={() => setCalendarAge('all')}>All calendars</Pill>
+              <Pill active={calendarAge === 'expired'} onClick={() => setCalendarAge('expired')} title="End date is before today">
+                Old academic calendars
+              </Pill>
+              <Pill active={calendarAge === 'redundant'} count={redundantIds.size} onClick={() => setCalendarAge('redundant')}>
+                Redundant calendars
+              </Pill>
+            </PillGroup>
+            <PillGroup label="Group">
+              <Pill active={groupBy === 'none'} onClick={() => setGroupBy('none')}>No grouping</Pill>
+              <Pill active={groupBy === 'university'} onClick={() => setGroupBy('university')}>University</Pill>
+              <Pill active={groupBy === 'duplicates'} onClick={() => setGroupBy('duplicates')}>Duplicates together</Pill>
+            </PillGroup>
+          </div>
+          <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+            Showing <span className="font-black text-slate-700 dark:text-slate-200">{filteredOffers.length}</span> crowdsourced offer(s)
             {searchQuery.trim() ? ' (also filtered by top search bar)' : ''}.
-            {expiredOffers.length ? ` ${expiredOffers.length} old calendar${expiredOffers.length === 1 ? '' : 's'} can be cleaned up.` : ''}
           </div>
-        </div>
 
-        {expiredOffers.length ? (
-          <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/50 dark:bg-amber-950/30">
-            <label className="inline-flex cursor-pointer items-center gap-3 text-sm font-bold text-amber-950 dark:text-amber-100">
-              <input
-                type="checkbox"
-                checked={allExpiredSelected}
-                onChange={toggleAllExpired}
-                disabled={deletingExpired}
-              />
-              <span>Select all old calendars ({expiredOffers.length})</span>
-            </label>
-            <button
-              type="button"
-              onClick={() => void deleteSelectedExpired()}
-              disabled={selectedExpiredIds.length === 0 || deletingExpired}
-              className="h-10 rounded-xl bg-red-600 px-4 text-xs font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {deletingExpired ? 'Deleting…' : `Delete selected (${selectedExpiredIds.length})`}
-            </button>
-          </div>
-        ) : null}
-
-        <div className="mt-6 space-y-6">
-          {filteredOffers.map((h) => (
-            <Card key={h.id} className="border-blue-200 dark:border-blue-900/50 shadow-sm hover:shadow-md transition-shadow">
-              <CardContent className="space-y-4 py-5">
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-slate-100 pb-4 dark:border-slate-800">
-                  <div className="flex items-center gap-4">
-                    {isExpired(h) ? (
+          {expiredOffers.length || suggestedDeleteIds.length ? (
+            <div className="grid gap-3 lg:grid-cols-2">
+              {expiredOffers.length ? (
+                <CleanupBox
+                  tone="warning"
+                  title={
+                    <label className="inline-flex cursor-pointer items-center gap-3">
                       <input
                         type="checkbox"
-                        checked={selectedExpiredIds.includes(h.id)}
-                        onChange={() => toggleExpiredOffer(h.id)}
+                        className={CHECKBOX}
+                        checked={allExpiredSelected}
+                        onChange={toggleAllExpired}
                         disabled={deletingExpired}
-                        aria-label={`Select expired calendar ${h.semester_label}`}
                       />
-                    ) : null}
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-xl dark:bg-blue-900/50">
-                      👤
-                    </div>
-                    <div>
-                      <div className="text-sm font-black text-slate-900 dark:text-slate-100">
-                        {h.user_profile?.full_name || 'Unknown User'}
-                      </div>
-                      <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                        {h.user_profile?.email || 'No email provided'} 
-                        {h.user_profile?.phone_number ? ` • ${h.user_profile.phone_number}` : ''}
-                      </div>
-                      <div className="mt-1 text-[10px] font-black uppercase tracking-wide text-blue-600 dark:text-blue-400">
-                        Submitted: {new Date(h.created_at).toLocaleString()}
-                      </div>
-                      {isExpired(h) ? (
-                        <div className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
-                          Old calendar · ended {h.end_date}
-                        </div>
-                      ) : null}
-                      {redundantIds.has(h.id) ? (
-                        <div className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
-                          Redundant · remove only the chosen submission
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-3">
-                    {(h.report_count ?? 0) > 0 ? (
-                      <div className="rounded-xl border border-red-500 bg-red-100 px-3 py-1.5 text-xs font-black text-red-700 shadow-sm dark:border-red-900 dark:bg-red-950 dark:text-red-300 flex items-center gap-1">
-                        <span className="text-sm">🚨</span> {h.report_count} Reports
-                      </div>
-                    ) : null}
+                      <span>Select all old calendars ({expiredOffers.length})</span>
+                    </label>
+                  }
+                  action={
                     <button
                       type="button"
-                      className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-100 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-400 dark:hover:bg-red-900/60 transition-colors"
-                      disabled={Boolean(deletingOfferId) || deletingExpired}
-                      onClick={async () => {
-                        const ok = window.confirm(
-                          `Delete this crowdsourced offer from ${h.user_profile?.full_name || 'this user'}?\n\n${h.university_id}\n${h.semester_label}\n\nThis cannot be undone.`,
-                        );
-                        if (!ok) return;
-                        setErr('');
-                        setOkMsg('');
-                        setDeletingOfferId(h.id);
-                        try {
-                          await deleteUniversityCalendarOffer(h.id);
-                          await refreshHistory();
-                          setOkMsg('Crowdsourced offer deleted.');
-                        } catch (e) {
-                          setErr(e instanceof Error ? e.message : 'Delete failed');
-                        } finally {
-                          setDeletingOfferId('');
-                        }
-                      }}
+                      onClick={() => void deleteSelectedExpired()}
+                      disabled={selectedExpiredIds.length === 0 || deletingExpired}
+                      className={BTN_DANGER}
                     >
-                      {deletingOfferId === h.id ? 'Deleting…' : 'Delete Offer'}
+                      {deletingExpired ? 'Deleting…' : `Delete selected (${selectedExpiredIds.length})`}
                     </button>
-                  </div>
-                </div>
-
-                <div className="pt-2">
-                  <div className="mb-3 text-sm font-black text-slate-700 dark:text-slate-300">
-                    Calendar Details
-                  </div>
-                  <AcademicCalendarOfferGraphic
-                    offer={h}
-                    universityName={h.university_id}
-                  />
-                </div>
-
-                {h.admin_note ? (
-                  <div className="mt-4 rounded-xl bg-slate-50 p-3 text-sm font-semibold text-slate-600 dark:bg-slate-900 dark:text-slate-300 border border-slate-100 dark:border-slate-800">
-                    <span className="font-black text-slate-900 dark:text-slate-100">Note: </span>
-                    {h.admin_note}
-                  </div>
-                ) : null}
-                
-                <div className="flex flex-wrap gap-3 pt-2 text-xs font-bold">
-                  {h.official_url ? (
-                    <a href={h.official_url} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-blue-600 hover:underline dark:text-blue-400">
-                      🔗 Original URL
-                    </a>
-                  ) : null}
-                  {h.reference_pdf_url ? (
-                    <a
-                      href={h.reference_pdf_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-1 text-blue-600 hover:underline dark:text-blue-400"
+                  }
+                >
+                  Or tick single old calendars in the list below.
+                </CleanupBox>
+              ) : null}
+              {suggestedDeleteIds.length ? (
+                <CleanupBox
+                  tone="danger"
+                  title={`${duplicates.size - suggestedDeleteIds.length} calendar(s) have extra copies. ${suggestedDeleteIds.length} copy(ies) can go; one of each is kept.`}
+                  action={
+                    <button
+                      type="button"
+                      onClick={deleteSuggestedDuplicates}
+                      disabled={deletingDuplicates || Boolean(deletingOfferId) || deletingExpired}
+                      className={BTN_DANGER}
                     >
-                      📄 Reference PDF
-                    </a>
-                  ) : null}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-          {filteredOffers.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 py-16 text-center dark:border-slate-800">
-              <span className="text-4xl mb-4">📭</span>
-              <div className="text-lg font-black text-slate-900 dark:text-slate-100">No crowdsourced offers yet</div>
-              <div className="mt-1 text-sm font-medium text-slate-500 dark:text-slate-400 max-w-md">
-                When users publish their academic calendars from the mobile app, they will appear here for you to review.
-              </div>
+                      {deletingDuplicates ? 'Deleting…' : `Delete suggested duplicates (${suggestedDeleteIds.length})`}
+                    </button>
+                  }
+                >
+                  <button type="button" onClick={() => { setGroupBy('duplicates'); setCalendarAge('redundant'); }} className="font-black underline underline-offset-2">
+                    Show them
+                  </button>
+                </CleanupBox>
+              ) : null}
             </div>
           ) : null}
         </div>
-      </MotionSection>
+      </Panel>
+
+      <div className="space-y-6">
+        {offerSections.map((section) => (
+          <div key={section.key} className="space-y-3">
+            {section.title ? (
+              <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-200 pb-2 dark:border-slate-800">
+                <div className="text-sm font-black text-slate-900 dark:text-slate-100">{section.title}</div>
+                <div className="text-xs font-black text-slate-500 dark:text-slate-400">{section.subtitle}</div>
+              </div>
+            ) : null}
+            {section.items.map((h) => {
+              const dup = duplicates.get(h.id);
+              const reported = (h.report_count ?? 0) > 0;
+              return (
+                <article
+                  key={h.id}
+                  className={`space-y-4 rounded-3xl border bg-white p-5 shadow-soft dark:bg-slate-900 ${reported ? 'border-rose-300 dark:border-rose-900/70' : 'border-slate-200 dark:border-slate-800'}`}
+                >
+                  <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                    <div className="flex min-w-0 items-start gap-3">
+                      {isExpired(h) ? (
+                        <input
+                          type="checkbox"
+                          className={`${CHECKBOX} mt-1`}
+                          checked={selectedExpiredIds.includes(h.id)}
+                          onChange={() => toggleExpiredOffer(h.id)}
+                          disabled={deletingExpired}
+                          aria-label={`Select expired calendar ${h.semester_label}`}
+                        />
+                      ) : null}
+                      <div className="min-w-0">
+                        <div className="text-sm font-black text-slate-900 dark:text-slate-100">
+                          {h.user_profile?.full_name || 'Unknown User'}
+                        </div>
+                        <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                          {h.user_profile?.email || 'No email provided'}
+                          {h.user_profile?.phone_number ? ` • ${h.user_profile.phone_number}` : ''}
+                        </div>
+                        <div className="mt-0.5 text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+                          Submitted {new Date(h.created_at).toLocaleString()}
+                        </div>
+                        {isExpired(h) || dup || reported ? (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {reported ? <Chip tone="danger">{h.report_count} report{h.report_count === 1 ? '' : 's'}</Chip> : null}
+                            {isExpired(h) ? <Chip tone="warning">Old calendar · ended {h.end_date}</Chip> : null}
+                            {dup ? (
+                              dup.keep ? (
+                                <Chip tone="success">Keep · best of {dup.size} copies</Chip>
+                              ) : (
+                                <Chip tone="danger">Suggested delete · duplicate copy</Chip>
+                              )
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className={`${BTN_DANGER_SOFT} self-start`}
+                      disabled={Boolean(deletingOfferId) || deletingExpired}
+                      onClick={() => deleteOneOffer(h)}
+                    >
+                      {deletingOfferId === h.id ? 'Deleting…' : 'Delete offer'}
+                    </button>
+                  </div>
+
+                  <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
+                    <AcademicCalendarOfferGraphic offer={h} universityName={h.university_id} />
+                  </div>
+
+                  {h.admin_note ? (
+                    <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+                      <span className="font-black text-slate-900 dark:text-slate-100">Note: </span>
+                      {h.admin_note}
+                    </p>
+                  ) : null}
+
+                  {h.official_url || h.reference_pdf_url ? (
+                    <div className="flex flex-wrap gap-4">
+                      {h.official_url ? (
+                        <a href={h.official_url} target="_blank" rel="noreferrer" className={LINK_SM}>
+                          Original URL
+                        </a>
+                      ) : null}
+                      {h.reference_pdf_url ? (
+                        <a href={h.reference_pdf_url} target="_blank" rel="noreferrer" className={LINK_SM}>
+                          Reference PDF
+                        </a>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })}
+          </div>
+        ))}
+        {filteredOffers.length === 0 ? (
+          loading ? (
+            <SkeletonRows rows={3} height="h-40" />
+          ) : (
+            <EmptyState title={offers.length === 0 ? 'No crowdsourced offers yet' : 'No calendars match these filters'}>
+              When users publish their academic calendars from the mobile app, they will appear here for you to review.
+            </EmptyState>
+          )
+        ) : null}
+      </div>
       {safeActionDialog}
     </div>
   );

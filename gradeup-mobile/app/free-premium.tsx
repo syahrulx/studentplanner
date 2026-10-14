@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -38,6 +37,7 @@ import {
   SocialShareSubmitError,
   type SocialShareClaim,
 } from '@/src/lib/socialShareApi';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 const PLATFORM_LABEL: Record<SocialSharePlatform, string> = Object.fromEntries(
   SHARE_PLATFORMS.map((p) => [p.id, p.label]),
@@ -169,7 +169,7 @@ export default function FreePremiumScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardAvoidingScreen
       style={[styles.root, { backgroundColor: theme.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
@@ -393,7 +393,7 @@ export default function FreePremiumScreen() {
           )}
         </ScrollView>
       </SafeAreaView>
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingScreen>
   );
 }
 

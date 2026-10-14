@@ -8,7 +8,6 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
@@ -20,6 +19,7 @@ import {
   verifyStudentOtp,
   type VerificationStatus,
 } from '@/src/lib/servicesApi';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 interface Props {
   visible: boolean;
@@ -237,7 +237,7 @@ export default function StudentVerificationModal({ visible, onClose, onVerified 
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <KeyboardAvoidingView
+      <KeyboardAvoidingScreen
         style={styles.overlay}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
@@ -249,7 +249,7 @@ export default function StudentVerificationModal({ visible, onClose, onVerified 
           </Pressable>
           {renderContent()}
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardAvoidingScreen>
     </Modal>
   );
 }

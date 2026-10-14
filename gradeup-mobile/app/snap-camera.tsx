@@ -12,8 +12,13 @@ import {
   ScrollView,
   Animated,
   Easing,
-} from 'react-native';
-import { router } from 'expo-router';
+  Linking,
+  BackHandler,
+  } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { captureRef } from 'react-native-view-shot';
+import { router, Stack } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import Feather from '@expo/vector-icons/Feather';
 import { useApp } from '@/src/context/AppContext';
@@ -23,14 +28,42 @@ import { maxSnapsPerDay, isAtLeastPlus } from '@/src/lib/flashcardGenerationLimi
 import { uploadSnapImage, postSnap, getMySnapsToday, getMyStreak } from '@/src/lib/snapApi';
 import { captureError } from '@/src/lib/monitoring';
 import type { SnapStreak, SnapAudience } from '@/src/types';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
+import {
+  ColorRow,
+  DrawSurface,
+  LayoutThumb,
+  SNAP_LAYOUTS,
+  StrokeView,
+  TextSticker,
+  cellFrame,
+  layoutCells,
+  type SnapLayoutId,
+  type Stroke,
+  type TextItem,
+} from '@/components/snap/SnapComposerParts';
 
 export default function SnapCamera() {
   const { user } = useApp();
   const theme = useTheme();
   const { upgradeLabel, ctaLabel, tagline, openPaywall } = useUpgradePrompt();
 
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const insets = useSafeAreaInsets();
+  /** One slot per cell of the chosen layout; null until a photo is added. */
+  const [photos, setPhotos] = useState<(string | null)[]>([null]);
+  const [layoutId, setLayoutId] = useState<SnapLayoutId>('1');
+  const [mode, setMode] = useState<'idle' | 'layout' | 'text' | 'draw'>('idle');
+  const [texts, setTexts] = useState<TextItem[]>([]);
+  const [editingText, setEditingText] = useState<TextItem | null>(null);
+  const [strokes, setStrokes] = useState<Stroke[]>([]);
+  const [inkColor, setInkColor] = useState('#ffffff');
+  const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
+  const [dragY, setDragY] = useState<number | null>(null);
+  const canvasRef = useRef<View>(null);
+  const photoUri = photos.find(Boolean) ?? null;
   const [posting, setPosting] = useState(false);
+  /** 200 is the database's own limit — snap_caption_length on study_snaps. */
+  const [caption, setCaption] = useState('');
   const [snapsToday, setSnapsToday] = useState(0);
   const [streak, setStreak] = useState<SnapStreak | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,6 +126,8 @@ export default function SnapCamera() {
 
   useEffect(() => {
     if (!loading && !atLimit && !photoUri && !hasLaunchedCamera.current) {
+      // Straight to the camera on open, as before. Cancelling now leaves the
+      // composer open with an empty box instead of closing the screen.
       hasLaunchedCamera.current = true;
       setTimeout(() => {
         handleOpenCamera();
@@ -228,66 +263,241 @@ export default function SnapCamera() {
     }, 2800);
   };
 
-  const handleOpenCamera = async () => {
-    if (atLimit) {
-      // The upsell tier depends on where they already are: Free users are being
-      // sold Plus, Plus users Pro. Pro users have nothing left to buy.
-      const upsellPlan = plan === 'free' ? 'plus' : 'pro';
-      const base =
-        plan === 'free'
-          ? 'Free users get 1 snap per day. Upgrade to Plus for 3, or Pro for unlimited.'
-          : `You've posted all ${maxSnaps} snaps for today. ${plan === 'plus' ? 'Upgrade to Pro for unlimited!' : 'Come back tomorrow!'}`;
-      Alert.alert(
-        'Daily limit reached',
-        plan !== 'pro' ? [base, tagline(upsellPlan)].filter(Boolean).join(' ') : base,
-        plan !== 'pro'
-          ? [
-              { text: 'Not now', style: 'cancel' },
-              { text: ctaLabel(upsellPlan), onPress: openPaywall },
-            ]
-          : [{ text: 'OK' }],
-      );
-      return;
-    }
+  const showLimitAlert = () => {
+    // The upsell tier depends on where they already are: Free users are being
+    // sold Plus, Plus users Pro. Pro users have nothing left to buy.
+    const upsellPlan = plan === 'free' ? 'plus' : 'pro';
+    const base =
+      plan === 'free'
+        ? 'Free users get 1 snap per day. Upgrade to Plus for 3, or Pro for unlimited.'
+        : `You've posted all ${maxSnaps} snaps for today. ${plan === 'plus' ? 'Upgrade to Pro for unlimited!' : 'Come back tomorrow!'}`;
+    Alert.alert(
+      'Daily limit reached',
+      plan !== 'pro' ? [base, tagline(upsellPlan)].filter(Boolean).join(' ') : base,
+      plan !== 'pro'
+        ? [
+            { text: 'Not now', style: 'cancel' },
+            { text: ctaLabel(upsellPlan), onPress: openPaywall },
+          ]
+        : [{ text: 'OK' }],
+    );
+  };
 
+  /** Opens the camera and returns the photo, or null if cancelled or refused. */
+  const takePhoto = async (): Promise<string | null> => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Camera access needed', 'Allow camera access in Settings to post a snap.');
-      return;
+      return null;
     }
-
     // launchCameraAsync throws outright when there is no usable camera — no
     // camera at all, or one another app is already holding. Unhandled, the
     // promise rejects and the student is left on a spinner that never ends,
     // with nothing on screen telling them why.
-    let result: ImagePicker.ImagePickerResult;
     try {
-      result = await ImagePicker.launchCameraAsync({
+      const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ['images'],
         quality: 0.75,
         allowsEditing: false,
       });
+      return !result.canceled && result.assets?.[0]?.uri ? result.assets[0].uri : null;
     } catch (e) {
       captureError(e, { where: 'snapCamera.launchCamera' });
       Alert.alert('Camera unavailable', 'Your camera could not be opened. Close any other app using it and try again.');
+      return null;
+    }
+  };
+
+  /**
+   * Gallery, asked for first. Snaps used to be camera-only, so this is the
+   * first time the screen wants the student's photos: say why before the
+   * system prompt, and point to Settings if they said no before.
+   */
+  const pickFromGallery = async (): Promise<string | null> => {
+    let perm = await ImagePicker.getMediaLibraryPermissionsAsync();
+    if (perm.status !== 'granted') {
+      const go = await new Promise<boolean>((resolve) =>
+        Alert.alert(
+          'Use photos from your gallery?',
+          'Rencana will ask to see your photos so you can add them to your snap. Only the photos you pick are used.',
+          [
+            { text: 'Not now', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Continue', onPress: () => resolve(true) },
+          ],
+        ),
+      );
+      if (!go) return null;
+      perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (perm.status !== 'granted') {
+        Alert.alert(
+          'Photo access is off',
+          'Turn on photo access for Rencana in Settings to add photos from your gallery.',
+          perm.canAskAgain
+            ? [{ text: 'OK' }]
+            : [
+                { text: 'Not now', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => void Linking.openSettings() },
+              ],
+        );
+        return null;
+      }
+    }
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.8,
+        allowsEditing: false,
+      });
+      return !result.canceled && result.assets?.[0]?.uri ? result.assets[0].uri : null;
+    } catch (e) {
+      captureError(e, { where: 'snapCamera.launchImageLibrary' });
+      Alert.alert('Gallery unavailable', 'Your photos could not be opened. Try again.');
+      return null;
+    }
+  };
+
+  const setCellPhoto = (index: number, uri: string | null) =>
+    setPhotos((prev) => prev.map((p, i) => (i === index ? uri : p)));
+
+  /** First open: straight to the camera, as before. */
+  const handleOpenCamera = async () => {
+    if (atLimit) {
+      showLimitAlert();
+      return;
+    }
+    const uri = await takePhoto();
+    if (uri) setCellPhoto(0, uri);
+  };
+
+  const fillCell = (index: number) => {
+    const filled = !!photos[index];
+    // iOS drops a picker or alert opened while this one is still closing,
+    // so each choice waits for it to go first.
+    const after = (fn: () => Promise<string | null>) => () =>
+      setTimeout(async () => {
+        const u = await fn();
+        if (u) setCellPhoto(index, u);
+      }, 450);
+    Alert.alert(filled ? 'Change this photo' : 'Add a photo', undefined, [
+      { text: 'Take photo', onPress: after(takePhoto) },
+      { text: 'Choose from gallery', onPress: after(pickFromGallery) },
+      ...(filled ? [{ text: 'Remove', style: 'destructive' as const, onPress: () => setCellPhoto(index, null) }] : []),
+      { text: 'Cancel', style: 'cancel' as const },
+    ]);
+  };
+
+  /** Gallery from the rail: into the first empty box, else replace the first. */
+  const galleryIntoNext = async () => {
+    const uri = await pickFromGallery();
+    if (!uri) return;
+    const empty = photos.findIndex((p) => !p);
+    setCellPhoto(empty >= 0 ? empty : 0, uri);
+  };
+
+  const chooseLayout = (id: SnapLayoutId) => {
+    const n = layoutCells(id).length;
+    setLayoutId(id);
+    // Keep the photos already taken, in order; drop any that no longer fit.
+    setPhotos((prev) => {
+      const kept = prev.filter(Boolean) as string[];
+      return Array.from({ length: n }, (_, i) => kept[i] ?? null);
+    });
+  };
+
+  const handleClose = () => {
+    if (!photoUri && texts.length === 0 && strokes.length === 0) {
       router.back();
       return;
     }
+    Alert.alert('Discard this snap?', 'Your photos, text and drawing will be lost.', [
+      { text: 'Keep editing', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: () => router.back() },
+    ]);
+  };
 
-    if (!result.canceled && result.assets?.[0]?.uri) {
-      setPhotoUri(result.assets[0].uri);
-    } else {
-      router.back();
+  // Android back would drop a half-made snap without asking: ask, like the X.
+  const hasWork = !!photoUri || texts.length > 0 || strokes.length > 0;
+  useEffect(() => {
+    if (!hasWork) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (mode !== 'idle') {
+        if (mode === 'text') finishText();
+        else setMode('idle');
+        return true;
+      }
+      handleClose();
+      return true;
+    });
+    return () => sub.remove();
+  });
+
+  // ─── Text ────────────────────────────────────────────────────────────────
+  const startText = (item?: TextItem) => {
+    setEditingText(
+      item ?? {
+        id: String(Date.now()),
+        text: '',
+        color: inkColor,
+        boxed: false,
+        x: Math.max(16, canvasSize.w / 2 - 90),
+        y: canvasSize.h * 0.4,
+      },
+    );
+    setMode('text');
+  };
+
+  const finishText = () => {
+    const item = editingText;
+    setEditingText(null);
+    setMode('idle');
+    if (!item) return;
+    const trimmed = item.text.trim();
+    setTexts((prev) => {
+      const others = prev.filter((t) => t.id !== item.id);
+      return trimmed ? [...others, { ...item, text: trimmed }] : others;
+    });
+  };
+
+  const binTop = canvasSize.h - 150;
+  const moveText = (id: string, x: number, y: number, dropped: boolean) => {
+    if (dropped && y > binTop) {
+      setTexts((prev) => prev.filter((t) => t.id !== id));
+      return;
     }
+    setTexts((prev) => prev.map((t) => (t.id === id ? { ...t, x, y } : t)));
+  };
+  const onDragChange = (dragging: boolean, y: number) => setDragY(dragging ? y : null);
+  const onStroke = useMemo(() => (st: Stroke) => setStrokes((prev) => [...prev, st]), []);
+
+  // ─── Post ────────────────────────────────────────────────────────────────
+  /**
+   * The finished snap as one picture. A single photo with nothing on it goes
+   * up as taken, at full quality; anything else is captured from the canvas.
+   */
+  const renderSnapImage = async (): Promise<string> => {
+    if (layoutId === '1' && texts.length === 0 && strokes.length === 0 && photos[0]) return photos[0];
+    setMode('idle');
+    // Let the screen drop any selection UI before the capture.
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    return captureRef(canvasRef, { format: 'jpg', quality: 0.85, result: 'tmpfile' });
   };
 
   const handlePost = async () => {
     if (!photoUri || posting) return;
+    if (photos.some((p) => !p)) {
+      Alert.alert('Fill every box', 'Add a photo to each box, or pick a layout with fewer boxes.');
+      return;
+    }
+    if (atLimit) {
+      showLimitAlert();
+      return;
+    }
     setPosting(true);
     try {
       const prevStreak = streak?.currentStreak || 0;
-      const imageUrl = await uploadSnapImage(photoUri);
-      await postSnap(user.id!, imageUrl, undefined, audience);
+      const imageUri = await renderSnapImage();
+      const imageUrl = await uploadSnapImage(imageUri);
+      await postSnap(user.id!, imageUrl, caption.trim() || undefined, audience);
 
       // postSnap() now awaits updateStreakOnPost() synchronously, so the
       // streak should be up-to-date on the first read. Retry once as a
@@ -323,13 +533,6 @@ export default function SnapCamera() {
     }
   };
 
-  const handleRetake = () => {
-    setPhotoUri(null);
-    setTimeout(() => {
-      handleOpenCamera();
-    }, 100);
-  };
-
   if (loading) {
     return (
       <View style={[s.center, { backgroundColor: theme.background }]}>
@@ -338,79 +541,262 @@ export default function SnapCamera() {
     );
   }
 
-  // ─── Photo preview state ───────────────────────────────────────────────────
-  if (photoUri) {
+  // ─── Composer ──────────────────────────────────────────────────────────────
+  if (!atLimit || photoUri) {
+    const cells = layoutCells(layoutId);
+    const tools: { key: string; icon: React.ComponentProps<typeof Feather>['name']; label: string; onPress: () => void }[] = [
+      { key: 'text', icon: 'type', label: 'Text', onPress: () => startText() },
+      { key: 'draw', icon: 'edit-3', label: 'Draw', onPress: () => setMode('draw') },
+      { key: 'layout', icon: 'grid', label: 'Layout', onPress: () => setMode('layout') },
+      { key: 'gallery', icon: 'image', label: 'Gallery', onPress: () => void galleryIntoNext() },
+      {
+        key: 'camera',
+        icon: 'camera',
+        label: layoutId === '1' && photos[0] ? 'Retake' : 'Camera',
+        onPress: async () => {
+          const u = await takePhoto();
+          if (!u) return;
+          const empty = photos.findIndex((p) => !p);
+          setCellPhoto(empty >= 0 ? empty : 0, u);
+        },
+      },
+    ];
     return (
       <View style={[s.container, { backgroundColor: '#000' }]}>
-        {/* Full-bleed preview */}
-        <Image source={{ uri: photoUri }} style={s.previewImage} resizeMode="cover" />
-
-        {/* Top bar */}
-        <View style={s.previewTopBar}>
-          <Pressable onPress={handleRetake} style={s.previewTopBtn}>
-            <Feather name="refresh-cw" size={20} color="#fff" />
-          </Pressable>
-          <View style={s.previewTitle}>
-            <Text style={s.previewTitleText}>Snap Streak</Text>
+        {/* No swipe-back: a stroke drawn left to right was taken as "go back"
+            and threw the whole snap away. The X asks first. */}
+        <Stack.Screen options={{ gestureEnabled: false }} />
+        {/* The canvas: exactly what gets posted. Tools and buttons sit outside it. */}
+        <View
+          ref={canvasRef}
+          collapsable={false}
+          style={s.canvas}
+          onLayout={(e) => setCanvasSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
+        >
+          {canvasSize.w > 0 &&
+            cells.map((c, i) => {
+              const f = cellFrame(c, canvasSize.w, canvasSize.h);
+              const uri = photos[i];
+              return (
+                <Pressable
+                  key={`${layoutId}-${i}`}
+                  onPress={() => (mode === 'layout' || !uri ? fillCell(i) : undefined)}
+                  disabled={mode === 'text' || mode === 'draw'}
+                  style={[s.cell, f]}
+                  accessibilityLabel={uri ? `Photo ${i + 1}` : `Add photo ${i + 1}`}
+                >
+                  {uri ? (
+                    <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                  ) : (
+                    <View style={s.cellEmpty}>
+                      <View style={s.cellPlus}>
+                        <Feather name="plus" size={26} color="#fff" />
+                      </View>
+                      {cells.length === 1 ? <Text style={s.cellHint}>Take a photo or pick one</Text> : null}
+                    </View>
+                  )}
+                  {mode === 'layout' && uri ? (
+                    <View style={s.cellEditBadge}>
+                      <Feather name="refresh-cw" size={14} color="#fff" />
+                    </View>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          <View style={StyleSheet.absoluteFill} pointerEvents="none">
+            {strokes.map((st, i) => <StrokeView key={i} stroke={st} />)}
           </View>
-          {/* Placeholder to balance the row */}
-          <View style={{ width: 40 }} />
-        </View>
-
-        {/* Bottom bar */}
-        <View style={s.previewBottom}>
-          {audienceOptions.length > 1 && (
-            <View style={s.audienceRow}>
-              {audienceOptions.map((opt) => {
-                const active = audience === opt.value;
-                return (
-                  <Pressable
-                    key={opt.value}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: active }}
-                    onPress={() => setAudience(opt.value)}
-                    style={({ pressed }) => [
-                      s.audiencePill,
-                      active && s.audiencePillActive,
-                      pressed && { opacity: 0.8 },
-                    ]}
-                  >
-                    <Feather name={opt.icon} size={13} color={active ? '#000' : '#fff'} />
-                    <Text style={[s.audiencePillText, active && { color: '#000' }]} numberOfLines={1}>
-                      {opt.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+          {texts.map((t) =>
+            editingText?.id === t.id ? null : (
+              <TextSticker
+                key={t.id}
+                item={t}
+                enabled={mode === 'idle'}
+                onMove={moveText}
+                onTap={(id) => startText(texts.find((x) => x.id === id))}
+                onDragChange={onDragChange}
+              />
+            ),
           )}
-
-          {/* Post button */}
-          <Pressable
-            style={({ pressed }) => [
-              s.postBtn,
-              posting && { opacity: 0.55 },
-              pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
-            ]}
-            onPress={handlePost}
-            disabled={posting}
-          >
-            {posting ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <>
-                <Feather name="send" size={18} color="#fff" />
-                <Text style={s.postBtnText}>
-                  {audience === 'friends'
-                    ? 'Share with friends'
-                    : audience === 'campus'
-                      ? 'Share with my campus'
-                      : 'Share with my uni'}
-                </Text>
-              </>
-            )}
-          </Pressable>
+          {mode === 'draw' ? <DrawSurface color={inkColor} size={6} onStroke={onStroke} /> : null}
         </View>
+
+        {/* Bin while a text is being dragged */}
+        {dragY !== null ? (
+          <View pointerEvents="none" style={[s.bin, dragY > binTop && s.binHot, { bottom: insets.bottom + 40 }]}>
+            <Feather name="trash-2" size={22} color="#fff" />
+          </View>
+        ) : null}
+
+        {/* ─── Idle: close, tool rail, caption and share ─── */}
+        {mode === 'idle' && dragY === null ? (
+          <>
+            <View style={[s.topBar, { paddingTop: insets.top + 8 }]} pointerEvents="box-none">
+              <Pressable onPress={handleClose} style={s.roundBtn} hitSlop={8} accessibilityLabel="Close">
+                <Feather name="x" size={22} color="#fff" />
+              </Pressable>
+              {!atLimit && snapsLeft !== null ? (
+                <View style={s.topPill}>
+                  <Text style={s.topPillText}>{snapsLeft} left today</Text>
+                </View>
+              ) : <View />}
+            </View>
+
+            <View style={[s.rail, { top: insets.top + 60 }]}>
+              {tools.map((t) => (
+                <Pressable key={t.key} onPress={t.onPress} style={s.railItem} accessibilityRole="button" accessibilityLabel={t.label}>
+                  <View style={s.railIcon}>
+                    <Feather name={t.icon} size={19} color="#fff" />
+                  </View>
+                  <Text style={s.railLabel}>{t.label}</Text>
+                </Pressable>
+              ))}
+              {strokes.length > 0 ? (
+                <Pressable onPress={() => setStrokes((p) => p.slice(0, -1))} style={s.railItem} accessibilityLabel="Undo drawing">
+                  <View style={s.railIcon}>
+                    <Feather name="corner-up-left" size={19} color="#fff" />
+                  </View>
+                  <Text style={s.railLabel}>Undo</Text>
+                </Pressable>
+              ) : null}
+            </View>
+
+            <LinearGradient
+              pointerEvents="none"
+              colors={['transparent', 'rgba(0,0,0,0.7)']}
+              style={s.scrim}
+            />
+            <KeyboardAvoidingScreen
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              style={[s.bottom, { paddingBottom: insets.bottom + 12 }]}
+            >
+              {/* The caption stays as well as text on the photo: it travels with
+                  the snap as words, so it reads even where the photo is small. */}
+              <View style={s.captionWrap}>
+                <TextInput
+                  style={s.captionInput}
+                  value={caption}
+                  onChangeText={setCaption}
+                  placeholder="Add a caption"
+                  placeholderTextColor="rgba(255,255,255,0.55)"
+                  maxLength={200}
+                  multiline
+                  returnKeyType="done"
+                  blurOnSubmit
+                  accessibilityLabel="Snap caption"
+                />
+                {caption.length >= 160 && <Text style={s.captionCount}>{200 - caption.length}</Text>}
+              </View>
+              <View style={s.shareRow}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.audienceRow} style={{ flex: 1 }}>
+                  {audienceOptions.map((opt) => {
+                    const active = audience === opt.value;
+                    return (
+                      <Pressable
+                        key={opt.value}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: active }}
+                        onPress={() => setAudience(opt.value)}
+                        style={({ pressed }) => [s.audiencePill, active && s.audiencePillActive, pressed && { opacity: 0.8 }]}
+                      >
+                        <Feather name={opt.icon} size={13} color={active ? '#000' : '#fff'} />
+                        <Text style={[s.audiencePillText, active && { color: '#000' }]} numberOfLines={1}>
+                          {opt.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+                <Pressable
+                  onPress={handlePost}
+                  disabled={posting}
+                  style={({ pressed }) => [s.sendBtn, (posting || !photoUri) && { opacity: 0.5 }, pressed && { transform: [{ scale: 0.94 }] }]}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    audience === 'friends' ? 'Share with friends' : audience === 'campus' ? 'Share with my campus' : 'Share with my uni'
+                  }
+                >
+                  {posting ? <ActivityIndicator size="small" color="#000" /> : <Feather name="send" size={22} color="#000" />}
+                </Pressable>
+              </View>
+            </KeyboardAvoidingScreen>
+          </>
+        ) : null}
+
+        {/* ─── Layout tray ─── */}
+        {mode === 'layout' ? (
+          <View style={[s.tray, { paddingBottom: insets.bottom + 14 }]}>
+            <Text style={s.trayHint}>Tap a box to add or change its photo</Text>
+            <View style={s.layoutRow}>
+              {SNAP_LAYOUTS.map((l) => (
+                <LayoutThumb key={l.id} id={l.id} active={layoutId === l.id} onPress={() => chooseLayout(l.id)} />
+              ))}
+            </View>
+            <Pressable onPress={() => setMode('idle')} style={s.doneBtn}>
+              <Text style={s.doneText}>Done</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {/* ─── Draw toolbar ─── */}
+        {mode === 'draw' ? (
+          <View style={[s.drawBar, { paddingTop: insets.top + 8 }]}>
+            <Pressable onPress={() => setStrokes((p) => p.slice(0, -1))} style={s.roundBtn} accessibilityLabel="Undo" disabled={!strokes.length}>
+              <Feather name="corner-up-left" size={20} color={strokes.length ? '#fff' : 'rgba(255,255,255,0.35)'} />
+            </Pressable>
+            <ColorRow value={inkColor} onChange={setInkColor} />
+            <Pressable onPress={() => setMode('idle')} style={s.doneSmall}>
+              <Text style={s.doneText}>Done</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {/* ─── Text editor ─── */}
+        {mode === 'text' && editingText ? (
+          <KeyboardAvoidingScreen behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.textEditor}>
+            <View style={[s.textTop, { paddingTop: insets.top + 8 }]}>
+              <Pressable
+                onPress={() => setEditingText({ ...editingText, boxed: !editingText.boxed })}
+                style={[s.roundBtn, editingText.boxed && { backgroundColor: '#fff' }]}
+                accessibilityLabel="Text background"
+              >
+                <Text style={{ color: editingText.boxed ? '#000' : '#fff', fontWeight: '900', fontSize: 15 }}>A</Text>
+              </Pressable>
+              <Pressable onPress={finishText} style={s.doneSmall}>
+                <Text style={s.doneText}>Done</Text>
+              </Pressable>
+            </View>
+            <View style={s.textCenter}>
+              <TextInput
+                autoFocus
+                multiline
+                value={editingText.text}
+                onChangeText={(t) => setEditingText({ ...editingText, text: t })}
+                placeholder="Type something"
+                placeholderTextColor="rgba(255,255,255,0.5)"
+                maxLength={80}
+                style={[
+                  s.textInput,
+                  { color: editingText.color },
+                  editingText.boxed && {
+                    backgroundColor: editingText.color === '#000000' ? '#fff' : 'rgba(0,0,0,0.6)',
+                    borderRadius: 10,
+                    paddingHorizontal: 12,
+                  },
+                ]}
+              />
+            </View>
+            <View style={{ paddingBottom: 14 }}>
+              <ColorRow
+                value={editingText.color}
+                onChange={(c) => {
+                  setInkColor(c);
+                  setEditingText({ ...editingText, color: c });
+                }}
+              />
+            </View>
+          </KeyboardAvoidingScreen>
+        ) : null}
 
         {/* ─── STREAK CELEBRATION ─── */}
         {showCelebration && (
@@ -697,7 +1083,146 @@ const s = StyleSheet.create({
     paddingVertical: 17,
   },
   postBtnText: { color: '#fff', fontSize: 17, fontWeight: '800' },
-  audienceRow: { flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 12 },
+  captionWrap: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  captionInput: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+    // A caption can run to three lines before it starts to cover the photo.
+    maxHeight: 76,
+    padding: 0,
+  },
+  captionCount: { color: 'rgba(255,255,255,0.65)', fontSize: 12, fontWeight: '700', paddingBottom: 2 },
+  audienceRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 8 },
+
+  // ─── Composer ──────────────────────────────────────────────────────────────
+  canvas: { ...StyleSheet.absoluteFillObject, backgroundColor: '#000' },
+  cell: { position: 'absolute', overflow: 'hidden', backgroundColor: '#1c1c1e' },
+  cellEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
+  cellPlus: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cellHint: { color: 'rgba(255,255,255,0.75)', fontSize: 14, fontWeight: '600' },
+  cellEditBadge: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  roundBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topPill: { backgroundColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, marginRight: 52 },
+  topPillText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  rail: { position: 'absolute', right: 10, alignItems: 'center', gap: 12 },
+  railItem: { alignItems: 'center', gap: 3 },
+  railIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  railLabel: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  scrim: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 260 },
+  bottom: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 14, gap: 10 },
+  shareRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  sendBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bin: {
+    position: 'absolute',
+    alignSelf: 'center',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.7)',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  binHot: { backgroundColor: '#ff3b30', borderColor: '#ff3b30', transform: [{ scale: 1.15 }] },
+  tray: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingTop: 14,
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(0,0,0,0.78)',
+    gap: 12,
+    alignItems: 'center',
+  },
+  trayHint: { color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: '600' },
+  layoutRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', justifyContent: 'center' },
+  doneBtn: { backgroundColor: '#fff', borderRadius: 20, paddingHorizontal: 34, paddingVertical: 10 },
+  doneSmall: { backgroundColor: '#fff', borderRadius: 18, paddingHorizontal: 16, paddingVertical: 8 },
+  doneText: { color: '#000', fontSize: 15, fontWeight: '800' },
+  drawBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  textEditor: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
+  textTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14 },
+  textCenter: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24 },
+  textInput: { fontSize: 30, fontWeight: '800', textAlign: 'center', width: '100%' },
   audiencePill: {
     flexDirection: 'row',
     alignItems: 'center',

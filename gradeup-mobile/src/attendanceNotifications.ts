@@ -42,7 +42,7 @@ type WeekdayLabel = (typeof WEEKDAY_LABELS)[number];
  */
 let rescheduleQueue: Promise<void> = Promise.resolve();
 
-function normalizeWeekday(raw: string): WeekdayLabel | null {
+export function normalizeWeekday(raw: string): WeekdayLabel | null {
   const s = String(raw || '').trim().toLowerCase();
   // Align with `timetableParsers/uitm` DAY_MAP — portal / CDN sometimes uses Malay labels.
   const alias: Record<string, WeekdayLabel> = {
@@ -92,7 +92,7 @@ function normalizeWeekday(raw: string): WeekdayLabel | null {
 }
 
 /** Same shapes as UiTM `normalizeTime` — student-portal rows often use AM/PM or 0800 without a colon. */
-function parseHHMM(raw: string): { hour: number; minute: number } | null {
+export function parseHHMM(raw: string): { hour: number; minute: number } | null {
   let t = String(raw || '').trim();
   if (!t) return null;
 
@@ -180,7 +180,7 @@ function calendarIndicatesSemesterBreak(calendar: AcademicCalendar | null | unde
  * calendar clearly identifies the date as outside teaching. If calendar data
  * is absent or incomplete, reminders continue instead of guessing.
  */
-function isLectureDate(date: Date, calendar: AcademicCalendar | null | undefined): boolean {
+export function isLectureDate(date: Date, calendar: AcademicCalendar | null | undefined): boolean {
   if (!calendar) return true;
   const key = localDateKey(date);
   if (calendar.startDate && key < calendar.startDate.slice(0, 10)) return false;

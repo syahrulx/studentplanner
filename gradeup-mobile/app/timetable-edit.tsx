@@ -7,7 +7,6 @@ import {
   ScrollView,
   TextInput,
   Modal,
-  KeyboardAvoidingView,
   Platform,
   Alert,
   ActivityIndicator,
@@ -36,6 +35,7 @@ function isDayOfWeek(d: string): d is DayOfWeek {
 }
 import type { TimetableEntry, DayOfWeek } from '@/src/types';
 import type { WeekStartsOn } from '@/src/storage';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 const DAY_PICKER_KEYS: Record<DayOfWeek, string> = {
   Monday: 'monday',
@@ -511,7 +511,7 @@ export default function TimetableEditScreen() {
       <Modal visible={modalOpen} animationType="slide" transparent onRequestClose={closeModal}>
         <View style={styles.modalRoot}>
           <Pressable style={styles.modalBackdrop} onPress={closeModal} />
-          <KeyboardAvoidingView
+          <KeyboardAvoidingScreen
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             style={styles.modalKb}
           >
@@ -778,7 +778,7 @@ export default function TimetableEditScreen() {
                 </View>
               </ScrollView>
             </View>
-          </KeyboardAvoidingView>
+          </KeyboardAvoidingScreen>
         </View>
       </Modal>
 

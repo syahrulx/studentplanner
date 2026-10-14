@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Platform } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 import * as ImagePicker from 'expo-image-picker';
@@ -8,6 +8,7 @@ import { useTranslations } from '@/src/i18n';
 import { useTheme } from '@/hooks/useTheme';
 import { enqueueCapture } from '@/src/lib/smartCapture/captureInboxStore';
 import { ensureImageLibraryAccessForPicker } from '@/src/lib/imageLibraryPickerGate';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 function hexLuminance(hex: string): number | null {
   const raw = hex.replace('#', '').trim();
@@ -88,7 +89,7 @@ export default function AiChat() {
   return (
     <View style={s.overlay}>
       <Pressable style={StyleSheet.absoluteFill} onPress={() => router.back()} />
-      <KeyboardAvoidingView
+      <KeyboardAvoidingScreen
         style={[s.sheetContainer, { backgroundColor: theme.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
@@ -167,7 +168,7 @@ export default function AiChat() {
             <Feather name="search" size={18} color={theme.textInverse} />
           </Pressable>
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardAvoidingScreen>
     </View>
   );
 }

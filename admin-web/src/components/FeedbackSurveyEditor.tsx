@@ -14,17 +14,17 @@ import {
 import {
   EMPTY_SURVEY,
   QUESTION_TYPE_LABEL,
-  cardCls,
-  dangerBtnCls,
   describeAudience,
   inputCls,
-  primaryBtnCls,
   randomId,
-  secondaryBtnCls,
   toInput,
 } from '../lib/feedbackSurveys';
-import { Field, SectionTitle } from './FeedbackSurveyFields';
+import { Field } from './FeedbackSurveyFields';
+import { Button } from '../ui/Button';
+import { Notice, Panel } from '../ui/page';
+import { DANGER_TEXT_BTN } from './config/buttons';
 
+const GROUP_LABEL = 'text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300';
 
 /** ISO → value for <input type="datetime-local"> in the admin's local time. */
 function isoToLocal(iso: string | null): string {
@@ -113,12 +113,13 @@ function QuestionEditor({ q, index, total, onChange, onMove, onRemove }: {
   };
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/40">
+    <div className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <span className="rounded-lg bg-slate-900 px-2 py-0.5 text-xs font-black text-white dark:bg-white dark:text-slate-900">
           Q{index + 1}
         </span>
         <select
+          aria-label={`Question ${index + 1} type`}
           value={q.type}
           onChange={(e) => setType(e.target.value as FeedbackQuestionType)}
           className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
@@ -128,10 +129,12 @@ function QuestionEditor({ q, index, total, onChange, onMove, onRemove }: {
           ))}
         </select>
         <Toggle checked={q.required} onChange={(v) => onChange({ ...q, required: v })} label="Required" />
-        <div className="ml-auto flex gap-2">
-          <button type="button" className={secondaryBtnCls} disabled={index === 0} onClick={() => onMove(-1)}>↑</button>
-          <button type="button" className={secondaryBtnCls} disabled={index === total - 1} onClick={() => onMove(1)}>↓</button>
-          <button type="button" className={dangerBtnCls} onClick={onRemove}>Remove</button>
+        <div className="ml-auto flex items-center gap-1">
+          <Button type="button" variant="ghost" size="sm" aria-label={`Move question ${index + 1} up`} title="Move up"
+            disabled={index === 0} onClick={() => onMove(-1)}>↑</Button>
+          <Button type="button" variant="ghost" size="sm" aria-label={`Move question ${index + 1} down`} title="Move down"
+            disabled={index === total - 1} onClick={() => onMove(1)}>↓</Button>
+          <button type="button" className={DANGER_TEXT_BTN} onClick={onRemove}>Remove</button>
         </div>
       </div>
 
@@ -165,35 +168,38 @@ function QuestionEditor({ q, index, total, onChange, onMove, onRemove }: {
 
       {isChoice && (
         <div className="mt-3 space-y-2">
-          <div className="text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
+          <div className={GROUP_LABEL}>
             Choices {q.type === 'multi' ? '(user can pick several)' : '(user picks one)'}
           </div>
           {(q.options ?? []).map((o, oi) => (
             <div key={o.id} className="flex gap-2">
               <input className={inputCls} value={o.label_en} maxLength={120} placeholder={`Choice ${oi + 1} (EN)`}
+                aria-label={`Choice ${oi + 1} (EN)`}
                 onChange={(e) => onChange({
                   ...q,
                   options: (q.options ?? []).map((x) => (x.id === o.id ? { ...x, label_en: e.target.value } : x)),
                 })} />
               <input className={inputCls} value={o.label_ms ?? ''} maxLength={120} placeholder={`Choice ${oi + 1} (BM)`}
+                aria-label={`Choice ${oi + 1} (BM)`}
                 onChange={(e) => onChange({
                   ...q,
                   options: (q.options ?? []).map((x) => (x.id === o.id ? { ...x, label_ms: e.target.value || null } : x)),
                 })} />
-              <button type="button" className={dangerBtnCls} disabled={(q.options ?? []).length <= 2}
+              <button type="button" className={`shrink-0 ${DANGER_TEXT_BTN}`} disabled={(q.options ?? []).length <= 2}
+                aria-label={`Remove choice ${oi + 1}`} title="Remove choice"
                 onClick={() => onChange({ ...q, options: (q.options ?? []).filter((x) => x.id !== o.id) })}>
                 ✕
               </button>
             </div>
           ))}
           {(q.options ?? []).length < 12 && (
-            <button type="button" className={secondaryBtnCls}
+            <Button type="button" variant="secondary" size="sm"
               onClick={() => onChange({
                 ...q,
                 options: [...(q.options ?? []), { id: randomId('o'), label_en: '', label_ms: null }],
               })}>
               + Add choice
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -216,7 +222,7 @@ function CheckList({ items, selected, onToggle, search, emptyText }: {
   return (
     <div className="max-h-56 space-y-1 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-950">
       {visible.length === 0 && (
-        <div className="p-2 text-xs font-semibold text-slate-500">{emptyText}</div>
+        <div className="p-2 text-xs font-semibold text-slate-500 dark:text-slate-400">{emptyText}</div>
       )}
       {visible.slice(0, 200).map((i) => (
         <label key={i.value} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 hover:bg-white dark:hover:bg-slate-900">
@@ -293,24 +299,23 @@ export function FeedbackSurveyEditor({ existing, template, onDone, onCancel }: {
 
   return (
     <form onSubmit={save} className="space-y-5">
-      {err && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
-          {err}
-        </div>
-      )}
+      {/* Cancel (in the bar at the bottom, always visible) goes back to the list. */}
+      <h2 className="text-lg font-black text-slate-900 dark:text-slate-100">
+        {existing ? `Edit “${existing.title_en}”` : 'New survey'}
+      </h2>
+
       {responses > 0 && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100">
-          This survey already has {responses} response{responses === 1 ? '' : 's'}. Answers are stored by question and choice,
-          so rewording is safe — but changing a question’s type or removing a choice will make older answers harder to read.
-          Prefer adding new questions, or duplicate the survey.
-        </div>
+        <Notice tone="warning" title={`This survey already has ${responses} response${responses === 1 ? '' : 's'}.`}>
+          Answers are stored by question and choice, so rewording is safe. Changing a question’s type or removing a choice
+          makes older answers harder to read. Prefer adding new questions, or duplicate the survey.
+        </Notice>
       )}
 
-      <div className={cardCls}>
-        <SectionTitle sub="What the user sees at the top of the popup.">Basics</SectionTitle>
-        <div className="mb-4 flex flex-wrap gap-6">
-          <Toggle checked={s.is_active} onChange={(v) => set('is_active', v)} label="Active (eligible users will see it)" />
-        </div>
+      <Panel
+        title="Basics"
+        description="What the user sees at the top of the popup."
+        actions={<Toggle checked={s.is_active} onChange={(v) => set('is_active', v)} label="Active (eligible users will see it)" />}
+      >
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Title (EN)">
             <input className={inputCls} value={s.title_en} maxLength={120} onChange={(e) => set('title_en', e.target.value)}
@@ -329,10 +334,9 @@ export function FeedbackSurveyEditor({ existing, template, onDone, onCancel }: {
               onChange={(e) => set('intro_ms', e.target.value || null)} placeholder="Ambil masa 30 saat. Terus sampai ke team kami." />
           </Field>
         </div>
-      </div>
+      </Panel>
 
-      <div className={cardCls}>
-        <SectionTitle sub="Shown one per page. Up to 20 questions.">Questions</SectionTitle>
+      <Panel title={`Questions (${s.questions.length})`} description="Shown one per page. Up to 20 questions.">
         <div className="space-y-3">
           {s.questions.map((q, i) => (
             <QuestionEditor
@@ -347,21 +351,22 @@ export function FeedbackSurveyEditor({ existing, template, onDone, onCancel }: {
           ))}
         </div>
         {s.questions.length < 20 && (
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="mr-1 text-[11px] font-black uppercase tracking-wide text-slate-400">Add</span>
             {(Object.keys(QUESTION_TYPE_LABEL) as FeedbackQuestionType[]).map((t) => (
-              <button key={t} type="button" className={secondaryBtnCls}
+              <Button key={t} type="button" variant="secondary" size="sm"
                 onClick={() => set('questions', [...s.questions, newQuestion(t)])}>
                 + {QUESTION_TYPE_LABEL[t]}
-              </button>
+              </Button>
             ))}
           </div>
         )}
-      </div>
+      </Panel>
 
-      <div className={cardCls}>
-        <SectionTitle sub="Every condition you set must be met (AND). Counts start when the user first qualifies for this survey, so existing users are not asked instantly.">
-          Triggers
-        </SectionTitle>
+      <Panel
+        title="Triggers"
+        description="Every condition you set must be met. Counts start when the user first qualifies for this survey, so existing users are not asked straight away."
+      >
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Start" hint="Empty = starts as soon as it is active.">
             <input type="datetime-local" className={inputCls} value={isoToLocal(s.starts_at)}
@@ -387,20 +392,19 @@ export function FeedbackSurveyEditor({ existing, template, onDone, onCancel }: {
               onChange={(n) => set('trigger_event_count', n)} />
           )}
         </div>
-      </div>
+      </Panel>
 
-      <div className={cardCls}>
-        <SectionTitle sub="Leave a group empty to include everyone.">Audience</SectionTitle>
+      <Panel title="Audience" description="Leave a group empty to include everyone.">
         <div className="grid gap-5 md:grid-cols-2">
           <div className="space-y-2">
-            <div className="text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Plan</div>
+            <div className={GROUP_LABEL}>Plan</div>
             <div className="flex flex-wrap gap-4">
               {['free', 'plus', 'pro'].map((p) => (
                 <Toggle key={p} checked={!!s.target_plans?.includes(p)} label={p[0].toUpperCase() + p.slice(1)}
                   onChange={() => set('target_plans', toggleIn(s.target_plans, p))} />
               ))}
             </div>
-            <div className="pt-3 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Platform</div>
+            <div className={`pt-3 ${GROUP_LABEL}`}>Platform</div>
             <div className="flex flex-wrap gap-4">
               {[['ios', 'iOS'], ['android', 'Android']].map(([v, l]) => (
                 <Toggle key={v} checked={!!s.target_platforms?.includes(v)} label={l}
@@ -408,17 +412,18 @@ export function FeedbackSurveyEditor({ existing, template, onDone, onCancel }: {
               ))}
             </div>
             <div className="pt-3">
-              <Field label="Minimum app version" hint="e.g. 1.7.5 — empty = any version.">
+              <Field label="Minimum app version" hint="e.g. 1.7.5. Empty = any version.">
                 <input className={inputCls} value={s.min_app_version ?? ''} maxLength={20} placeholder="1.7.5"
                   onChange={(e) => set('min_app_version', e.target.value.trim() || null)} />
               </Field>
             </div>
           </div>
           <div className="space-y-2">
-            <div className="text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
+            <div className={GROUP_LABEL}>
               Universities {s.target_university_ids?.length ? `(${s.target_university_ids.length})` : '(all)'}
             </div>
-            <input className={inputCls} value={uniSearch} onChange={(e) => setUniSearch(e.target.value)} placeholder="Search universities…" />
+            <input className={inputCls} value={uniSearch} onChange={(e) => setUniSearch(e.target.value)}
+              placeholder="Search universities…" aria-label="Search universities" />
             <CheckList
               items={universities.map((u) => ({ value: u.id, label: u.name }))}
               selected={s.target_university_ids}
@@ -426,10 +431,11 @@ export function FeedbackSurveyEditor({ existing, template, onDone, onCancel }: {
               search={uniSearch}
               emptyText="No universities match."
             />
-            <div className="pt-2 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
+            <div className={`pt-2 ${GROUP_LABEL}`}>
               Campuses {s.target_campuses?.length ? `(${s.target_campuses.length})` : '(all)'}
             </div>
-            <input className={inputCls} value={campusSearch} onChange={(e) => setCampusSearch(e.target.value)} placeholder="Search campuses…" />
+            <input className={inputCls} value={campusSearch} onChange={(e) => setCampusSearch(e.target.value)}
+              placeholder="Search campuses…" aria-label="Search campuses" />
             <CheckList
               items={campusItems}
               selected={s.target_campuses}
@@ -439,10 +445,9 @@ export function FeedbackSurveyEditor({ existing, template, onDone, onCancel }: {
             />
           </div>
         </div>
-      </div>
+      </Panel>
 
-      <div className={cardCls}>
-        <SectionTitle sub="What happens when the user taps “Not now” or closes the popup.">Frequency</SectionTitle>
+      <Panel title="Frequency" description="What happens when the user taps “Not now” or closes the popup.">
         <div className="grid gap-3 md:grid-cols-3">
           <NumberField label="Max times shown per user" value={s.max_prompts} min={1} max={20}
             onChange={(n) => set('max_prompts', n)} />
@@ -451,19 +456,20 @@ export function FeedbackSurveyEditor({ existing, template, onDone, onCancel }: {
           <NumberField label="Priority" hint="Higher wins when several surveys qualify. Users see at most one per app session."
             value={s.priority} min={-1000} max={1000} onChange={(n) => set('priority', n)} />
         </div>
-        <div className="mt-4 rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 dark:bg-slate-950 dark:text-slate-300">
-          {describeAudience(s, uniNames).map((line) => <div key={line}>{line}</div>)}
-        </div>
-      </div>
+      </Panel>
 
-      <div className="flex gap-3">
-        <button type="button" onClick={onCancel}
-          className="flex-1 rounded-2xl border border-slate-200 bg-white py-3 text-sm font-black text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900">
-          Cancel
-        </button>
-        <button type="submit" disabled={busy} className={`flex-1 py-3 ${primaryBtnCls}`}>
-          {busy ? 'Saving…' : existing ? 'Save changes' : 'Create survey'}
-        </button>
+      <Notice tone="neutral" title="In short">
+        {describeAudience(s, uniNames).map((line) => <div key={line}>{line}</div>)}
+      </Notice>
+
+      <div className="sticky bottom-0 z-10 -mx-1 space-y-3 rounded-3xl border border-slate-200 bg-white/95 p-3 shadow-soft backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
+        {err ? <Notice tone="danger">{err}</Notice> : null}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
+          <Button type="submit" disabled={busy}>
+            {busy ? 'Saving…' : existing ? 'Save changes' : 'Create survey'}
+          </Button>
+        </div>
       </div>
     </form>
   );

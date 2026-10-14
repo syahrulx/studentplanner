@@ -23,6 +23,9 @@ export const COUNTRIES: CountryOption[] = [
   { code: 'GB', name: 'United Kingdom', flag: '🇬🇧', dialingCode: '44' },
   { code: 'CA', name: 'Canada', flag: '🇨🇦', dialingCode: '1' },
   { code: 'AU', name: 'Australia', flag: '🇦🇺', dialingCode: '61' },
+  { code: 'BN', name: 'Brunei', flag: '🇧🇳', dialingCode: '673' },
+  { code: 'EG', name: 'Egypt', flag: '🇪🇬', dialingCode: '20' },
+  { code: 'ID', name: 'Indonesia', flag: '🇮🇩', dialingCode: '62' },
 ];
 
 export const DEFAULT_COUNTRY_CODE = 'MY';

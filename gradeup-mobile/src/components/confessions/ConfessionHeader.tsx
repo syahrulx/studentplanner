@@ -1,4 +1,5 @@
 import React from 'react';
+import { authorAlias } from '@/src/components/confessions/aliases';
 import { View, Text, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 
@@ -53,15 +54,26 @@ type Props = {
 };
 
 /**
- * One quiet meta line: `#Arau 1247 · Rant · 1h`. Anonymous posts get no
+ * One quiet meta line: `Kancil Hijau · Rant · 1h`. Anonymous posts get no
  * avatar at all — a placeholder face on every row is noise. Named posts lead
  * with the author's photo + name.
+ *
+ * An anonymous post used to lead with its number, `#Arau 1247`. A number is
+ * not a person: a thread opened with a filing reference and then had people
+ * called Laksa and Teh Tarik replying underneath it. The author now gets a
+ * name from the same pool as everyone else in the thread, so the whole
+ * conversation reads in one voice.
+ *
+ * The number has not gone anywhere — it is still on the row and still what
+ * moderation works from. It is just no longer the first thing a student reads.
  */
 export function ConfessionHeader({ confession, theme, anonLabel, universityShort, size = 'card', youLabel = 'you' }: Props) {
   const named = confession.is_anonymous === false && !!confession.author_name;
   const number = formatConfessionNo(confession, universityShort);
   const avatar = size === 'detail' ? 32 : 26;
-  const lead = named ? confession.author_name! : number ?? anonLabel;
+  // Seeded by the confession id, so it matches the name the author answers to
+  // inside the thread — see src/components/confessions/aliases.ts.
+  const lead = named ? confession.author_name! : authorAlias(confession.id) || anonLabel;
 
   return (
     <View style={st.row}>
@@ -76,7 +88,7 @@ export function ConfessionHeader({ confession, theme, anonLabel, universityShort
       ) : null}
       <Text style={[st.line, { color: theme.textSecondary }]} numberOfLines={1}>
         <Text style={[st.lead, { color: theme.text }]}>{lead}</Text>
-        {named && number ? `  ${number}` : ''}
+        {number ? `  ${number}` : ''}
         {confession.tag ? (
           <>
             {'  ·  '}

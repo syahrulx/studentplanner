@@ -156,13 +156,23 @@ export async function insertTimetableEntry(
 }
 
 export async function getTimetable(userId: string): Promise<TimetableEntry[]> {
+  try {
+    return await getTimetableStrict(userId);
+  } catch {
+    return [];
+  }
+}
+
+/** Same query as getTimetable, but preserves network/RLS failures for offline-aware callers. */
+export async function getTimetableStrict(userId: string): Promise<TimetableEntry[]> {
   const { data, error } = await supabase
     .from('timetable_entries')
     .select('*')
     .eq('user_id', userId)
     .order('day')
     .order('start_time');
-  if (error || !data) return [];
+  if (error) throw new Error(error.message || 'Failed to load timetable');
+  if (!data) return [];
   return (data as any[]).map((r) => ({
     id: String(r.id),
     day: r.day,

@@ -42,24 +42,43 @@ export function getGoogleClientIds(): GoogleClientIds {
 /**
  * Pick the OAuth client for the current platform.
  *
- * **iOS**: Use the iOS client id (supports reversed-client-id scheme redirect).
- * **Android**: Use the Web client id. Google deprecated custom URI scheme
- *   redirects for Android OAuth clients. The Classroom flow uses an HTTPS
- *   redirect proxy (Supabase Edge Function) which requires a Web client.
- * **Web**: Use the Web client id (HTTPS redirect only).
+ * **iOS**: the iOS client id, redirecting on the reversed client id.
+ * **Android**: the Android client id, redirecting on the reversed package name.
+ * **Web**: the Web client id (HTTPS redirect only).
+ *
+ * Android used to return the Web client id here. That cannot work from a
+ * phone: Google requires a client secret to exchange a code issued to a Web
+ * client, and exchangeCodeForTokens below deliberately sends none, because a
+ * secret shipped in an app is not a secret. An Android client needs no secret
+ * — PKCE stands in for one — which is exactly why that client type exists.
+ *
+ * The Web client id stays as a fallback for builds where no Android client is
+ * configured, so nothing breaks; it simply will not complete an exchange, the
+ * same as before.
  */
 export function pickPlatformClientId(ids: GoogleClientIds): string | null {
   if (Platform.OS === 'ios') {
     return ids.iosClientId && ids.iosClientId.length > 0 ? ids.iosClientId : null;
   }
   if (Platform.OS === 'android') {
-    // Google deprecated custom URI scheme redirects for Android OAuth clients.
-    // Use the Web client id with HTTPS redirect via Edge Function proxy.
+    if (ids.androidClientId && ids.androidClientId.length > 0) return ids.androidClientId;
     if (ids.webClientId && ids.webClientId.length > 0) return ids.webClientId;
     return null;
   }
   if (ids.webClientId && ids.webClientId.length > 0) return ids.webClientId;
   return null;
+}
+
+/**
+ * The redirect Google sends an Android client back to.
+ *
+ * It is the package name used as a scheme — the Android equivalent of the
+ * reversed client id iOS uses. app.config.js registers an intent filter for
+ * exactly this scheme; the two have to agree or the consent screen completes
+ * and the browser has nowhere to go.
+ */
+export function androidRedirectUri(packageName: string): string {
+  return `${packageName}:/oauth2redirect`;
 }
 
 export interface GoogleTokenResponse {

@@ -1,0 +1,373 @@
+import type { CategoryItems, Painter } from "./types";
+
+/*
+ * New bottom items (see types.ts for how drawing works).
+ * Hips y 24–25 (x 8–15); legs y 26–28 (left x 8–10, right x 13–15) and rise
+ * one row when that foot is lifted (p.lUp / p.rUp). Shoes are drawn after
+ * the bottoms at y 29 (28 when lifted), and the top is drawn over y ≤ 23.
+ */
+
+const WHITE = "#f4f1ea";
+
+/** Rough brightness of a #hex colour, 0–255. */
+const lum = (hex: string) => {
+  const n = parseInt(hex.slice(1), 16);
+  return ((n >> 16) * 299 + ((n >> 8) & 255) * 587 + (n & 255) * 114) / 1000;
+};
+
+/** Bare lower legs under a skirt, from row `y` down to the shoe. */
+const bareLegs = (p: Painter, y: number) => {
+  const { R, sk, skS, lUp, rUp } = p;
+  R(8, y - lUp, 3, 29 - y, sk);
+  R(13, y - rUp, 3, 29 - y, sk);
+  R(10, y - lUp, 1, 29 - y, skS);
+  R(15, y - rUp, 1, 29 - y, skS);
+};
+
+/** Denim jeans shared by Jeans and Ripped jeans. */
+const jeans = (p: Painter, D: string, DS: string, DL: string) => {
+  const { R, px, lUp, rUp } = p;
+  p.legs(D, DS);
+  // Waistband and belt loops.
+  R(8, 24, 8, 1, DS);
+  px(9, 24, D);
+  px(14, 24, D);
+  if (!p.back) {
+    px(12, 24, "#c98a3a");
+    px(12, 25, DS);
+    // Front pocket curves.
+    px(9, 25, DS);
+    px(14, 25, DS);
+  } else {
+    R(9, 25, 2, 1, DS);
+    R(13, 25, 2, 1, DS);
+  }
+  // Seam lines between the legs, faded knees and rolled hems.
+  px(10, 26 - lUp, DS);
+  px(13, 26 - rUp, DS);
+  px(9, 27 - lUp, DL);
+  px(14, 27 - rUp, p.shade(DL, -0.15));
+  R(8, 28 - lUp, 3, 1, DL);
+  R(13, 28 - rUp, 3, 1, p.shade(DL, -0.15));
+};
+
+export const BOTTOM: CategoryItems = {
+  items: [
+    { id: "jeans", name: "Jeans", tier: "free" },
+    { id: "joggers", name: "Joggers", tier: "free" },
+    { id: "longskirt", name: "Long skirt", tier: "free" },
+    { id: "kain", name: "Kain", tier: "free" },
+    { id: "plaid", name: "Plaid skirt", tier: "coins", price: 50 },
+    { id: "ripped", name: "Ripped jeans", tier: "coins", price: 60 },
+    { id: "techcargo", name: "Techwear Cargo", tier: "coins", price: 160 },
+    { id: "pleated", name: "Pleated skirt", tier: "plus" },
+    { id: "hakama", name: "Hakama", tier: "plus" },
+    { id: "neonpants", name: "Neon stripes", tier: "plus" },
+    { id: "lava", name: "Lava pants", tier: "pro" },
+    { id: "aurora", name: "Aurora skirt", tier: "pro" },
+  ],
+  draw: {
+    jeans: {
+      draw: (p) => jeans(p, "#3f679e", "#2c4c78", "#7ea3cc"),
+    },
+    joggers: {
+      draw: (p) => {
+        const { R, px, bc, bS, lUp, rUp } = p;
+        const stripe = lum(bc) > 170 ? p.shade(bc, -0.45) : WHITE;
+        p.legs(bc, bS);
+        // Drawstring waist.
+        R(8, 24, 8, 1, bS);
+        if (!p.back) {
+          px(11, 25, stripe);
+          px(12, 25, stripe);
+        }
+        // Side stripes.
+        R(8, 24, 1, 2, stripe);
+        R(8, 26 - lUp, 1, 2, stripe);
+        R(15, 24, 1, 2, p.shade(stripe, -0.15));
+        R(15, 26 - rUp, 1, 2, p.shade(stripe, -0.15));
+        // Gathered cuffs at the ankle.
+        R(8, 28 - lUp, 3, 1, bS);
+        R(13, 28 - rUp, 3, 1, bS);
+        px(9, 27 - lUp, p.shade(bc, 0.15));
+      },
+    },
+    longskirt: {
+      draw: (p) => {
+        const { R, px, bc, bS, frame } = p;
+        R(7, 23, 10, 2, bc);
+        R(6, 25, 12, 2, bc);
+        R(5, 27, 14, 2, bc);
+        // Shadow side and soft folds that sway with each step.
+        R(16, 23, 1, 2, bS);
+        R(17, 25, 1, 2, bS);
+        R(18, 27, 1, 2, bS);
+        const sway = frame === 0 ? -1 : frame === 2 ? 1 : 0;
+        [9, 12, 15].forEach((x) => R(x + sway, 26, 1, 3, bS));
+        R(5, 28, 14, 1, p.shade(bc, -0.12));
+        px(8, 25, p.shade(bc, 0.18));
+        px(7, 27, p.shade(bc, 0.18));
+      },
+    },
+    kain: {
+      draw: (p) => {
+        const { R, bc, bS } = p;
+        const light = p.shade(bc, 0.35);
+        const panel = p.shade(bc, -0.35);
+        // Straight wrap down to the ankles with a dotted batik lattice.
+        const motif = (x: number, y: number) =>
+          (x + y) % 4 === 0 && (x - y + 40) % 4 === 0
+            ? light
+            : (x + y) % 4 === 2 && y % 2 === 0
+              ? p.shade(bc, 0.12)
+              : bc;
+        R(7, 23, 10, 6, motif);
+        R(7, 23, 10, 1, p.shade(bc, 0.15));
+        R(7, 28, 10, 1, bS);
+        if (p.back) {
+          R(16, 24, 1, 5, bS);
+          return;
+        }
+        // Wrap overlap with the darker "kepala" panel and a zigzag.
+        R(13, 24, 1, 5, bS);
+        R(14, 24, 3, 4, panel);
+        for (let y = 24; y < 28; y++) R(14 + (y % 2), y, 1, 1, light);
+        R(16, 24, 1, 4, p.shade(panel, -0.2));
+      },
+    },
+    plaid: {
+      draw: (p) => {
+        const { R, px, bc, bS } = p;
+        const dark = p.shade(bc, -0.4);
+        const accent = p.shade(bc, 0.3);
+        const tartan = (x: number, y: number) => {
+          const v = x % 3 === 0;
+          const h = y === 24 || y === 26;
+          if (v && h) return dark;
+          if (v || h) return bS;
+          return x % 6 === 4 ? accent : bc;
+        };
+        bareLegs(p, 27);
+        R(7, 23, 10, 2, tartan);
+        R(6, 25, 12, 2, tartan);
+        R(17, 25, 1, 2, dark);
+        // Pleat notches along the hem.
+        [7, 10, 13, 16].forEach((x) => px(x, 26, dark));
+      },
+    },
+    ripped: {
+      draw: (p) => {
+        const { R, px, sk, lUp, rUp } = p;
+        const thread = "#eef2f7";
+        jeans(p, "#5f86bb", "#456b9c", "#a3c1e3");
+        // Knee rips: skin showing between white threads.
+        px(9, 26 - lUp, thread);
+        R(8, 27 - lUp, 2, 1, sk);
+        px(8, 28 - lUp, thread);
+        R(13, 27 - rUp, 2, 1, sk);
+        px(14, 26 - rUp, thread);
+        // Thigh scuff and frayed hems.
+        px(13, 25, sk);
+        px(14, 25, thread);
+        [8, 10].forEach((x) => px(x, 28 - lUp, thread));
+        px(14, 28 - rUp, thread);
+      },
+    },
+    techcargo: {
+      draw: (p) => {
+        const { R, px, frame, lUp, rUp } = p;
+        const B = "#24252c";
+        const BS = "#17181d";
+        const BL = "#3a3c46";
+        const strap = "#41444f";
+        const metal = "#c3cad3";
+        const metalS = "#8d97a5";
+        const tab = "#ff7a2a";
+        p.legs(B, BS);
+        // Belt with a quick-release buckle.
+        R(8, 24, 8, 1, BS);
+        // Tapered ankles cinched with a strap and buckle.
+        R(8, 28 - lUp, 3, 1, strap);
+        R(13, 28 - rUp, 3, 1, strap);
+        px(10, 28 - lUp, metalS);
+        px(13, 28 - rUp, metalS);
+        // Cargo pockets on the outer thighs: flap on top, orange pull tab.
+        R(8, 26 - lUp, 2, 2, BL);
+        R(8, 26 - lUp, 2, 1, strap);
+        R(14, 26 - rUp, 2, 2, p.shade(BL, -0.15));
+        R(14, 26 - rUp, 2, 1, strap);
+        px(15, 27 - rUp, tab);
+        // Straps swing behind the step: -1 / +1 on the stepping frames.
+        const sw = frame === 0 ? -1 : frame === 2 ? 1 : 0;
+        // A strap hanging off the left hip, ending in a buckle.
+        px(7, 24, strap);
+        px(7, 25, strap);
+        px(sw < 0 ? 6 : 7, 26, strap);
+        px(7 + sw, 27, metal);
+        if (p.back) {
+          // Back yoke and flap pockets.
+          R(9, 25, 2, 1, BL);
+          R(13, 25, 2, 1, BL);
+          px(11, 24, tab);
+          return;
+        }
+        R(11, 24, 2, 1, metal);
+        px(12, 24, metalS);
+        // A loose strap slung between the thighs.
+        px(10, 25, strap);
+        px(13, 25, strap);
+        R(11 + sw, 26, 2, 1, strap);
+      },
+    },
+    pleated: {
+      draw: (p) => {
+        const { R, px, bc, bS, frame, gold } = p;
+        const light = p.shade(bc, 0.2);
+        const trim = lum(bc) > 170 ? "#2f3a4a" : WHITE;
+        bareLegs(p, 27);
+        // Pleats alternate light and shadow and shift a little as you walk.
+        const pleat = (x: number) => ((x + (frame >> 1)) % 2 === 0 ? light : bS);
+        R(7, 23, 10, 2, bc);
+        R(8, 24, 8, 1, bS);
+        px(14, 24, gold);
+        for (let x = 6; x < 18; x++) R(x, 25, 1, 1, pleat(x));
+        for (let x = 5; x < 19; x++) R(x, 26, 1, 2, pleat(x));
+        // Trim stripe just above a shaded hem, and a shine on the fabric.
+        R(5, 26, 14, 1, trim);
+        R(5, 27, 14, 1, (x) => (pleat(x) === light ? bc : p.shade(bc, -0.35)));
+        px(7, 25, "#ffffff");
+      },
+    },
+    hakama: {
+      draw: (p) => {
+        const { R, px, bc, bS, lUp, rUp } = p;
+        const light = p.shade(bc, 0.2);
+        const tie = lum(bc) > 170 ? "#2a1b18" : WHITE;
+        // Waist and wide, flared trouser legs.
+        R(7, 23, 10, 4, bc);
+        R(6, 25, 12, 2, bc);
+        R(6, 27 - lUp, 5, 2, bc);
+        R(13, 27 - rUp, 5, 2, bc);
+        R(17, 25, 1, 2, bS);
+        R(17, 27 - rUp, 1, 2, bS);
+        // Deep pleats.
+        [8, 10].forEach((x) => R(x, 25, 1, 4 - lUp, bS));
+        [14, 16].forEach((x) => R(x, 25, 1, 4 - rUp, bS));
+        R(7, 25, 1, 4 - lUp, light);
+        R(13, 25, 1, 4 - rUp, light);
+        // Hem edge.
+        R(6, 28 - lUp, 5, 1, p.shade(bc, -0.35));
+        R(13, 28 - rUp, 5, 1, p.shade(bc, -0.35));
+        // Himo ties wrapped at the waist with a bow.
+        R(7, 24, 10, 1, tie);
+        if (!p.back) {
+          R(11, 24, 2, 1, p.gold);
+          px(11, 25, tie);
+          px(12, 26, tie);
+        } else {
+          // Stiff back board (koshi-ita) with gold edge.
+          R(10, 23, 4, 2, light);
+          R(10, 25, 4, 1, p.gold);
+        }
+      },
+    },
+    neonpants: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t, lUp, rUp } = p;
+        const glow = 55 + 15 * Math.sin(t / 220);
+        const cyan = p.hsl(186, 100, glow);
+        const pink = p.hsl(312, 100, 60 + 15 * Math.sin(t / 220 + Math.PI));
+        p.legs("#1b1b2a", "#12121c");
+        R(8, 24, 8, 1, "#12121c");
+        // Glowing side stripes with a bright pulse running down them.
+        R(8, 24, 1, 2, cyan);
+        R(8, 26 - lUp, 1, 3, cyan);
+        R(15, 24, 1, 2, cyan);
+        R(15, 26 - rUp, 1, 3, cyan);
+        const k = Math.floor(t / 90) % 6;
+        if (k < 5) {
+          px(8, 24 + k - (k >= 2 ? lUp : 0), "#e8ffff");
+          px(15, 24 + k - (k >= 2 ? rUp : 0), "#e8ffff");
+        }
+        // Pink knee bands and waist dashes.
+        R(9, 27 - lUp, 2, 1, pink);
+        R(13, 27 - rUp, 2, 1, pink);
+        [10, 13].forEach((x) => px(x, 24, pink));
+      },
+    },
+    lava: {
+      animated: true,
+      draw: (p) => {
+        const { px, t, lUp, rUp } = p;
+        const rock = (x: number, y: number) =>
+          (x * 7 + y * 3) % 5 === 0 ? "#4a3832" : (x * 3 + y * 5) % 7 === 0 ? "#1f1615" : "#2e2220";
+        p.legs(rock, "#1c1413");
+        const hot = ["#7a1a10", "#d6361a", "#ff7a1a", "#ffb43a", "#fff1a6"];
+        // Cracks as one path from the hips down each leg; glow flows along it.
+        const crack = (pts: [number, number][], phase: number) =>
+          pts.forEach(([x, y], i) => {
+            const v = (Math.sin(t / 170 - i * 0.7 + phase) + 1) / 2;
+            px(x, y, hot[Math.min(4, Math.floor(v * 5))]);
+          });
+        const ly = 26 - lUp;
+        const ry = 26 - rUp;
+        crack(
+          [
+            [12, 24],
+            [11, 25],
+            [10, 25],
+            [9, ly],
+            [9, ly + 1],
+            [8, ly + 2],
+          ],
+          0,
+        );
+        crack(
+          [
+            [12, 24],
+            [13, 25],
+            [14, ry],
+            [15, ry + 1],
+            [14, ry + 2],
+          ],
+          1.5,
+        );
+        crack(
+          [
+            [9, 24],
+            [8, 25],
+          ],
+          3,
+        );
+        // Glowing embers at the hems.
+        const ember = Math.sin(t / 200) > 0 ? "#d6361a" : "#7a1a10";
+        px(10, 28 - lUp, ember);
+        px(13, 28 - rUp, ember);
+      },
+    },
+    aurora: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t, hsl } = p;
+        const band = (x: number, y: number) => {
+          if ((x * 7 + y * 11) % 13 === 0 && Math.sin(t / 250 + x) > 0.6) return "#ffffff";
+          const h =
+            150 + 70 * Math.sin(y * 0.7 + x * 0.25 - t / 600) + 50 * Math.sin(x * 0.4 - t / 900);
+          return hsl(h, 78, 58);
+        };
+        bareLegs(p, 28);
+        R(7, 23, 10, 2, band);
+        R(6, 25, 12, 2, band);
+        // Flowing hem that ripples.
+        for (let x = 5; x < 19; x++)
+          if (Math.sin(t / 300 + x * 0.9) > -0.2)
+            px(x, 27, hsl(150 + 70 * Math.sin(x * 0.5 - t / 500), 85, 74));
+        // Silver waist ribbon with a gold star gem.
+        R(7, 24, 10, 1, "#e6e0ff");
+        R(16, 24, 1, 1, "#b9b0e0");
+        if (!p.back) px(12, 24, p.gold);
+      },
+    },
+  },
+};

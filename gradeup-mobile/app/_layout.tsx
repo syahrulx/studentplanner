@@ -154,11 +154,17 @@ function RootLayoutNav() {
           break;
         case 'broadcast': {
           // Admin broadcast. Honour a caller-supplied `data.route` (absolute pathname)
-          // and/or `data.params` (flat object of string params) — falls back to the
-          // community notifications screen. We only allow absolute paths within the
-          // app to avoid opening arbitrary URLs from a push payload.
+          // and/or `data.params` (flat object of string params). We only allow
+          // absolute paths within the app to avoid opening arbitrary URLs from a
+          // push payload.
+          //
+          // The fallback is the inbox, not community notifications. A broadcast
+          // is stored and listed by app/inbox.tsx; community/notifications.tsx
+          // never reads one. Tapping a broadcast used to land on that community
+          // screen, where the message the student had just been shown was
+          // nowhere to be found.
           const rawRoute = typeof data.route === 'string' ? data.route.trim() : '';
-          const safeRoute = rawRoute.startsWith('/') ? rawRoute : '/community/notifications';
+          const safeRoute = rawRoute.startsWith('/') ? rawRoute : '/inbox';
           const rawParams = (data.params && typeof data.params === 'object') ? data.params : null;
           const params: Record<string, string> = {};
           if (rawParams) {

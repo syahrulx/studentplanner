@@ -123,6 +123,12 @@ export async function fetchInAppNotifications(limit = 50): Promise<InAppNotifica
  * down in its own time. Same fix as the task-breakdown channel.
  */
 export function subscribeInAppNotifications(userId: string, onChange: () => void): () => void {
+  // An admin broadcast lands on every open app at the same moment, and each
+  // one re-counting its badge at once spiked the database. Broadcast rows wait
+  // a random 0–20 s first, so those queries spread out. Personal notifications
+  // (friend requests, replies) still update the badge straight away.
+  let broadcastTimer: ReturnType<typeof setTimeout> | null = null;
+
   const channel = supabase
     .channel(`in-app-notifications:${userId}:${Math.random().toString(36).slice(2)}`)
     .on(
@@ -133,14 +139,28 @@ export function subscribeInAppNotifications(userId: string, onChange: () => void
         table: 'in_app_notifications',
         filter: `user_id=eq.${userId}`,
       },
-      onChange,
+      (payload) => {
+        const row = (payload as { new?: { data?: { type?: unknown } | null } }).new;
+        if (row?.data?.type !== 'broadcast') {
+          onChange();
+          return;
+        }
+        if (broadcastTimer) return; // one delayed refresh covers any burst
+        broadcastTimer = setTimeout(() => {
+          broadcastTimer = null;
+          onChange();
+        }, Math.random() * BROADCAST_REFRESH_JITTER_MS);
+      },
     )
     .subscribe();
 
   return () => {
+    if (broadcastTimer) clearTimeout(broadcastTimer);
     supabase.removeChannel(channel);
   };
 }
+
+const BROADCAST_REFRESH_JITTER_MS = 20_000;
 
 /** Delete specific notifications by ID. */
 export async function deleteInAppNotifications(ids: string[]): Promise<void> {

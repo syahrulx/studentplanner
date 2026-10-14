@@ -17,20 +17,15 @@ import {
 } from "../lib/api";
 import { supabase } from "../lib/supabase";
 import { Button } from "../ui/Button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "../ui/Card";
-import { Label, TextInput, Select } from "../ui/Input";
+import { TextInput, Select, Textarea } from "../ui/Input";
+import { Chip, EmptyState, FactGrid, Notice, PageHeader, Panel, Pill, PillGroup } from "../ui/page";
 import { matchesAdminSearch } from "../lib/adminSearch";
 import { useAdminSearch } from "../state/AdminSearchContext";
-import { MotionPanel, MotionSection } from "../ui/motion";
-import { AcademicCalendarOfferGraphic } from "../components/AcademicCalendarOfferGraphic";
+import { AcademicCalendarOfferGraphic, type CalendarGraphicOffer } from "../components/AcademicCalendarOfferGraphic";
 import { useSafeActionDialog } from "../components/SafeActionDialog";
 import { duplicateRecordIds, normaliseRecordName } from "../lib/dataQuality";
+import { CleanupBox, Field, SourceCard, Spinner } from "../components/calendars/calendarUi";
+import { BTN_DANGER, BTN_DANGER_SOFT, CHECKBOX, LINK_SM } from "../components/calendars/calendarStyles";
 
 const BUCKET = "academic-calendar-refs";
 
@@ -175,70 +170,68 @@ function PeriodListEditor({
   }
 
   return (
-    <div>
+    <div className="space-y-3">
       {isMalformed && (
-        <div className="mb-3 rounded-2xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+        <Notice tone="warning">
           The current timeline data isn't a valid list, so nothing here will publish as periods. Fix it in the raw JSON box below, or clear it and rebuild it here.
-        </div>
+        </Notice>
       )}
 
       {rows.length > 0 && (
-        <div className="mb-3 flex flex-col gap-2">
+        <ol className="divide-y divide-slate-100 rounded-2xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
           {rows.map((r, i) => (
-            <div
-              key={i}
-              className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950/40"
-            >
+            <li key={i} className="flex items-center justify-between gap-3 px-4 py-2.5">
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-black text-slate-900 dark:text-slate-100">
-                  {periodTypeLabel(r.type)}{" "}
-                  <span className="font-semibold text-slate-400">
-                    · {r.startDate || "?"} → {r.endDate || "?"}
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <Chip>{periodTypeLabel(r.type)}</Chip>
+                  <span className="font-mono text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                    {r.startDate || "?"} → {r.endDate || "?"}
                   </span>
                 </div>
-                {r.label && <div className="truncate text-xs font-semibold text-slate-500 dark:text-slate-400">{r.label}</div>}
+                {r.label && <div className="mt-0.5 truncate text-sm font-bold text-slate-800 dark:text-slate-100">{r.label}</div>}
               </div>
               <button
                 type="button"
                 onClick={() => removeRow(i)}
-                className="shrink-0 rounded-xl px-2 py-1 text-xs font-bold text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                className="shrink-0 rounded-xl px-2 py-1 text-xs font-bold text-rose-600 transition hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/30"
               >
                 Remove
               </button>
-            </div>
+            </li>
           ))}
-        </div>
+        </ol>
       )}
       {rows.length === 0 && !isMalformed && (
-        <div className="mb-3 text-xs font-semibold text-slate-400">
+        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
           No timeline periods yet. Add one below, or leave empty to publish just the semester span (and break, if set).
-        </div>
+        </p>
       )}
 
-      <div className="rounded-2xl border border-dashed border-slate-300 p-3 dark:border-slate-700">
-        {rowErr && <div className="mb-2 text-xs font-bold text-red-600 dark:text-red-400">{rowErr}</div>}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-          <Select value={newType} onChange={(e) => setNewType(e.target.value)} className="sm:col-span-1">
+      <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-950/40">
+        <div className="mb-2 text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Add a period</div>
+        {rowErr && <div className="mb-2 text-xs font-bold text-rose-600 dark:text-rose-400" role="alert">{rowErr}</div>}
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+          <Select value={newType} onChange={(e) => setNewType(e.target.value)} aria-label="Period type">
             {PERIOD_TYPES.map((t) => (
               <option key={t.value} value={t.value}>
                 {t.label}
               </option>
             ))}
           </Select>
-          <TextInput type="date" value={newStart} onChange={(e) => setNewStart(e.target.value)} />
-          <TextInput type="date" value={newEnd} onChange={(e) => setNewEnd(e.target.value)} />
           <TextInput
             value={newLabel}
             onChange={(e) => setNewLabel(e.target.value)}
             placeholder="Label, e.g. Orientation Week"
-            className="sm:col-span-1"
+            aria-label="Period label"
           />
+          <TextInput type="date" value={newStart} onChange={(e) => setNewStart(e.target.value)} aria-label="Period start date" />
+          <TextInput type="date" value={newEnd} onChange={(e) => setNewEnd(e.target.value)} aria-label="Period end date" />
           <button
             type="button"
             onClick={addRow}
-            className="h-11 shrink-0 rounded-2xl bg-slate-900 px-3 text-sm font-bold text-white transition hover:bg-slate-700 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
+            className="col-span-2 h-11 shrink-0 rounded-2xl bg-slate-900 px-4 text-sm font-bold text-white transition hover:bg-slate-700 lg:col-span-1 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
           >
-            + Add
+            Add period
           </button>
         </div>
       </div>
@@ -246,7 +239,13 @@ function PeriodListEditor({
   );
 }
 
-export function CalendarUpdatesRoute() {
+/**
+ * `publish` is the "Official calendars" tab (header + publish form);
+ * `offers` is the "Existing offers" tab (the list of published offers).
+ * Both views share this component so the list and the form keep one source
+ * of state and refresh logic.
+ */
+export function CalendarUpdatesRoute({ view = "publish" }: { view?: "publish" | "offers" } = {}) {
   const { requestSafeAction, safeActionDialog } = useSafeActionDialog();
   const { searchQuery, clearSearch } = useAdminSearch();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -635,7 +634,7 @@ export function CalendarUpdatesRoute() {
     );
     if (duplicate) {
       setErr(
-        "This university/campus calendar already exists. Open Existing offers and filter Redundant calendars if cleanup is needed.",
+        "This university/campus calendar already exists. Open the Existing offers tab and filter Redundant calendars if cleanup is needed.",
       );
       return;
     }
@@ -751,284 +750,540 @@ export function CalendarUpdatesRoute() {
     }
   };
 
+  // ── Button handlers (moved out of the JSX unchanged, so the layout can be read) ──
+
+  const extractFromUrl = async () => {
+    setExtractErr("");
+    setExtractOk("");
+    setExtractCandidates([]);
+    setExtractCandidateIdx(0);
+    const url = extractUrl.trim();
+    if (!url) {
+      setExtractErr("Please enter a URL.");
+      return;
+    }
+    setExtracting(true);
+    try {
+      const res = await extractCalendarFromUrl(url, selectedUniversityCountry);
+      const d = res.extracted;
+      const candidates = Array.isArray((d as any)?.candidates)
+        ? ((d as any).candidates as any[])
+        : [];
+      if (candidates.length > 0) {
+        setExtractCandidates(candidates as any);
+        setExtractCandidateIdx(0);
+        applyExtractedCandidate(candidates[0] as any);
+        const lvl = String(
+          (candidates[0] as any)?.program_level ?? "",
+        ).trim();
+        setExtractOk(
+          `✅ Extracted ${candidates.length} program calendar(s). Auto-filled: ${lvl ? `${lvl} — ` : ""}${String((candidates[0] as any)?.semester_label ?? "Calendar data")}. Review then publish.`,
+        );
+      } else {
+        // Backward-compat: accept legacy single-calendar extraction shape (pre-candidates)
+        const hasLegacy =
+          Boolean((d as any)?.semester_label) ||
+          Boolean((d as any)?.start_date) ||
+          Boolean((d as any)?.end_date) ||
+          Boolean((d as any)?.total_weeks) ||
+          Array.isArray((d as any)?.periods);
+        if (hasLegacy) {
+          const one = {
+            program_level: String(
+              (d as any)?.program_level ?? "General",
+            ),
+            semester_label: (d as any)?.semester_label,
+            start_date: (d as any)?.start_date,
+            end_date: (d as any)?.end_date,
+            total_weeks: (d as any)?.total_weeks,
+            break_start_date:
+              (d as any)?.break_start_date ?? null,
+            break_end_date:
+              (d as any)?.break_end_date ?? null,
+            periods: Array.isArray((d as any)?.periods)
+              ? (d as any)?.periods
+              : [],
+          };
+          setExtractCandidates([one]);
+          setExtractCandidateIdx(0);
+          applyExtractedCandidate(one as any);
+          setExtractOk(
+            `✅ Extracted: ${String(one.semester_label ?? "Calendar data")}. Review the auto-filled fields below, then publish.`,
+          );
+        } else {
+          setExtractErr(
+            "AI extraction succeeded but returned no candidates. Enter details manually.",
+          );
+        }
+      }
+      setOfficialUrl(url);
+    } catch (e) {
+      setExtractErr(
+        e instanceof Error
+          ? e.message
+          : "Extraction failed. Enter details manually.",
+      );
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const extractFromPdf = async () => {
+    setPdfExtractErr("");
+    setPdfExtractOk("");
+    const file = fileRef.current?.files?.[0];
+    if (!file || file.size === 0) {
+      setPdfExtractErr("Please choose a PDF file first.");
+      return;
+    }
+    if (!file.name.toLowerCase().endsWith(".pdf")) {
+      setPdfExtractErr("Only PDF files are supported.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setPdfExtractErr("PDF is too large (max 10 MB).");
+      return;
+    }
+    setPdfExtracting(true);
+    try {
+      // Read file as base64
+      const arrayBuf = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuf);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64 = btoa(binary);
+
+      const res = await extractCalendarFromPdf(
+        base64,
+        file.name,
+        selectedUniversityCountry,
+      );
+      const d = res.extracted;
+      const candidates = Array.isArray((d as any)?.candidates)
+        ? ((d as any).candidates as any[])
+        : [];
+      if (candidates.length > 0) {
+        setExtractCandidates(candidates as any);
+        setExtractCandidateIdx(0);
+        applyExtractedCandidate(candidates[0] as any);
+        const lvl = String(
+          (candidates[0] as any)?.program_level ?? "",
+        ).trim();
+        setPdfExtractOk(
+          `✅ Extracted ${candidates.length} program calendar(s) from PDF. Auto-filled: ${lvl ? `${lvl} — ` : ""}${String((candidates[0] as any)?.semester_label ?? "Calendar data")}. Review then publish.`,
+        );
+      } else {
+        const hasLegacy =
+          Boolean((d as any)?.semester_label) ||
+          Boolean((d as any)?.start_date) ||
+          Boolean((d as any)?.end_date) ||
+          Boolean((d as any)?.total_weeks) ||
+          Array.isArray((d as any)?.periods);
+        if (hasLegacy) {
+          const one = {
+            program_level: String(
+              (d as any)?.program_level ?? "General",
+            ),
+            semester_label: (d as any)?.semester_label,
+            start_date: (d as any)?.start_date,
+            end_date: (d as any)?.end_date,
+            total_weeks: (d as any)?.total_weeks,
+            break_start_date:
+              (d as any)?.break_start_date ?? null,
+            break_end_date:
+              (d as any)?.break_end_date ?? null,
+            periods: Array.isArray((d as any)?.periods)
+              ? (d as any)?.periods
+              : [],
+          };
+          setExtractCandidates([one]);
+          setExtractCandidateIdx(0);
+          applyExtractedCandidate(one as any);
+          setPdfExtractOk(
+            `✅ Extracted from PDF: ${String(one.semester_label ?? "Calendar data")}. Review the auto-filled fields below, then publish.`,
+          );
+        } else {
+          setPdfExtractErr(
+            "AI extraction succeeded but returned no calendar data. Enter details manually.",
+          );
+        }
+      }
+    } catch (e) {
+      setPdfExtractErr(
+        e instanceof Error
+          ? e.message
+          : "PDF extraction failed. Enter details manually.",
+      );
+    } finally {
+      setPdfExtracting(false);
+    }
+  };
+
+  const extractFromImage = async () => {
+    setImgExtractErr("");
+    setImgExtractOk("");
+    const file = imgFileRef.current?.files?.[0];
+    if (!file || file.size === 0) {
+      setImgExtractErr("Please choose an image file first.");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setImgExtractErr("Only image files are supported.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setImgExtractErr("Image is too large (max 10 MB).");
+      return;
+    }
+    setImgExtracting(true);
+    try {
+      const arrayBuf = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuf);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64 = btoa(binary);
+
+      const res = await extractCalendarFromImage(
+        `data:${file.type};base64,${base64}`,
+        file.name,
+        selectedUniversityCountry,
+      );
+      const d = res.extracted;
+      const candidates = Array.isArray((d as any)?.candidates)
+        ? ((d as any).candidates as any[])
+        : [];
+      if (candidates.length > 0) {
+        setExtractCandidates(candidates as any);
+        setExtractCandidateIdx(0);
+        applyExtractedCandidate(candidates[0] as any);
+        const lvl = String(
+          (candidates[0] as any)?.program_level ?? "",
+        ).trim();
+        setImgExtractOk(
+          `✅ Extracted ${candidates.length} program calendar(s) from image. Auto-filled: ${lvl ? `${lvl} — ` : ""}${String((candidates[0] as any)?.semester_label ?? "Calendar data")}. Review then publish.`,
+        );
+      } else {
+        const hasLegacy =
+          Boolean((d as any)?.semester_label) ||
+          Boolean((d as any)?.start_date) ||
+          Boolean((d as any)?.end_date) ||
+          Boolean((d as any)?.total_weeks) ||
+          Array.isArray((d as any)?.periods);
+        if (hasLegacy) {
+          const one = {
+            program_level: String(
+              (d as any)?.program_level ?? "General",
+            ),
+            semester_label: (d as any)?.semester_label,
+            start_date: (d as any)?.start_date,
+            end_date: (d as any)?.end_date,
+            total_weeks: (d as any)?.total_weeks,
+            break_start_date:
+              (d as any)?.break_start_date ?? null,
+            break_end_date:
+              (d as any)?.break_end_date ?? null,
+            periods: Array.isArray((d as any)?.periods)
+              ? (d as any)?.periods
+              : [],
+          };
+          setExtractCandidates([one]);
+          setExtractCandidateIdx(0);
+          applyExtractedCandidate(one as any);
+          setImgExtractOk(
+            `✅ Extracted from image: ${String(one.semester_label ?? "Calendar data")}. Review the auto-filled fields below, then publish.`,
+          );
+        } else {
+          setImgExtractErr(
+            "AI extraction succeeded but returned no calendar data. Enter details manually.",
+          );
+        }
+      }
+    } catch (e) {
+      setImgExtractErr(
+        e instanceof Error
+          ? e.message
+          : "Image extraction failed. Enter details manually.",
+      );
+    } finally {
+      setImgExtracting(false);
+    }
+  };
+
+  const deleteOneOffer = async (h: AdminCalendarOfferRow) => {
+    const uni =
+      universityNameById.get(h.university_id) ??
+      h.university_id;
+    const ok = window.confirm(
+      `Delete this offer?\n\n${uni}\n${h.semester_label}\n\nThis cannot be undone.`,
+    );
+    if (!ok) return;
+    setErr("");
+    setOkMsg("");
+    setDeletingOfferId(h.id);
+    try {
+      await deleteUniversityCalendarOffer(h.id);
+      await refreshHistory();
+      setOkMsg("Offer deleted.");
+    } catch (e) {
+      setErr(
+        e instanceof Error
+          ? e.message
+          : "Delete failed",
+      );
+    } finally {
+      setDeletingOfferId("");
+    }
+  };
+
+  // ── Display-only helpers ──
+
+  const statusBanners = err || okMsg ? (
+    <div className="space-y-2">
+      {err ? <Notice tone="danger">{err}</Notice> : null}
+      {okMsg ? <Notice tone="success">{okMsg}</Notice> : null}
+    </div>
+  ) : null;
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const selectedCampusName = selectedCampus
+    ? uniCampuses.find((c) => c.id === selectedCampus)?.name ?? selectedCampus
+    : "All campuses";
+  // Preview of what will be published (drawing only; publish() re-checks everything).
+  const draftDatesOk =
+    /^\d{4}-\d{2}-\d{2}$/.test(startDate.trim().slice(0, 10)) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(endDate.trim().slice(0, 10)) &&
+    startDate.trim().slice(0, 10) <= endDate.trim().slice(0, 10);
+  const draftOffer: CalendarGraphicOffer = {
+    semester_label: semesterLabel.trim() || "Untitled semester",
+    start_date: startDate.trim().slice(0, 10),
+    end_date: endDate.trim().slice(0, 10),
+    total_weeks: Math.max(1, Math.min(52, Number(totalWeeks) || 14)),
+    break_start_date: breakStart.trim().slice(0, 10) || null,
+    break_end_date: breakEnd.trim().slice(0, 10) || null,
+    periods_json: parsePeriodsJson(periodsJson),
+  };
+  const activeCandidate = extractCandidates[extractCandidateIdx];
+
   return (
-    <div>
-      <MotionSection>
-        <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">
-          Academic calendar updates
-        </div>
-        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Configure semester dates for each university. Students will
-          automatically receive the calendar for their university. UiTM students
-          use the portal calendar (HEA) and are excluded.
-          {searchQuery.trim() ? (
-            <span className="mt-1 block text-xs font-bold text-brand-600 dark:text-brand-400">
-              History table filtered by the top search bar.
-            </span>
-          ) : null}
-        </div>
-      </MotionSection>
+    <div className="space-y-5">
+      {view === "publish" ? (
+        <>
+          <PageHeader
+            title="Official calendars"
+            description="Set semester dates for each university. Students at that university get the calendar automatically."
+            actions={
+              <Button type="button" variant="ghost" size="sm" onClick={() => setPublishOpen((v) => !v)} aria-expanded={publishOpen}>
+                {publishOpen ? "Collapse form" : "Expand form"}
+              </Button>
+            }
+          />
 
-      <MotionPanel className="mt-6">
-        <Card>
-          <CardHeader className="items-center py-5">
-            <div className="flex items-center justify-between gap-3">
-              <CardTitle className="leading-none">Publish new offer</CardTitle>
-              <button
-                type="button"
-                onClick={() => setPublishOpen((v) => !v)}
-                className="inline-flex h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-xs font-black leading-none text-slate-900 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
-              >
-                {publishOpen ? "Collapse" : "Expand"}
-              </button>
-            </div>
-            <CardDescription>
-              Select a university from the dropdown and configure its semester
-              dates. Each university has its own calendar.
-            </CardDescription>
-          </CardHeader>
           {publishOpen ? (
-            <CardContent className="space-y-5">
-              {err ? (
-                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
-                  {err}
-                </div>
-              ) : null}
-              {okMsg ? (
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-100">
-                  {okMsg}
-                </div>
-              ) : null}
-
-              <div>
-                <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                  University
-                </div>
-                <div ref={uniComboRef} className="relative">
-                  <button
-                    type="button"
-                    aria-haspopup="listbox"
-                    aria-expanded={universityOpen}
-                    onClick={() => {
-                      setUniversityOpen((v) => !v);
-                      if (!universityOpen) setUniversitySearch("");
-                    }}
-                    className="flex h-11 w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                  >
-                    <span className="truncate">{selectedUniversityLabel}</span>
-                    <span className="text-slate-400">▾</span>
-                  </button>
-
-                  {universityOpen ? (
-                    <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft dark:border-slate-800 dark:bg-slate-950">
-                      <div className="p-2">
-                        <TextInput
-                          autoFocus
-                          value={universitySearch}
-                          onChange={(e) => setUniversitySearch(e.target.value)}
-                          placeholder="Search university (type name or id, e.g. UTM)"
-                        />
-                      </div>
-                      <div
-                        role="listbox"
-                        className="max-h-64 overflow-auto p-1"
-                      >
-                        {eligibleFiltered.map((u) => {
-                          const active = u.id === selected;
-                          return (
-                            <button
-                              key={u.id}
-                              type="button"
-                              role="option"
-                              aria-selected={active}
-                              onClick={() => {
-                                setSelected(u.id);
-                                setUniversityOpen(false);
-                                setUniversitySearch("");
-                              }}
-                              className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-semibold transition-colors ${
-                                active
-                                  ? "bg-brand-600 text-white"
-                                  : "text-slate-900 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-800/50"
-                              }`}
-                            >
-                              <span className="truncate">
-                                {u.name} ({u.id})
-                              </span>
-                              {active ? (
-                                <span className="text-xs font-black">
-                                  Selected
-                                </span>
-                              ) : null}
-                            </button>
-                          );
-                        })}
-                        {eligible.length > 0 &&
-                        eligibleFiltered.length === 0 &&
-                        universitySearch.trim() ? (
-                          <div className="px-3 py-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
-                            No matches.
-                          </div>
-                        ) : null}
-                      </div>
+            <>
+              <Panel
+                title="1. University"
+                description="Each university has its own calendar. UiTM is not in this list: its students use the portal calendar (HEA)."
+              >
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="min-w-0">
+                    <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
+                      University
                     </div>
+                    <div ref={uniComboRef} className="relative">
+                      <button
+                        type="button"
+                        aria-haspopup="listbox"
+                        aria-expanded={universityOpen}
+                        onClick={() => {
+                          setUniversityOpen((v) => !v);
+                          if (!universityOpen) setUniversitySearch("");
+                        }}
+                        className="flex h-11 w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950/30 dark:text-slate-100"
+                      >
+                        <span className={selected ? "truncate" : "truncate text-slate-400 dark:text-slate-500"}>{selectedUniversityLabel}</span>
+                        <span className="text-slate-400" aria-hidden="true">▾</span>
+                      </button>
+
+                      {universityOpen ? (
+                        <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft dark:border-slate-800 dark:bg-slate-950">
+                          <div className="p-2">
+                            <TextInput
+                              autoFocus
+                              value={universitySearch}
+                              onChange={(e) => setUniversitySearch(e.target.value)}
+                              placeholder="Search university (type name or id, e.g. UTM)"
+                              aria-label="Search university"
+                            />
+                          </div>
+                          <div role="listbox" className="max-h-64 overflow-auto p-1">
+                            {eligibleFiltered.map((u) => {
+                              const active = u.id === selected;
+                              return (
+                                <button
+                                  key={u.id}
+                                  type="button"
+                                  role="option"
+                                  aria-selected={active}
+                                  onClick={() => {
+                                    setSelected(u.id);
+                                    setUniversityOpen(false);
+                                    setUniversitySearch("");
+                                  }}
+                                  className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-semibold transition-colors ${
+                                    active
+                                      ? "bg-brand-600 text-white"
+                                      : "text-slate-900 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-800/50"
+                                  }`}
+                                >
+                                  <span className="truncate">
+                                    {u.name} ({u.id})
+                                  </span>
+                                  {active ? <span className="text-xs font-black">Selected</span> : null}
+                                </button>
+                              );
+                            })}
+                            {eligible.length > 0 &&
+                            eligibleFiltered.length === 0 &&
+                            universitySearch.trim() ? (
+                              <div className="px-3 py-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                                No matches.
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                    {eligible.length === 0 && universities.length === 0 ? (
+                      <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        No universities found. They will be auto-seeded on page reload.
+                      </p>
+                    ) : null}
+                  </div>
+
+                  {uniCampuses.length > 0 ? (
+                    <Field label="Campus (optional)">
+                      <Select value={selectedCampus} onChange={(e) => setSelectedCampus(e.target.value)}>
+                        <option value="">All Campuses</option>
+                        {uniCampuses.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
                   ) : null}
                 </div>
-                {eligible.length === 0 && universities.length === 0 ? (
-                  <p className="mt-2 text-sm font-semibold text-slate-500">
-                    No universities found. They will be auto-seeded on page
-                    reload.
-                  </p>
-                ) : null}
-              </div>
+              </Panel>
 
-              {uniCampuses.length > 0 ? (
-                <div>
-                  <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                    Campus (Optional)
-                  </div>
-                  <select
-                    value={selectedCampus}
-                    onChange={(e) => setSelectedCampus(e.target.value)}
-                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+              <Panel
+                title="2. Auto-fill from the official calendar (optional)"
+                description="AI reads a web page, PDF or image and fills in the form below. Always check the result before you publish."
+              >
+                <div className="grid gap-3 lg:grid-cols-3">
+                  <SourceCard
+                    title="From a web page"
+                    help="Paste the official academic calendar URL. The page is read and its dates, weeks and periods are filled in."
+                    err={extractErr}
+                    ok={extractOk}
                   >
-                    <option value="">All Campuses</option>
-                    {uniCampuses.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : null}
+                    <TextInput
+                      value={extractUrl}
+                      onChange={(e) => setExtractUrl(e.target.value)}
+                      placeholder="https://www.university.edu.my/academic-calendar"
+                      aria-label="Official calendar web address"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={extracting || !extractUrl.trim()}
+                      onClick={extractFromUrl}
+                      className="whitespace-nowrap"
+                    >
+                      {extracting ? (
+                        <>
+                          <Spinner />
+                          Extracting…
+                        </>
+                      ) : (
+                        "Extract and fill"
+                      )}
+                    </Button>
+                  </SourceCard>
 
-              {/* ─── Auto-Extract from Website ─── */}
-              <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
-                <div className="mb-2 flex items-center gap-2">
-                  <span className="text-lg">🤖</span>
-                  <span className="text-xs font-black uppercase tracking-wide text-slate-700 dark:text-slate-300">
-                    Auto-Extract from Website
-                  </span>
-                </div>
-                <p className="mb-4 text-xs font-medium text-slate-500 dark:text-slate-400">
-                  Paste the official academic calendar URL. The system will
-                  scrape the page and use AI to extract semester dates, teaching
-                  weeks, and period timelines — just like UiTM's calendar flow.
-                </p>
-                {extractErr ? (
-                  <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800 dark:border-red-900/50 dark:bg-red-950/50 dark:text-red-200">
-                    {extractErr}
-                  </div>
-                ) : null}
-                {extractOk ? (
-                  <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/50 dark:text-emerald-100">
-                    {extractOk}
-                  </div>
-                ) : null}
-                <div className="flex gap-2">
-                  <TextInput
-                    value={extractUrl}
-                    onChange={(e) => setExtractUrl(e.target.value)}
-                    placeholder="https://www.university.edu.my/academic-calendar"
-                    className="flex-1"
-                  />
-                  <Button
-                    type="button"
-                    disabled={extracting || !extractUrl.trim()}
-                    onClick={async () => {
-                      setExtractErr("");
-                      setExtractOk("");
-                      setExtractCandidates([]);
-                      setExtractCandidateIdx(0);
-                      const url = extractUrl.trim();
-                      if (!url) {
-                        setExtractErr("Please enter a URL.");
-                        return;
-                      }
-                      setExtracting(true);
-                      try {
-                        const res = await extractCalendarFromUrl(url, selectedUniversityCountry);
-                        const d = res.extracted;
-                        const candidates = Array.isArray((d as any)?.candidates)
-                          ? ((d as any).candidates as any[])
-                          : [];
-                        if (candidates.length > 0) {
-                          setExtractCandidates(candidates as any);
-                          setExtractCandidateIdx(0);
-                          applyExtractedCandidate(candidates[0] as any);
-                          const lvl = String(
-                            (candidates[0] as any)?.program_level ?? "",
-                          ).trim();
-                          setExtractOk(
-                            `✅ Extracted ${candidates.length} program calendar(s). Auto-filled: ${lvl ? `${lvl} — ` : ""}${String((candidates[0] as any)?.semester_label ?? "Calendar data")}. Review then publish.`,
-                          );
-                        } else {
-                          // Backward-compat: accept legacy single-calendar extraction shape (pre-candidates)
-                          const hasLegacy =
-                            Boolean((d as any)?.semester_label) ||
-                            Boolean((d as any)?.start_date) ||
-                            Boolean((d as any)?.end_date) ||
-                            Boolean((d as any)?.total_weeks) ||
-                            Array.isArray((d as any)?.periods);
-                          if (hasLegacy) {
-                            const one = {
-                              program_level: String(
-                                (d as any)?.program_level ?? "General",
-                              ),
-                              semester_label: (d as any)?.semester_label,
-                              start_date: (d as any)?.start_date,
-                              end_date: (d as any)?.end_date,
-                              total_weeks: (d as any)?.total_weeks,
-                              break_start_date:
-                                (d as any)?.break_start_date ?? null,
-                              break_end_date:
-                                (d as any)?.break_end_date ?? null,
-                              periods: Array.isArray((d as any)?.periods)
-                                ? (d as any)?.periods
-                                : [],
-                            };
-                            setExtractCandidates([one]);
-                            setExtractCandidateIdx(0);
-                            applyExtractedCandidate(one as any);
-                            setExtractOk(
-                              `✅ Extracted: ${String(one.semester_label ?? "Calendar data")}. Review the auto-filled fields below, then publish.`,
-                            );
-                          } else {
-                            setExtractErr(
-                              "AI extraction succeeded but returned no candidates. Enter details manually.",
-                            );
-                          }
-                        }
-                        setOfficialUrl(url);
-                      } catch (e) {
-                        setExtractErr(
-                          e instanceof Error
-                            ? e.message
-                            : "Extraction failed. Enter details manually.",
-                        );
-                      } finally {
-                        setExtracting(false);
-                      }
-                    }}
-                    className="shrink-0 whitespace-nowrap"
+                  <SourceCard
+                    title="From a PDF"
+                    help="Upload the calendar PDF (max 10 MB). The same file is also saved as the reference PDF when you publish."
+                    err={pdfExtractErr}
+                    ok={pdfExtractOk}
                   >
-                    {extracting ? (
-                      <span className="flex items-center gap-2">
-                        <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                        Extracting…
-                      </span>
-                    ) : (
-                      "🔍 Extract & Auto-Fill"
-                    )}
-                  </Button>
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      accept="application/pdf,.pdf"
+                      aria-label="Calendar PDF"
+                      className="block w-full min-w-0 text-xs font-semibold text-slate-700 file:mr-3 file:rounded-xl file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-xs file:font-bold file:text-white dark:text-slate-200 dark:file:bg-white dark:file:text-slate-950"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={pdfExtracting}
+                      onClick={extractFromPdf}
+                      className="whitespace-nowrap"
+                    >
+                      {pdfExtracting ? (
+                        <>
+                          <Spinner />
+                          Extracting from PDF…
+                        </>
+                      ) : (
+                        "Extract and fill from PDF"
+                      )}
+                    </Button>
+                  </SourceCard>
+
+                  <SourceCard
+                    title="From an image"
+                    help="Upload a screenshot, photo or scan (max 10 MB). GPT-4o Vision reads the dates, weeks and periods."
+                    err={imgExtractErr}
+                    ok={imgExtractOk}
+                  >
+                    <input
+                      ref={imgFileRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                      aria-label="Calendar image"
+                      className="block w-full min-w-0 text-xs font-semibold text-slate-700 file:mr-3 file:rounded-xl file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-xs file:font-bold file:text-white dark:text-slate-200 dark:file:bg-white dark:file:text-slate-950"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={imgExtracting}
+                      onClick={extractFromImage}
+                      className="whitespace-nowrap"
+                    >
+                      {imgExtracting ? (
+                        <>
+                          <Spinner />
+                          Extracting…
+                        </>
+                      ) : (
+                        "Extract and fill from image"
+                      )}
+                    </Button>
+                  </SourceCard>
                 </div>
+
                 {extractCandidates.length > 0 ? (
-                  <div className="mt-3">
-                    <Label className="block">
-                      <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                        {extractCandidates.some(c => c.campus_group) ? 'Institute / Program' : 'Program level'}
-                      </span>
-                      <select
+                  <div className="mt-4 space-y-2">
+                    <Field
+                      label={extractCandidates.some((c) => c.campus_group) ? "Institute / program" : "Program level"}
+                      hint={`${extractCandidates.length} calendar(s) found. Picking one fills the form with it.`}
+                    >
+                      <Select
                         value={String(extractCandidateIdx)}
                         onChange={(e) => {
                           const idx = Math.max(
@@ -1041,7 +1296,6 @@ export function CalendarUpdatesRoute() {
                           setExtractCandidateIdx(idx);
                           applyExtractedCandidate(extractCandidates[idx]);
                         }}
-                        className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
                       >
                         {extractCandidates.map((c, idx) => {
                           const lvl =
@@ -1059,694 +1313,357 @@ export function CalendarUpdatesRoute() {
                             </option>
                           );
                         })}
-                      </select>
-                    </Label>
-                    {extractCandidates[extractCandidateIdx]?.campus_group_description ? (
-                      <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
-                        📍 <span className="font-black">{extractCandidates[extractCandidateIdx]?.campus_group}:</span>{" "}
-                        {extractCandidates[extractCandidateIdx]?.campus_group_description}
-                      </div>
+                      </Select>
+                    </Field>
+                    {activeCandidate?.campus_group_description ? (
+                      <Notice tone="warning">
+                        <span className="font-black">{activeCandidate?.campus_group}:</span>{" "}
+                        {activeCandidate?.campus_group_description}
+                      </Notice>
                     ) : null}
                   </div>
                 ) : null}
-              </div>
+              </Panel>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Label className="block">
-                  <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                    Semester label
-                  </span>
-                  <TextInput
-                    value={semesterLabel}
-                    onChange={(e) => setSemesterLabel(e.target.value)}
-                    placeholder="e.g. Semester 1 2025/2026"
-                  />
-                </Label>
-                <Label className="block">
-                  <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                    Total teaching weeks
-                  </span>
-                  <TextInput
-                    value={totalWeeks}
-                    onChange={(e) => setTotalWeeks(e.target.value)}
-                    placeholder="14"
-                    inputMode="numeric"
-                  />
-                </Label>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Label className="block">
-                  <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                    Start date
-                  </span>
-                  <TextInput
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                  />
-                </Label>
-                <Label className="block">
-                  <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                    End date
-                  </span>
-                  <TextInput
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                  />
-                </Label>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Label className="block">
-                  <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                    Break start (optional)
-                  </span>
-                  <TextInput
-                    type="date"
-                    value={breakStart}
-                    onChange={(e) => setBreakStart(e.target.value)}
-                  />
-                </Label>
-                <Label className="block">
-                  <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                    Break end (optional)
-                  </span>
-                  <TextInput
-                    type="date"
-                    value={breakEnd}
-                    onChange={(e) => setBreakEnd(e.target.value)}
-                  />
-                </Label>
-              </div>
-
-              <Label className="block">
-                <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                  Official link (optional)
-                </span>
-                <TextInput
-                  value={officialUrl}
-                  onChange={(e) => setOfficialUrl(e.target.value)}
-                  placeholder="https://…"
-                />
-              </Label>
-
-              {/* ─── PDF Upload + AI Extract ─── */}
-              <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
-                <div className="mb-2 flex items-center gap-2">
-                  <span className="text-lg">📄</span>
-                  <span className="text-xs font-black uppercase tracking-wide text-slate-700 dark:text-slate-300">
-                    Upload PDF & Auto-Extract
-                  </span>
+              <Panel title="3. Semester details">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Semester label">
+                    <TextInput
+                      value={semesterLabel}
+                      onChange={(e) => setSemesterLabel(e.target.value)}
+                      placeholder="e.g. Semester 1 2025/2026"
+                    />
+                  </Field>
+                  <Field label="Total teaching weeks">
+                    <TextInput
+                      value={totalWeeks}
+                      onChange={(e) => setTotalWeeks(e.target.value)}
+                      placeholder="14"
+                      inputMode="numeric"
+                    />
+                  </Field>
+                  <Field label="Start date">
+                    <TextInput type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                  </Field>
+                  <Field label="End date">
+                    <TextInput type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                  </Field>
+                  <Field label="Break start (optional)">
+                    <TextInput type="date" value={breakStart} onChange={(e) => setBreakStart(e.target.value)} />
+                  </Field>
+                  <Field label="Break end (optional)">
+                    <TextInput type="date" value={breakEnd} onChange={(e) => setBreakEnd(e.target.value)} />
+                  </Field>
+                  <Field label="Official link (optional)" className="sm:col-span-2">
+                    <TextInput value={officialUrl} onChange={(e) => setOfficialUrl(e.target.value)} placeholder="https://…" />
+                  </Field>
+                  <Field label="Admin note to students (optional)" className="sm:col-span-2">
+                    <Textarea
+                      value={adminNote}
+                      onChange={(e) => setAdminNote(e.target.value)}
+                      rows={3}
+                      className="text-sm"
+                      placeholder="Short message shown in the app prompt"
+                    />
+                  </Field>
                 </div>
-                <p className="mb-4 text-xs font-medium text-slate-500 dark:text-slate-400">
-                  Upload the university's academic calendar PDF. The system will
-                  extract text and use AI to auto-fill semester dates, teaching
-                  weeks, and period timelines.
-                </p>
-                {pdfExtractErr ? (
-                  <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800 dark:border-red-900/50 dark:bg-red-950/50 dark:text-red-200">
-                    {pdfExtractErr}
-                  </div>
-                ) : null}
-                {pdfExtractOk ? (
-                  <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/50 dark:text-emerald-100">
-                    {pdfExtractOk}
-                  </div>
-                ) : null}
-                <div className="flex flex-wrap items-center gap-3">
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    accept="application/pdf,.pdf"
-                    className="block flex-1 text-sm font-semibold text-slate-700 file:mr-3 file:rounded-xl file:border-0 file:bg-brand-500 file:px-4 file:py-2 file:text-sm file:font-bold file:text-white dark:text-slate-200"
-                  />
-                  <Button
-                    type="button"
-                    disabled={pdfExtracting}
-                    onClick={async () => {
-                      setPdfExtractErr("");
-                      setPdfExtractOk("");
-                      const file = fileRef.current?.files?.[0];
-                      if (!file || file.size === 0) {
-                        setPdfExtractErr("Please choose a PDF file first.");
-                        return;
-                      }
-                      if (!file.name.toLowerCase().endsWith(".pdf")) {
-                        setPdfExtractErr("Only PDF files are supported.");
-                        return;
-                      }
-                      if (file.size > 10 * 1024 * 1024) {
-                        setPdfExtractErr("PDF is too large (max 10 MB).");
-                        return;
-                      }
-                      setPdfExtracting(true);
-                      try {
-                        // Read file as base64
-                        const arrayBuf = await file.arrayBuffer();
-                        const bytes = new Uint8Array(arrayBuf);
-                        let binary = "";
-                        for (let i = 0; i < bytes.length; i++) {
-                          binary += String.fromCharCode(bytes[i]);
-                        }
-                        const base64 = btoa(binary);
+              </Panel>
 
-                        const res = await extractCalendarFromPdf(
-                          base64,
-                          file.name,
-                          selectedUniversityCountry,
-                        );
-                        const d = res.extracted;
-                        const candidates = Array.isArray((d as any)?.candidates)
-                          ? ((d as any).candidates as any[])
-                          : [];
-                        if (candidates.length > 0) {
-                          setExtractCandidates(candidates as any);
-                          setExtractCandidateIdx(0);
-                          applyExtractedCandidate(candidates[0] as any);
-                          const lvl = String(
-                            (candidates[0] as any)?.program_level ?? "",
-                          ).trim();
-                          setPdfExtractOk(
-                            `✅ Extracted ${candidates.length} program calendar(s) from PDF. Auto-filled: ${lvl ? `${lvl} — ` : ""}${String((candidates[0] as any)?.semester_label ?? "Calendar data")}. Review then publish.`,
-                          );
-                        } else {
-                          const hasLegacy =
-                            Boolean((d as any)?.semester_label) ||
-                            Boolean((d as any)?.start_date) ||
-                            Boolean((d as any)?.end_date) ||
-                            Boolean((d as any)?.total_weeks) ||
-                            Array.isArray((d as any)?.periods);
-                          if (hasLegacy) {
-                            const one = {
-                              program_level: String(
-                                (d as any)?.program_level ?? "General",
-                              ),
-                              semester_label: (d as any)?.semester_label,
-                              start_date: (d as any)?.start_date,
-                              end_date: (d as any)?.end_date,
-                              total_weeks: (d as any)?.total_weeks,
-                              break_start_date:
-                                (d as any)?.break_start_date ?? null,
-                              break_end_date:
-                                (d as any)?.break_end_date ?? null,
-                              periods: Array.isArray((d as any)?.periods)
-                                ? (d as any)?.periods
-                                : [],
-                            };
-                            setExtractCandidates([one]);
-                            setExtractCandidateIdx(0);
-                            applyExtractedCandidate(one as any);
-                            setPdfExtractOk(
-                              `✅ Extracted from PDF: ${String(one.semester_label ?? "Calendar data")}. Review the auto-filled fields below, then publish.`,
-                            );
-                          } else {
-                            setPdfExtractErr(
-                              "AI extraction succeeded but returned no calendar data. Enter details manually.",
-                            );
-                          }
-                        }
-                      } catch (e) {
-                        setPdfExtractErr(
-                          e instanceof Error
-                            ? e.message
-                            : "PDF extraction failed. Enter details manually.",
-                        );
-                      } finally {
-                        setPdfExtracting(false);
-                      }
-                    }}
-                    className="shrink-0 whitespace-nowrap"
-                  >
-                    {pdfExtracting ? (
-                      <span className="flex items-center gap-2">
-                        <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                        Extracting from PDF…
-                      </span>
-                    ) : (
-                      "📄 Extract & Auto-Fill from PDF"
-                    )}
-                  </Button>
-                </div>
-              </div>
-
-              {/* ─── Image Upload + AI Extract ─── */}
-              <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
-                <div className="mb-2 flex items-center gap-2">
-                  <span className="text-lg">🖼️</span>
-                  <span className="text-xs font-black uppercase tracking-wide text-slate-700 dark:text-slate-300">
-                    Upload Image & Auto-Extract
-                  </span>
-                </div>
-                <p className="mb-4 text-xs font-medium text-slate-500 dark:text-slate-400">
-                  Upload a screenshot, photo, or scan of the academic calendar.
-                  The system will use GPT-4o Vision to extract semester dates,
-                  teaching weeks, and period timelines.
-                </p>
-                {imgExtractErr ? (
-                  <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-800 dark:border-red-900/50 dark:bg-red-950/50 dark:text-red-200">
-                    {imgExtractErr}
-                  </div>
-                ) : null}
-                {imgExtractOk ? (
-                  <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/50 dark:text-emerald-100">
-                    {imgExtractOk}
-                  </div>
-                ) : null}
-                <div className="flex flex-wrap items-center gap-3">
-                  <input
-                    ref={imgFileRef}
-                    type="file"
-                    accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
-                    className="block flex-1 text-sm font-semibold text-slate-700 file:mr-3 file:rounded-xl file:border-0 file:bg-brand-500 file:px-4 file:py-2 file:text-sm file:font-bold file:text-white dark:text-slate-200"
-                  />
-                  <Button
-                    type="button"
-                    disabled={imgExtracting}
-                    onClick={async () => {
-                      setImgExtractErr("");
-                      setImgExtractOk("");
-                      const file = imgFileRef.current?.files?.[0];
-                      if (!file || file.size === 0) {
-                        setImgExtractErr("Please choose an image file first.");
-                        return;
-                      }
-                      if (!file.type.startsWith("image/")) {
-                        setImgExtractErr("Only image files are supported.");
-                        return;
-                      }
-                      if (file.size > 10 * 1024 * 1024) {
-                        setImgExtractErr("Image is too large (max 10 MB).");
-                        return;
-                      }
-                      setImgExtracting(true);
-                      try {
-                        const arrayBuf = await file.arrayBuffer();
-                        const bytes = new Uint8Array(arrayBuf);
-                        let binary = "";
-                        for (let i = 0; i < bytes.length; i++) {
-                          binary += String.fromCharCode(bytes[i]);
-                        }
-                        const base64 = btoa(binary);
-
-                        const res = await extractCalendarFromImage(
-                          `data:${file.type};base64,${base64}`,
-                          file.name,
-                          selectedUniversityCountry,
-                        );
-                        const d = res.extracted;
-                        const candidates = Array.isArray((d as any)?.candidates)
-                          ? ((d as any).candidates as any[])
-                          : [];
-                        if (candidates.length > 0) {
-                          setExtractCandidates(candidates as any);
-                          setExtractCandidateIdx(0);
-                          applyExtractedCandidate(candidates[0] as any);
-                          const lvl = String(
-                            (candidates[0] as any)?.program_level ?? "",
-                          ).trim();
-                          setImgExtractOk(
-                            `✅ Extracted ${candidates.length} program calendar(s) from image. Auto-filled: ${lvl ? `${lvl} — ` : ""}${String((candidates[0] as any)?.semester_label ?? "Calendar data")}. Review then publish.`,
-                          );
-                        } else {
-                          const hasLegacy =
-                            Boolean((d as any)?.semester_label) ||
-                            Boolean((d as any)?.start_date) ||
-                            Boolean((d as any)?.end_date) ||
-                            Boolean((d as any)?.total_weeks) ||
-                            Array.isArray((d as any)?.periods);
-                          if (hasLegacy) {
-                            const one = {
-                              program_level: String(
-                                (d as any)?.program_level ?? "General",
-                              ),
-                              semester_label: (d as any)?.semester_label,
-                              start_date: (d as any)?.start_date,
-                              end_date: (d as any)?.end_date,
-                              total_weeks: (d as any)?.total_weeks,
-                              break_start_date:
-                                (d as any)?.break_start_date ?? null,
-                              break_end_date:
-                                (d as any)?.break_end_date ?? null,
-                              periods: Array.isArray((d as any)?.periods)
-                                ? (d as any)?.periods
-                                : [],
-                            };
-                            setExtractCandidates([one]);
-                            setExtractCandidateIdx(0);
-                            applyExtractedCandidate(one as any);
-                            setImgExtractOk(
-                              `✅ Extracted from image: ${String(one.semester_label ?? "Calendar data")}. Review the auto-filled fields below, then publish.`,
-                            );
-                          } else {
-                            setImgExtractErr(
-                              "AI extraction succeeded but returned no calendar data. Enter details manually.",
-                            );
-                          }
-                        }
-                      } catch (e) {
-                        setImgExtractErr(
-                          e instanceof Error
-                            ? e.message
-                            : "Image extraction failed. Enter details manually.",
-                        );
-                      } finally {
-                        setImgExtracting(false);
-                      }
-                    }}
-                    className="shrink-0 whitespace-nowrap"
-                  >
-                    {imgExtracting ? (
-                      <span className="flex items-center gap-2">
-                        <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                        Extracting…
-                      </span>
-                    ) : (
-                      "🖼️ Extract & Auto-Fill from Image"
-                    )}
-                  </Button>
-                </div>
-              </div>
-
-              <Label className="block">
-                <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                  Admin note to students (optional)
-                </span>
-                <textarea
-                  value={adminNote}
-                  onChange={(e) => setAdminNote(e.target.value)}
-                  rows={3}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                  placeholder="Short message shown in the app prompt"
-                />
-              </Label>
-
-              <div>
-                <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                  Timeline periods (optional)
-                </span>
-                <p className="mb-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  Orientation, lecture weeks, exams, semester break, public holidays, etc. URL, PDF and image
-                  extraction fill this automatically — use this to add, remove, or correct entries by hand.
-                </p>
-                <PeriodListEditor value={periodsJson} onChange={setPeriodsJson} />
-              </div>
-
-              <details className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/50">
-                <summary className="cursor-pointer text-sm font-black text-slate-700 dark:text-slate-200">
-                  Raw timeline JSON (advanced)
-                </summary>
-                <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  Same data as the period list above, as raw JSON — for bulk edits or a technical correction. Stays
-                  in sync with the list above either way.
-                </p>
-                <Label className="mt-3 block">
-                  <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                    Timeline JSON (optional)
-                  </span>
-                  <textarea
-                    value={periodsJson}
-                    onChange={(e) => setPeriodsJson(e.target.value)}
-                    rows={4}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 font-mono text-xs text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                    placeholder='[{"type":"lecture","label":"…","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD"}]'
-                  />
-                </Label>
-              </details>
-
-              <Button
-                type="button"
-                disabled={busy}
-                onClick={() => void publish()}
-                className="w-full sm:w-auto"
+              <Panel
+                title="4. Timeline periods (optional)"
+                description="Orientation, lecture weeks, exams, semester break, public holidays, etc. Auto-fill adds these; add, remove or correct them by hand here."
               >
-                {busy ? "Publishing…" : "Publish offers"}
-              </Button>
-            </CardContent>
-          ) : null}
-        </Card>
-      </MotionPanel>
+                <div className="space-y-4">
+                  <PeriodListEditor value={periodsJson} onChange={setPeriodsJson} />
+                  <details className="group rounded-2xl border border-slate-200 px-4 py-3 dark:border-slate-800">
+                    <summary className="cursor-pointer text-xs font-black text-slate-600 dark:text-slate-300">
+                      Raw timeline JSON (advanced)
+                    </summary>
+                    <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      The same data as the list above, as raw JSON, for bulk edits or a technical fix. Both stay in sync.
+                    </p>
+                    <Field label="Timeline JSON (optional)" className="mt-3">
+                      <Textarea
+                        value={periodsJson}
+                        onChange={(e) => setPeriodsJson(e.target.value)}
+                        rows={4}
+                        className="font-mono"
+                        placeholder='[{"type":"lecture","label":"…","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD"}]'
+                      />
+                    </Field>
+                  </details>
+                </div>
+              </Panel>
 
-      <MotionSection className="mt-10">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="text-lg font-black text-slate-900 dark:text-slate-100">
-              Existing offers
-            </div>
-            <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-              Ordered by calendar end date. Each row shows the university, semester span, and a
-              visual timeline (calendar phases are shown when available).
-            </div>
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <button
-              type="button"
-              onClick={() => {
-                setOffersUni("");
-                setOffersSearch("");
-                setOffersAge("all");
-                setSelectedExpiredOfferIds([]);
-                setSelectAllExpiredAdminOffers(false);
-              }}
-              className="h-10 rounded-2xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-900 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
-            >
-              Reset
-            </button>
-            <button
-              type="button"
-              onClick={() => setOffersOpen((v) => !v)}
-              className="h-10 rounded-2xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-900 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
-            >
-              {offersOpen ? "Collapse" : "Expand"}
-            </button>
-          </div>
-        </div>
-      </MotionSection>
-
-      {offersOpen ? (
-        <>
-          <div className="mt-4 rounded-3xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/30">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Label className="block">
-                <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                  University
-                </span>
-                <select
-                  value={offersUni}
-                  onChange={(e) => setOffersUni(e.target.value)}
-                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                >
-                  <option value="">All</option>
-                  {offerUniOptions.map((u) => (
-                    <option key={u} value={u}>
-                      {universityNameById.get(u) ?? u} ({u})
-                    </option>
-                  ))}
-                </select>
-              </Label>
-              <Label className="block">
-                <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                  Search
-                </span>
-                <TextInput
-                  value={offersSearch}
-                  onChange={(e) => setOffersSearch(e.target.value)}
-                  placeholder="Search semester, note, url…"
-                />
-              </Label>
-              <Label className="block">
-                <span className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                  Calendar status
-                </span>
-                <select
-                  value={offersAge}
-                  onChange={(e) => setOffersAge(e.target.value as "all" | "expired" | "redundant")}
-                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                >
-                  <option value="all">All admin offers</option>
-                  <option value="expired">Old academic calendars</option>
-                  <option value="redundant">Redundant calendars ({redundantCalendarIds.size})</option>
-                </select>
-              </Label>
-            </div>
-            <div className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-              Showing{" "}
-              <span className="font-black">{filteredHistory.length}</span>{" "}
-              offer(s)
-              {searchQuery.trim() ? " (also filtered by top search bar)" : ""}.
-              {expiredAdminOffers.length ? ` ${expiredAdminOffers.length} old academic calendar${expiredAdminOffers.length === 1 ? "" : "s"} can be cleaned up.` : ""}
-            </div>
-          </div>
-
-          {expiredAdminOffers.length ? (
-            <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/50 dark:bg-amber-950/30">
-              <label className="inline-flex cursor-pointer items-center gap-3 text-sm font-bold text-amber-950 dark:text-amber-100">
-                <input
-                  type="checkbox"
-                  checked={allExpiredAdminOffersSelected}
-                  onChange={toggleAllExpiredAdminOffers}
-                  disabled={deletingExpiredOffers}
-                />
-                <span>Select all old academic calendars (including unloaded offers)</span>
-              </label>
-              <button
-                type="button"
-                onClick={() => void deleteSelectedExpiredAdminOffers()}
-                disabled={(selectedExpiredOfferIds.length === 0 && !selectAllExpiredAdminOffers) || deletingExpiredOffers}
-                className="h-10 rounded-xl bg-red-600 px-4 text-xs font-black text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+              <Panel
+                title="5. Check and publish"
+                description="This goes straight to every student at this university. There is no review step after you press Publish."
               >
-                {deletingExpiredOffers ? "Deleting…" : selectAllExpiredAdminOffers ? "Delete all old calendars" : `Delete selected (${selectedExpiredOfferIds.length})`}
-              </button>
-            </div>
-          ) : null}
-
-          <div className="mt-4 space-y-4">
-            {groupedAdminHistory.map((group) => (
-              <div key={group.universityId}>
-                <div className="space-y-3">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setOpenOfferGroups((prev) => ({
-                        ...prev,
-                        [group.universityId]: !prev[group.universityId],
-                      }))
-                    }
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-left dark:border-slate-800 dark:bg-slate-950"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-sm font-black text-slate-900 dark:text-slate-100">
-                        {group.universityName}
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                          {group.offers.length} offer(s)
-                        </div>
-                        <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                          {openOfferGroups[group.universityId]
-                            ? "Hide"
-                            : "Show"}
-                        </div>
-                      </div>
+                <div className="space-y-4">
+                  <FactGrid
+                    items={[
+                      ["University", selected ? selectedUniversityLabel : "Not picked yet"],
+                      ["Campus", selected ? selectedCampusName : "—"],
+                      ["Semester", semesterLabel.trim() || "—"],
+                      ["Dates", startDate || endDate ? `${startDate || "?"} → ${endDate || "?"}` : "—"],
+                    ]}
+                  />
+                  {draftDatesOk ? (
+                    <div className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
+                      <AcademicCalendarOfferGraphic offer={draftOffer} />
                     </div>
-                  </button>
-
-                  {(openOfferGroups[group.universityId]
-                    ? group.offers
-                    : []
-                  ).map((h) => (
-                    <Card key={h.id}>
-                      <CardContent className="space-y-4 py-4">
-                        {h.source === "admin" && h.start_date < new Date().toISOString().slice(0, 10) && h.end_date < new Date().toISOString().slice(0, 10) ? (
-                          <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-black text-amber-800 dark:text-amber-200">
-                            <input
-                              type="checkbox"
-                              checked={selectedExpiredOfferIds.includes(h.id)}
-                              onChange={() => toggleExpiredAdminOffer(h.id)}
-                              disabled={deletingExpiredOffers}
-                            />
-                            <span>Old calendar · {h.start_date} to {h.end_date}</span>
-                          </label>
-                        ) : null}
-                        <AcademicCalendarOfferGraphic
-                          offer={h}
-                          universityName={
-                            h.campus_id
-                              ? `${group.universityName} - ${allCampuses.find((c) => c.id === h.campus_id)?.name || "Unknown Campus"}`
-                              : `${group.universityName} (All Campuses)`
-                          }
-                        />
-                        {redundantCalendarIds.has(h.id) ? (
-                          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
-                            Redundant calendar · review this duplicate group and delete only the record you choose.
-                          </div>
-                        ) : null}
-                        <div className="flex flex-wrap items-baseline justify-between gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
-                          <div className="text-xs font-bold uppercase tracking-wide text-slate-400">
-                            Published {new Date(h.created_at).toLocaleString()}
-                          </div>
-                          {h.source === "crowdsourced" ? (
-                            <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                              Crowdsourced User Submission
-                            </span>
-                          ) : (
-                            <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
-                              Admin Verified
-                            </span>
-                          )}
-                        </div>
-                        {h.admin_note ? (
-                          <div className="text-sm font-semibold text-slate-600 dark:text-slate-300">
-                            {h.admin_note}
-                          </div>
-                        ) : null}
-                        <div className="flex flex-wrap gap-3 text-xs font-bold">
-                          {h.official_url ? (
-                            <a
-                              href={h.official_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-brand-600 dark:text-brand-400"
-                            >
-                              Link
-                            </a>
-                          ) : null}
-                          {h.reference_pdf_url ? (
-                            <a
-                              href={h.reference_pdf_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-brand-600 dark:text-brand-400"
-                            >
-                              PDF
-                            </a>
-                          ) : null}
-                          <button
-                            type="button"
-                            className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                            disabled={Boolean(deletingOfferId) || deletingExpiredOffers}
-                            onClick={async () => {
-                              const uni =
-                                universityNameById.get(h.university_id) ??
-                                h.university_id;
-                              const ok = window.confirm(
-                                `Delete this offer?\n\n${uni}\n${h.semester_label}\n\nThis cannot be undone.`,
-                              );
-                              if (!ok) return;
-                              setErr("");
-                              setOkMsg("");
-                              setDeletingOfferId(h.id);
-                              try {
-                                await deleteUniversityCalendarOffer(h.id);
-                                await refreshHistory();
-                                setOkMsg("Offer deleted.");
-                              } catch (e) {
-                                setErr(
-                                  e instanceof Error
-                                    ? e.message
-                                    : "Delete failed",
-                                );
-                              } finally {
-                                setDeletingOfferId("");
-                              }
-                            }}
-                          >
-                            {deletingOfferId === h.id ? "Deleting…" : "Delete"}
-                          </button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                  ) : (
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      Pick a start and end date to see the timeline preview.
+                    </p>
+                  )}
+                  {statusBanners}
+                  <Button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void publish()}
+                    className="w-full sm:w-auto"
+                  >
+                    {busy ? "Publishing…" : "Publish offers"}
+                  </Button>
                 </div>
+              </Panel>
+            </>
+          ) : null}
+        </>
+      ) : null}
+
+      {view === "offers" ? (
+        <>
+          <PageHeader
+            title="Existing offers"
+            description="Every published calendar offer, grouped by university."
+            actions={
+              <>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setOffersUni("");
+                    setOffersSearch("");
+                    setOffersAge("all");
+                    setSelectedExpiredOfferIds([]);
+                    setSelectAllExpiredAdminOffers(false);
+                  }}
+                >
+                  Reset
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setOffersOpen((v) => !v)} aria-expanded={offersOpen}>
+                  {offersOpen ? "Collapse" : "Expand"}
+                </Button>
+              </>
+            }
+          />
+          {statusBanners}
+
+          {offersOpen ? (
+            <>
+              <Panel>
+                <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="University">
+                      <Select value={offersUni} onChange={(e) => setOffersUni(e.target.value)}>
+                        <option value="">All</option>
+                        {offerUniOptions.map((u) => (
+                          <option key={u} value={u}>
+                            {universityNameById.get(u) ?? u} ({u})
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field label="Search">
+                      <TextInput
+                        value={offersSearch}
+                        onChange={(e) => setOffersSearch(e.target.value)}
+                        placeholder="Search semester, note, url…"
+                      />
+                    </Field>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <PillGroup label="Show">
+                      <Pill active={offersAge === "all"} onClick={() => setOffersAge("all")}>All admin offers</Pill>
+                      <Pill
+                        active={offersAge === "expired"}
+                        count={expiredAdminOffers.length}
+                        onClick={() => setOffersAge("expired")}
+                        title="Admin offers whose start and end dates have both passed"
+                      >
+                        Old academic calendars
+                      </Pill>
+                      <Pill
+                        active={offersAge === "redundant"}
+                        count={redundantCalendarIds.size}
+                        onClick={() => setOffersAge("redundant")}
+                        title="Same university, campus, semester name and dates"
+                      >
+                        Redundant calendars
+                      </Pill>
+                    </PillGroup>
+                    <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      Showing <span className="font-black text-slate-700 dark:text-slate-200">{filteredHistory.length}</span> offer(s)
+                      {searchQuery.trim() ? " (also filtered by top search bar)" : ""} · ordered by calendar end date
+                    </div>
+                  </div>
+                </div>
+              </Panel>
+
+              {offersAge === "redundant" ? (
+                <Notice tone="warning">
+                  Redundant calendars share the same university, campus, semester name and dates. Review each group and delete only the record you choose.
+                </Notice>
+              ) : null}
+
+              {expiredAdminOffers.length ? (
+                <CleanupBox
+                  tone="warning"
+                  title={
+                    <label className="inline-flex cursor-pointer items-center gap-3">
+                      <input
+                        type="checkbox"
+                        className={CHECKBOX}
+                        checked={allExpiredAdminOffersSelected}
+                        onChange={toggleAllExpiredAdminOffers}
+                        disabled={deletingExpiredOffers}
+                      />
+                      <span>Select all old academic calendars (including unloaded offers)</span>
+                    </label>
+                  }
+                  action={
+                    <button
+                      type="button"
+                      onClick={() => void deleteSelectedExpiredAdminOffers()}
+                      disabled={(selectedExpiredOfferIds.length === 0 && !selectAllExpiredAdminOffers) || deletingExpiredOffers}
+                      className={BTN_DANGER}
+                    >
+                      {deletingExpiredOffers ? "Deleting…" : selectAllExpiredAdminOffers ? "Delete all old calendars" : `Delete selected (${selectedExpiredOfferIds.length})`}
+                    </button>
+                  }
+                >
+                  Or open a university below and tick single old calendars.
+                </CleanupBox>
+              ) : null}
+
+              <div className="space-y-3">
+                {groupedAdminHistory.map((group) => {
+                  const open = Boolean(openOfferGroups[group.universityId]);
+                  return (
+                    <section
+                      key={group.universityId}
+                      className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-soft dark:border-slate-800 dark:bg-slate-900"
+                    >
+                      <button
+                        type="button"
+                        aria-expanded={open}
+                        onClick={() =>
+                          setOpenOfferGroups((prev) => ({
+                            ...prev,
+                            [group.universityId]: !prev[group.universityId],
+                          }))
+                        }
+                        className="flex w-full flex-wrap items-center justify-between gap-2 px-5 py-3.5 text-left transition hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                      >
+                        <span className="min-w-0 text-sm font-black text-slate-900 dark:text-slate-100">
+                          {group.universityName}
+                        </span>
+                        <span className="flex items-center gap-3">
+                          <Chip>{group.offers.length} offer(s)</Chip>
+                          <span className="text-xs font-black text-slate-500 dark:text-slate-400">
+                            {open ? "Hide" : "Show"}
+                          </span>
+                        </span>
+                      </button>
+
+                      {open ? (
+                        <ul className="divide-y divide-slate-100 border-t border-slate-100 dark:divide-slate-800 dark:border-slate-800">
+                          {group.offers.map((h) => {
+                            const isOld = h.source === "admin" && h.start_date < todayIso && h.end_date < todayIso;
+                            const campusLabel = h.campus_id
+                              ? allCampuses.find((c) => c.id === h.campus_id)?.name || "Unknown Campus"
+                              : "All Campuses";
+                            return (
+                              <li key={h.id} className="space-y-3 px-5 py-4">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div className="flex min-w-0 items-start gap-3">
+                                    {isOld ? (
+                                      <input
+                                        type="checkbox"
+                                        className={`${CHECKBOX} mt-1`}
+                                        checked={selectedExpiredOfferIds.includes(h.id)}
+                                        onChange={() => toggleExpiredAdminOffer(h.id)}
+                                        disabled={deletingExpiredOffers}
+                                        aria-label={`Select old calendar ${h.semester_label}`}
+                                      />
+                                    ) : null}
+                                    <div className="min-w-0">
+                                      <div className="text-sm font-black text-slate-900 dark:text-slate-100">{h.semester_label}</div>
+                                      <div className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                        {campusLabel} · {h.start_date} → {h.end_date} · {h.total_weeks} teaching weeks
+                                      </div>
+                                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                        {h.source === "crowdsourced" ? (
+                                          <Chip tone="info">Crowdsourced user submission</Chip>
+                                        ) : (
+                                          <Chip tone="success">Admin verified</Chip>
+                                        )}
+                                        {isOld ? <Chip tone="warning">Old calendar</Chip> : null}
+                                        {redundantCalendarIds.has(h.id) ? (
+                                          <Chip tone="warning" title="Review this duplicate group and delete only the record you choose.">
+                                            Redundant calendar
+                                          </Chip>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-3">
+                                    {h.official_url ? (
+                                      <a href={h.official_url} target="_blank" rel="noreferrer" className={LINK_SM}>
+                                        Link
+                                      </a>
+                                    ) : null}
+                                    {h.reference_pdf_url ? (
+                                      <a href={h.reference_pdf_url} target="_blank" rel="noreferrer" className={LINK_SM}>
+                                        PDF
+                                      </a>
+                                    ) : null}
+                                    <button
+                                      type="button"
+                                      className={BTN_DANGER_SOFT}
+                                      disabled={Boolean(deletingOfferId) || deletingExpiredOffers}
+                                      onClick={() => deleteOneOffer(h)}
+                                    >
+                                      {deletingOfferId === h.id ? "Deleting…" : "Delete"}
+                                    </button>
+                                  </div>
+                                </div>
+                                <AcademicCalendarOfferGraphic offer={h} />
+                                {h.admin_note ? (
+                                  <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">{h.admin_note}</p>
+                                ) : null}
+                                <div className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+                                  Published {new Date(h.created_at).toLocaleString()}
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : null}
+                    </section>
+                  );
+                })}
+                {groupedAdminHistory.length === 0 ? (
+                  <EmptyState title="No admin offers to show">
+                    Nothing is published yet, or the filters hide everything. Press Reset to clear the filters.
+                  </EmptyState>
+                ) : null}
               </div>
-            ))}
-            {groupedAdminHistory.length === 0 ? (
-              <div className="text-sm font-semibold text-slate-500">
-                No admin offers yet.
-              </div>
-            ) : null}
-          </div>
+            </>
+          ) : null}
         </>
       ) : null}
       {safeActionDialog}

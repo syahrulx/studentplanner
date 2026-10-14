@@ -13,7 +13,7 @@ import {
   FlatList,
   Keyboard,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { setGoogleProviderTokens } from '@/src/lib/googleProviderTokens';
 import { GOOGLE_CLASSROOM_SCOPES } from '@/src/lib/googleOauth';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
@@ -192,14 +192,11 @@ export default function SignUp() {
               // Save Google provider tokens for Classroom (Android)
               if (Platform.OS === 'android' && providerToken) {
                 try {
-                  await AsyncStorage.setItem(
-                    'googleProviderTokens',
-                    JSON.stringify({
-                      accessToken: providerToken,
-                      refreshToken: providerRefreshToken || '',
-                      expiresAt: Date.now() + 3600000,
-                    }),
-                  );
+                  await setGoogleProviderTokens({
+                    accessToken: providerToken,
+                    refreshToken: providerRefreshToken || '',
+                    expiresAt: Date.now() + 3600000,
+                  });
                 } catch {}
               }
 

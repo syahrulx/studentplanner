@@ -66,14 +66,38 @@ function periodColor(type: string): string {
   return 'bg-slate-400';
 }
 
+const LEGEND: { color: string; label: string }[] = [
+  { color: 'bg-indigo-500', label: 'Orientation' },
+  { color: 'bg-violet-500', label: 'Registration' },
+  { color: 'bg-emerald-500', label: 'Lecture' },
+  { color: 'bg-rose-500', label: 'Exam / test' },
+  { color: 'bg-sky-400', label: 'Break' },
+  { color: 'bg-pink-500', label: 'Holiday' },
+  { color: 'bg-orange-500', label: 'Industrial training' },
+  { color: 'bg-slate-400', label: 'Other' },
+];
+
+/** Only the fields the drawing needs, so a draft (not yet saved) can be previewed too. */
+export type CalendarGraphicOffer = Pick<
+  AdminCalendarOfferRow,
+  'semester_label' | 'start_date' | 'end_date' | 'total_weeks' | 'break_start_date' | 'break_end_date' | 'periods_json'
+>;
+
 type Props = {
-  offer: AdminCalendarOfferRow;
-  universityName: string;
+  offer: CalendarGraphicOffer;
+  /** When given, a small heading (university, semester, dates) is drawn above the timeline. */
+  universityName?: string;
 };
 
+/**
+ * Semester timeline drawing. It has no frame of its own, so it sits inside
+ * whatever card shows it (no box inside a box).
+ */
 export function AcademicCalendarOfferGraphic({ offer, universityName }: Props) {
   const periods = parsePeriods(offer.periods_json);
   const hasPeriods = periods.length > 0;
+  const usedColors = new Set(periods.map((p) => periodColor(p.type)));
+  const legend = LEGEND.filter((item) => usedColors.has(item.color));
 
   const breakPct =
     offer.break_start_date && offer.break_end_date
@@ -81,96 +105,74 @@ export function AcademicCalendarOfferGraphic({ offer, universityName }: Props) {
       : null;
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4 dark:border-slate-700 dark:from-slate-900 dark:to-slate-950">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full bg-brand-500/15 px-3 py-1 text-xs font-black uppercase tracking-wide text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">
-            {universityName}
-          </div>
-          <div className="mt-2 text-sm font-black text-slate-900 dark:text-slate-100">{offer.semester_label}</div>
+    <div className="min-w-0">
+      {universityName ? (
+        <div className="mb-3">
+          <span className="inline-flex max-w-full items-center rounded-lg bg-brand-50 px-2 py-0.5 text-[11px] font-bold text-brand-800 dark:bg-brand-900/40 dark:text-brand-100">
+            <span className="truncate">{universityName}</span>
+          </span>
+          <div className="mt-1.5 text-sm font-black text-slate-900 dark:text-slate-100">{offer.semester_label}</div>
           <div className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
             {offer.start_date} → {offer.end_date} · {offer.total_weeks} teaching weeks
           </div>
         </div>
-      </div>
+      ) : null}
 
-      <div className="mt-4">
-        <div className="mb-1 flex justify-between text-[10px] font-bold uppercase tracking-wide text-slate-400">
-          <span>Semester timeline</span>
-          <span>{hasPeriods ? `${periods.length} phases` : 'Span only'}</span>
-        </div>
-        <div className="relative h-16 overflow-hidden rounded-xl border border-slate-200/80 bg-slate-100 dark:border-slate-600 dark:bg-slate-800/80">
-          {/* Full semester track */}
+      <div className="mb-1 flex justify-between text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+        <span>Semester timeline</span>
+        <span>{hasPeriods ? `${periods.length} phases` : 'Span only'}</span>
+      </div>
+      <div className="relative h-12 overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800/80">
+        {/* Full semester track */}
+        <div
+          className="absolute inset-y-2 left-2 right-2 rounded-lg bg-white/90 dark:bg-slate-900/60"
+          title={`${offer.start_date} — ${offer.end_date}`}
+        />
+        {breakPct ? (
           <div
-            className="absolute inset-y-3 left-2 right-2 rounded-lg bg-white/90 shadow-inner dark:bg-slate-900/60"
-            title={`${offer.start_date} — ${offer.end_date}`}
+            className="pointer-events-none absolute inset-y-2 z-[1] rounded-md border border-amber-400/50 bg-amber-300/35 dark:border-amber-500/40 dark:bg-amber-500/25"
+            style={{ left: `calc(0.5rem + (100% - 1rem) * ${breakPct.left / 100})`, width: `calc((100% - 1rem) * ${breakPct.width / 100})` }}
+            title={`Break: ${offer.break_start_date} — ${offer.break_end_date}`}
           />
-          {breakPct ? (
-            <div
-              className="pointer-events-none absolute inset-y-3 z-[1] rounded-md border border-amber-400/50 bg-amber-300/35 dark:bg-amber-500/25"
-              style={{ left: `calc(0.5rem + (100% - 1rem) * ${breakPct.left / 100})`, width: `calc((100% - 1rem) * ${breakPct.width / 100})` }}
-              title={`Break: ${offer.break_start_date} — ${offer.break_end_date}`}
-            />
-          ) : null}
-          {hasPeriods ? (
-            <div className="absolute inset-y-3 left-2 right-2">
-              {periods.map((p, i) => {
-                const g = segmentPercent(p.startDate, p.endDate, offer.start_date, offer.end_date);
-                if (!g) return null;
-                return (
-                  <div
-                    key={`${p.startDate}-${p.endDate}-${i}`}
-                    className={`absolute top-0.5 bottom-0.5 rounded-md opacity-95 shadow-sm ring-1 ring-black/10 dark:ring-white/10 ${periodColor(p.type)}`}
-                    style={{
-                      left: `${g.left}%`,
-                      width: `${g.width}%`,
-                      minWidth: 4,
-                    }}
-                    title={`${p.label} (${p.type}) · ${p.startDate} — ${p.endDate}`}
-                  />
-                );
-              })}
-            </div>
-          ) : (
-            <div
-              className="absolute inset-y-4 left-3 right-3 rounded-md bg-gradient-to-r from-brand-500/80 to-brand-600/90"
-              title="No period breakdown — semester range only"
-            />
-          )}
-        </div>
-        <div className="mt-1 flex justify-between font-mono text-[10px] font-bold text-slate-500 dark:text-slate-400">
-          <span>{offer.start_date}</span>
-          <span>{offer.end_date}</span>
-        </div>
+        ) : null}
+        {hasPeriods ? (
+          <div className="absolute inset-y-2 left-2 right-2">
+            {periods.map((p, i) => {
+              const g = segmentPercent(p.startDate, p.endDate, offer.start_date, offer.end_date);
+              if (!g) return null;
+              return (
+                <div
+                  key={`${p.startDate}-${p.endDate}-${i}`}
+                  className={`absolute top-0.5 bottom-0.5 rounded-md opacity-95 ring-1 ring-black/10 dark:ring-white/10 ${periodColor(p.type)}`}
+                  style={{
+                    left: `${g.left}%`,
+                    width: `${g.width}%`,
+                    minWidth: 4,
+                  }}
+                  title={`${p.label} (${p.type}) · ${p.startDate} — ${p.endDate}`}
+                />
+              );
+            })}
+          </div>
+        ) : (
+          <div
+            className="absolute inset-y-3 left-3 right-3 rounded-md bg-gradient-to-r from-brand-500/80 to-brand-600/90 dark:from-brand-400/70 dark:to-brand-500/80"
+            title="No period breakdown — semester range only"
+          />
+        )}
+      </div>
+      <div className="mt-1 flex justify-between font-mono text-[10px] font-bold text-slate-500 dark:text-slate-400">
+        <span>{offer.start_date}</span>
+        <span>{offer.end_date}</span>
       </div>
 
-      {hasPeriods ? (
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-100 pt-3 text-[10px] font-bold dark:border-slate-800">
-          <span className="text-slate-500">Legend:</span>
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-sm bg-indigo-500" /> Orientation
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-sm bg-violet-500" /> Registration
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-sm bg-emerald-500" /> Lecture
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-sm bg-rose-500" /> Exam / test
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-sm bg-sky-400" /> Break
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-sm bg-pink-500" /> Holiday
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-sm bg-orange-500" /> Industrial training
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="h-2 w-2 rounded-sm bg-slate-400" /> Other
-          </span>
+      {legend.length ? (
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-bold text-slate-600 dark:text-slate-300">
+          {legend.map((item) => (
+            <span key={item.label} className="flex items-center gap-1">
+              <span className={`h-2 w-2 rounded-sm ${item.color}`} /> {item.label}
+            </span>
+          ))}
         </div>
       ) : null}
     </div>

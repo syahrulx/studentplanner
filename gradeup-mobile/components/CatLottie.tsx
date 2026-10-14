@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { LOTTIE_PLAYER_SOURCE } from '@/components/lottiePlayerSource';
 
 type CatLottieProps = {
   style?: StyleProp<ViewStyle>;
@@ -21,7 +22,7 @@ function buildHtml(animationJson: string, speed: number) {
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
+    <script>${LOTTIE_PLAYER_SOURCE}</script>
     <style>
       html, body {
         margin: 0;
@@ -54,20 +55,33 @@ function buildHtml(animationJson: string, speed: number) {
 </html>`;
 }
 
-const BAD_CAT_HTML = buildHtml(BAD_CAT_JSON_STRING, 0.65);
-const LOADING_CAT_HTML = buildHtml(LOADING_CAT_JSON_STRING, 1);
-const TASK_CAT_HTML = buildHtml(TASK_CAT_JSON_STRING, 0.9);
-const MONO_LOADING_HTML = buildHtml(MONO_LOADING_JSON_STRING, 1);
+/**
+ * Built on first use, then kept.
+ *
+ * These four documents used to be built at import time — stringifying every
+ * animation and pasting the player beside each one, on every app start,
+ * whether or not a cat was ever drawn. Now a variant costs nothing until
+ * something asks for it, and nothing the second time.
+ */
+const HTML_CACHE = new Map<string, string>();
+
+function htmlFor(variant: NonNullable<CatLottieProps['variant']>): string {
+  const cached = HTML_CACHE.get(variant);
+  if (cached) return cached;
+  const built =
+    variant === 'loading'
+      ? buildHtml(LOADING_CAT_JSON_STRING, 1)
+      : variant === 'task'
+      ? buildHtml(TASK_CAT_JSON_STRING, 0.9)
+      : variant === 'monoLoading'
+      ? buildHtml(MONO_LOADING_JSON_STRING, 1)
+      : buildHtml(BAD_CAT_JSON_STRING, 0.65);
+  HTML_CACHE.set(variant, built);
+  return built;
+}
 
 export function CatLottie({ style, variant = 'badge' }: CatLottieProps) {
-  const html =
-    variant === 'loading'
-      ? LOADING_CAT_HTML
-      : variant === 'task'
-      ? TASK_CAT_HTML
-      : variant === 'monoLoading'
-      ? MONO_LOADING_HTML
-      : BAD_CAT_HTML;
+  const html = htmlFor(variant);
   return (
     <View style={[styles.wrap, style]} pointerEvents="none">
       <WebView

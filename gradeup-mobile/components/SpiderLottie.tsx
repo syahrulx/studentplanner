@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { LOTTIE_PLAYER_SOURCE } from '@/components/lottiePlayerSource';
 
 /**
  * Spider animation from LottieFiles (free “Spider” by Priyanshu) —
@@ -31,7 +32,7 @@ function buildHtml(
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/bodymovin/5.12.2/lottie.min.js"></script>
+    <script>${LOTTIE_PLAYER_SOURCE}</script>
     <style>
       html, body {
         margin: 0;
@@ -67,21 +68,33 @@ function buildHtml(
 </html>`;
 }
 
-const SPIDER_HTML = buildHtml(SPIDER_JSON_STRING, 0.88);
-// Loading: canvas renderer is lighter than SVG for this heavy JSON.
-const SPIDER_LOADING_HTML = buildHtml(SPIDER_LOADER_JSON_STRING, 0.9, false, 'canvas');
-const SPIDER_NET_HTML = buildHtml(SPIDER_NET_JSON_STRING, 0.4, false);
-const SPIDER_COMMUNITY_LINE_HTML = buildHtml(SPIDER_COMMUNITY_LINE_JSON_STRING, 0.55, false);
+/**
+ * Built on first use, then kept.
+ *
+ * These four used to be built at import time. spider-loader.json alone is
+ * 399 KB, and it was stringified and pasted into a document on every app
+ * start whether or not a spider was ever drawn.
+ */
+const HTML_CACHE = new Map<string, string>();
+
+function htmlFor(variant: NonNullable<SpiderLottieProps['variant']>): string {
+  const cached = HTML_CACHE.get(variant);
+  if (cached) return cached;
+  const built =
+    variant === 'loading'
+      // Canvas renderer: lighter than SVG for this heavy JSON.
+      ? buildHtml(SPIDER_LOADER_JSON_STRING, 0.9, false, 'canvas')
+      : variant === 'net'
+      ? buildHtml(SPIDER_NET_JSON_STRING, 0.4, false)
+      : variant === 'communityLine'
+      ? buildHtml(SPIDER_COMMUNITY_LINE_JSON_STRING, 0.55, false)
+      : buildHtml(SPIDER_JSON_STRING, 0.88);
+  HTML_CACHE.set(variant, built);
+  return built;
+}
 
 export function SpiderLottie({ style, variant = 'badge' }: SpiderLottieProps) {
-  const html =
-    variant === 'loading'
-      ? SPIDER_LOADING_HTML
-      : variant === 'net'
-      ? SPIDER_NET_HTML
-      : variant === 'communityLine'
-      ? SPIDER_COMMUNITY_LINE_HTML
-      : SPIDER_HTML;
+  const html = htmlFor(variant);
   return (
     <View style={[styles.wrap, variant === 'net' && styles.netWrap, style]} pointerEvents="none">
       <WebView

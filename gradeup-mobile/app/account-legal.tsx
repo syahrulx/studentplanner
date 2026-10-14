@@ -9,7 +9,6 @@ import {
   Alert,
   Modal,
   TextInput,
-  KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -30,6 +29,7 @@ import {
   openTermsOfUse,
   openCommunityGuidelines,
 } from '@/src/constants/legal';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 const PAD = 20;
 const RADIUS = 14;
@@ -340,7 +340,7 @@ export default function AccountLegal() {
         transparent
         onRequestClose={() => !clearDataBusy && setClearDataModalOpen(false)}
       >
-        <KeyboardAvoidingView
+        <KeyboardAvoidingScreen
           style={styles.syncBackdrop}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
@@ -390,7 +390,7 @@ export default function AccountLegal() {
               </Pressable>
             </View>
           </View>
-        </KeyboardAvoidingView>
+        </KeyboardAvoidingScreen>
       </Modal>
 
       <Modal
@@ -399,7 +399,7 @@ export default function AccountLegal() {
         transparent
         onRequestClose={() => !deleteAccountBusy && setDeleteAccountModalOpen(false)}
       >
-        <KeyboardAvoidingView
+        <KeyboardAvoidingScreen
           style={styles.syncBackdrop}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
@@ -453,7 +453,7 @@ export default function AccountLegal() {
               </Pressable>
             </View>
           </View>
-        </KeyboardAvoidingView>
+        </KeyboardAvoidingScreen>
       </Modal>
     </>
   );

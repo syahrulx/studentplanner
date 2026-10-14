@@ -85,6 +85,8 @@ import Animated, {
   withSequence,
 } from 'react-native-reanimated';
 import { Avatar } from '@/components/Avatar';
+import { FriendPeek, type FriendPeekPerson } from '@/components/FriendPeek';
+import { getSeenSnapIds } from '@/src/lib/snapSeen';
 import { CatLottie } from '@/components/CatLottie';
 import { SpiderLottie } from '@/components/SpiderLottie';
 
@@ -122,17 +124,18 @@ function useCommunityLayout() {
     /**
      * The Friends sheet, as a fraction of the screen.
      *
-     * Was 0.4, which was right before the snap row went in above the list.
-     * That row takes about 88pt, and on a 40% sheet it left roughly one friend
-     * visible — the list the panel is named after had been squeezed down to
-     * almost nothing. 0.48 puts three back without the map losing anything it
-     * was using: by the time a student is reading this list they have already
-     * found their friends on the map.
+     * 0.48 was chosen to fit three friends under the snap strip, and it did —
+     * by taking almost half the screen for a list, on a screen whose point is
+     * a map. The map was the thing that felt broken.
+     *
+     * 0.40 gives that back. The list keeps roughly the same number of friends
+     * because the rows are tighter now (see personRow), so the height came out
+     * of padding rather than out of content.
      *
      * The three offsets below hang off the same number, so they are derived
      * rather than written out again and cannot drift from it.
      */
-    const sheet = height * 0.48;
+    const sheet = height * 0.4;
     return {
       statusCardWidth: (width - 50) / 2,
       snapPreviewWidth,
@@ -583,6 +586,35 @@ export default function CommunityMap() {
   const [showMySnap, setShowMySnap] = useState(false);
   const [favoriteFriendIds, setFavoriteFriendIds] = useState<string[]>([]);
   const [refreshingCommunity, setRefreshingCommunity] = useState(false);
+  /**
+   * Where the friends list starts inside the sheet.
+   *
+   * The refresh spinner used to be pinned 52pt down, which put it on top of the
+   * "Friends" title and the Snap Streak button — refreshing hid the controls you
+   * had just reached for. It cannot be a constant: the favourites row above the
+   * list appears only when you have favourites, and the snap strip grows when
+   * snaps arrive, so the list's top moves. Measuring it keeps the spinner over
+   * the list it is actually refreshing.
+   */
+  const [friendsListTop, setFriendsListTop] = useState(0);
+  /** The student whose peek card is open, if any. */
+  const [peekPerson, setPeekPerson] = useState<FriendPeekPerson | null>(null);
+  /** Snaps this phone has already opened — see src/lib/snapSeen.ts. */
+  const [seenSnaps, setSeenSnaps] = useState<Set<string>>(new Set());
+
+  // Re-read on focus, so a snap opened in the viewer is already dimmed and
+  // moved by the time the student lands back on this screen.
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      void getSeenSnapIds().then((s) => {
+        if (alive) setSeenSnaps(s);
+      });
+      return () => {
+        alive = false;
+      };
+    }, []),
+  );
   const cameraRef = useRef<any>(null);
 
   const selectedCircle = circles.find((c) => c.id === selectedCircleId) || null;
@@ -634,15 +666,81 @@ export default function CommunityMap() {
       const snap = friendSnaps.get(friend.id);
       if (snap) withSnaps.push({ friend, snap });
     }
-    // Newest first, so a snap posted minutes ago is the one in reach of a thumb.
-    withSnaps.sort((a, b) => Date.parse(b.snap.createdAt) - Date.parse(a.snap.createdAt));
+    /**
+     * Unopened first, then newest.
+     *
+     * Sorting purely by time meant a snap you had already watched kept the
+     * front of the row, and the one you had not seen slid further right every
+     * time somebody else posted. Unread belongs under the thumb; read belongs
+     * out of the way, which is the order every story row works in.
+     */
+    withSnaps.sort((a, b) => {
+      const aSeen = seenSnaps.has(a.snap.id) ? 1 : 0;
+      const bSeen = seenSnaps.has(b.snap.id) ? 1 : 0;
+      if (aSeen !== bSeen) return aSeen - bSeen;
+      return Date.parse(b.snap.createdAt) - Date.parse(a.snap.createdAt);
+    });
     return withSnaps;
-  }, [visibleFriends, friendSnaps]);
+  }, [visibleFriends, friendSnaps, seenSnaps]);
+
+  /**
+   * Shared snaps ordered the same way as friends' — unopened first, then
+   * newest. They are the same row to a student; only the ring colour says one
+   * is from a stranger.
+   */
+  const orderedSharedSnaps = useMemo(() => {
+    return [...sharedSnaps].sort((a, b) => {
+      const aSeen = seenSnaps.has(a.id) ? 1 : 0;
+      const bSeen = seenSnaps.has(b.id) ? 1 : 0;
+      if (aSeen !== bSeen) return aSeen - bSeen;
+      return Date.parse(b.createdAt) - Date.parse(a.createdAt);
+    });
+  }, [sharedSnaps, seenSnaps]);
+
+  /** The whole row, in the order it is drawn — what a tap walks through. */
+  const snapQueue = useMemo(
+    () => [...snapRowFriends.map((x) => x.snap.id), ...orderedSharedSnaps.map((x) => x.id)],
+    [snapRowFriends, orderedSharedSnaps],
+  );
 
   const mySnap = user?.id ? friendSnaps.get(user.id) : undefined;
 
-  const openSnap = useCallback((snapId: string) => {
-    router.push({ pathname: '/snap-viewer', params: { snapId } } as any);
+  const openPeek = useCallback((friend: FriendWithStatus) => {
+    setPeekPerson({
+      id: friend.id,
+      name: friend.name,
+      avatar_url: friend.avatar_url,
+      university: friend.university,
+      campus: friend.campus,
+      faculty: friend.faculty,
+      // profiles.course has been empty for years; what students actually fill
+      // in is profiles.program. Old rows that still carry course keep working.
+      course: friend.program || friend.course,
+      // The same two lines the row above already draws, so the card and the
+      // list can never show a different status for the same person.
+      activityText:
+        friend.activity && friend.activity.activity_type !== 'idle'
+          ? activityStatusDetailLine(friend.activity, { isSelf: false, timetable })
+          : undefined,
+      activityIcon:
+        friend.activity && friend.activity.activity_type !== 'idle'
+          ? (communityApi.getActivityFeatherIcon(friend.activity.activity_type) as any)
+          : undefined,
+      songText: friend.music?.isPlaying ? friend.music.song : undefined,
+      statusLine: friend.location?.place_name
+        || (friend.location ? 'Location shared' : 'Location off'),
+    });
+  }, []);
+
+  /**
+   * `queue` is the row in the order it is drawn, so the viewer can move on to
+   * the next one without having to know how the row was built or sorted.
+   */
+  const openSnap = useCallback((snapId: string, queue?: string[]) => {
+    router.push({
+      pathname: '/snap-viewer',
+      params: queue && queue.length > 1 ? { snapId, queue: queue.join(',') } : { snapId },
+    } as any);
   }, []);
 
   useEffect(() => {
@@ -808,62 +906,6 @@ export default function CommunityMap() {
           style={[styles.spiderTopLine, { bottom: layout.bottomSheetHeight - 28 }]}
         />
       ) : null}
-      {/* ─── TOP BAR ─── */}
-      <View style={[styles.topBar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
-        <View style={[styles.topBarSide, { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, width: 'auto' }]}>
-          <Pressable
-            onPress={() => router.push('/community/notifications' as any)}
-            style={({ pressed }) => [styles.topBarBtn, pressed && { opacity: 0.7 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Notifications"
-          >
-            <Feather name="bell" size={22} color={theme.text} />
-            {communityBadgeCount - unreadDmCount > 0 ? (
-              <View style={[styles.notifBadge, { backgroundColor: isMonoOnly ? '#ffffff' : theme.primary }]}>
-                <Text style={[styles.notifBadgeText, { color: isMonoOnly ? '#000000' : theme.textInverse }]}>
-                  {communityBadgeCount - unreadDmCount > 9 ? '9+' : String(communityBadgeCount - unreadDmCount)}
-                </Text>
-              </View>
-            ) : null}
-          </Pressable>
-        </View>
-        <View style={styles.circleSelectorWrap} pointerEvents="box-none">
-          <View style={[styles.circleSelector, { pointerEvents: 'auto' }]}>
-            <Pressable
-              onPress={() => {
-                if (selectedCircle?.id) {
-                  router.push({ pathname: '/community/circle-detail', params: { circleId: selectedCircle.id } } as any);
-                } else {
-                  setShowCircleSelector((v) => !v);
-                }
-              }}
-              style={({ pressed }) => [styles.circleSelectorNameBtn, pressed && { opacity: 0.7 }]}
-            >
-              <Text style={[styles.circleName, { color: theme.text }]} numberOfLines={1}>
-                {selectedCircle?.name || 'Circle'}
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setShowCircleSelector((v) => !v)}
-              style={({ pressed }) => [styles.circleSelectorChevronBtn, pressed && { opacity: 0.7 }]}
-              hitSlop={10}
-            >
-              <Feather name="chevron-down" size={16} color={theme.textSecondary} />
-            </Pressable>
-          </View>
-        </View>
-        <View style={[styles.topBarSide, { flex: 1, width: 'auto', alignItems: 'flex-end' }]}>
-          <Pressable
-            onPress={() => router.push('/community/settings' as any)}
-            style={({ pressed }) => [styles.topBarBtn, pressed && { opacity: 0.7 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Settings"
-          >
-            <Feather name="settings" size={22} color={theme.text} />
-          </Pressable>
-        </View>
-      </View>
-
       {/* ─── CIRCLE SELECTOR DROPDOWN ─── */}
       {showCircleSelector && (
         <View style={[styles.circleDropdown, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -919,6 +961,65 @@ export default function CommunityMap() {
 
       {/* ─── MAP SECTION ─── */}
       <View style={styles.mapContainer}>
+        {/* The bell / circle / settings row floats on the map rather than
+            taking a band of its own above it. In its own band it cost 64pt of
+            a map that only had about 295pt to begin with — a fifth of the map,
+            spent on three controls. It keeps the exact same screen position,
+            so the circle dropdown below still opens where it always did. */}
+        <View style={styles.topBar} pointerEvents="box-none">
+          <View style={[styles.topBarSide, { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, width: 'auto' }]}>
+            <Pressable
+              onPress={() => router.push('/community/notifications' as any)}
+              style={({ pressed }) => [styles.topBarBtn, { backgroundColor: theme.card }, pressed && { opacity: 0.7 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Notifications"
+            >
+              <Feather name="bell" size={22} color={theme.text} />
+              {communityBadgeCount - unreadDmCount > 0 ? (
+                <View style={[styles.notifBadge, { backgroundColor: isMonoOnly ? '#ffffff' : theme.primary }]}>
+                  <Text style={[styles.notifBadgeText, { color: isMonoOnly ? '#000000' : theme.textInverse }]}>
+                    {communityBadgeCount - unreadDmCount > 9 ? '9+' : String(communityBadgeCount - unreadDmCount)}
+                  </Text>
+                </View>
+              ) : null}
+            </Pressable>
+          </View>
+          <View style={styles.circleSelectorWrap} pointerEvents="box-none">
+            <View style={[styles.circleSelector, { backgroundColor: theme.card, pointerEvents: 'auto' }]}>
+              <Pressable
+                onPress={() => {
+                  if (selectedCircle?.id) {
+                    router.push({ pathname: '/community/circle-detail', params: { circleId: selectedCircle.id } } as any);
+                  } else {
+                    setShowCircleSelector((v) => !v);
+                  }
+                }}
+                style={({ pressed }) => [styles.circleSelectorNameBtn, pressed && { opacity: 0.7 }]}
+              >
+                <Text style={[styles.circleName, { color: theme.text }]} numberOfLines={1}>
+                  {selectedCircle?.name || 'Circle'}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setShowCircleSelector((v) => !v)}
+                style={({ pressed }) => [styles.circleSelectorChevronBtn, pressed && { opacity: 0.7 }]}
+                hitSlop={10}
+              >
+                <Feather name="chevron-down" size={16} color={theme.textSecondary} />
+              </Pressable>
+            </View>
+          </View>
+          <View style={[styles.topBarSide, { flex: 1, width: 'auto', alignItems: 'flex-end' }]}>
+            <Pressable
+              onPress={() => router.push('/community/settings' as any)}
+              style={({ pressed }) => [styles.topBarBtn, { backgroundColor: theme.card }, pressed && { opacity: 0.7 }]}
+              accessibilityRole="button"
+              accessibilityLabel="Settings"
+            >
+              <Feather name="settings" size={22} color={theme.text} />
+            </Pressable>
+          </View>
+        </View>
         {!Mapbox ? (
           <CommunityMapPlaceholder
             style={styles.map}
@@ -935,7 +1036,8 @@ export default function CommunityMap() {
             logoEnabled={false}
             attributionEnabled={false}
             compassEnabled={true}
-            // Drops below the confession peek strip when it is showing.
+            // Clears the floating top bar (64pt), then drops below the
+            // confession peek strip as well when that is showing.
             //
             // Always a map, never undefined. RNMBXMapViewManager.setCompassPosition
             // calls Dynamic.asMap(), which throws ClassCastException on anything
@@ -943,7 +1045,7 @@ export default function CommunityMap() {
             // unreachable, because asMap() throws before it can return null. So
             // clearing the university (which sets universityId to null) flipped
             // this prop to undefined and killed the app.
-            compassPosition={(user as any)?.universityId ? { top: 60, right: 8 } : { top: 8, right: 8 }}
+            compassPosition={(user as any)?.universityId ? { top: 120, right: 8 } : { top: 72, right: 8 }}
             scaleBarEnabled={false}
           >
 
@@ -1395,6 +1497,7 @@ export default function CommunityMap() {
 
       {/* ─── BOTTOM SHEET ─── */}
       <View style={[styles.bottomSheet, { backgroundColor: theme.card, borderTopColor: theme.border, height: layout.bottomSheetHeight }]}>
+        <View style={styles.sheetHeaderBlock}>
         {/* Tab switcher */}
         <View style={styles.bottomSheetHandle}>
           <View style={[styles.handleBar, { backgroundColor: theme.textSecondary + '40' }]} />
@@ -1497,9 +1600,51 @@ export default function CommunityMap() {
               </Text>
             </View>
           )}
+          </View>
 
-          {/* Snap row — the map-free way to see today's snaps. See snapRowFriends. */}
-          <View style={[styles.snapRow, { borderBottomColor: theme.border }]}>
+          {/* Friends list */}
+          <ScrollView
+            style={styles.peopleList}
+            onLayout={(e) => setFriendsListTop(e.nativeEvent.layout.y)}
+            contentContainerStyle={styles.peopleListContent}
+            showsVerticalScrollIndicator={false}
+            alwaysBounceVertical
+            overScrollMode="always"
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshingCommunity}
+                onRefresh={handleRefreshCommunity}
+                tintColor="transparent"
+                colors={['transparent']}
+                progressBackgroundColor={Platform.OS === 'android' ? 'transparent' : undefined}
+              />
+            }
+          >
+            {/* The snap strip scrolls with the friends rather than sitting
+                above them in a fixed band.
+                
+                As a fixed band it cost about 100pt of a sheet that is only
+                40% of the screen, whether or not the student was looking at
+                it — so the list the panel is named after started a third of
+                the way down its own panel. Inside the scroll it is there when
+                you are at the top and out of the way the moment you are not. */}
+          {/* Snap row — the map-free way to see today's snaps. See snapRowFriends.
+              It sits on theme.background, not theme.card: on a sheet painted one
+              flat colour the strip and the friends list below it read as one
+              block, and a student scrolling the list could not tell where the
+              snaps ended. background is the theme's own sibling surface, so it
+              stays a deliberate step away from card on all ten themes rather
+              than a hand-mixed tint that only works on the dark ones. */}
+          <View
+            style={[
+              styles.snapRow,
+              {
+                backgroundColor: theme.text + '08',
+                borderTopColor: theme.border,
+                borderBottomColor: theme.border,
+              },
+            ]}
+          >
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -1525,7 +1670,7 @@ export default function CommunityMap() {
                     <Avatar name={user.name} avatarUrl={user.avatar} size={SNAP_BUBBLE} />
                   )}
                   {!mySnap && (
-                    <View style={[styles.snapBubbleAdd, { backgroundColor: theme.primary, borderColor: theme.card }]}>
+                    <View style={[styles.snapBubbleAdd, { backgroundColor: theme.primary, borderColor: theme.background }]}>
                       <Feather name="plus" size={11} color={theme.textInverse} />
                     </View>
                   )}
@@ -1537,18 +1682,30 @@ export default function CommunityMap() {
 
               {snapRowFriends.map(({ friend, snap }) => {
                 const streak = friendStreaks.get(friend.id)?.currentStreak ?? 0;
+                // A read snap keeps its place in the row but stops shouting:
+                // the ring drops to the ordinary border colour, the way a read
+                // story does everywhere else.
+                const seen = seenSnaps.has(snap.id);
                 return (
                   <Pressable
                     key={friend.id}
                     accessibilityRole="button"
-                    accessibilityLabel={`Open ${friend.name}'s snap`}
+                    accessibilityLabel={
+                      seen ? `${friend.name}'s snap, already opened` : `Open ${friend.name}'s snap`
+                    }
                     style={({ pressed }) => [styles.snapBubbleWrap, pressed && { opacity: 0.75 }]}
-                    onPress={() => openSnap(snap.id)}
+                    onPress={() => openSnap(snap.id, snapQueue)}
                   >
-                    <View style={[styles.snapBubbleRing, { borderColor: SNAP_RING }]}>
+                    <View
+                      style={[
+                        styles.snapBubbleRing,
+                        { borderColor: seen ? theme.border : SNAP_RING },
+                        seen && { opacity: 0.6 },
+                      ]}
+                    >
                       <Image source={{ uri: snap.imageUrl }} style={styles.snapBubbleImage} contentFit="cover" transition={160} />
                       {streak > 0 && (
-                        <View style={[styles.snapBubbleStreak, { borderColor: theme.card }]}>
+                        <View style={[styles.snapBubbleStreak, { borderColor: theme.background }]}>
                           <Text style={styles.snapBubbleStreakText}>{streak > 99 ? '99+' : streak}</Text>
                         </View>
                       )}
@@ -1560,30 +1717,44 @@ export default function CommunityMap() {
                 );
               })}
 
-              {sharedSnaps.length > 0 && (
+              {orderedSharedSnaps.length > 0 && (
                 <View style={[styles.snapRowDivider, { backgroundColor: theme.border }]} />
               )}
 
-              {sharedSnaps.map((snap) => (
+              {orderedSharedSnaps.map((snap) => {
+                const seen = seenSnaps.has(snap.id);
+                return (
                 <Pressable
                   key={snap.id}
                   accessibilityRole="button"
-                  accessibilityLabel={`Open a snap from ${snap.authorName || 'a student'}`}
+                  accessibilityLabel={
+                    seen
+                      ? `Snap from ${snap.authorName || 'a student'}, already opened`
+                      : `Open a snap from ${snap.authorName || 'a student'}`
+                  }
                   style={({ pressed }) => [styles.snapBubbleWrap, pressed && { opacity: 0.75 }]}
-                  onPress={() => openSnap(snap.id)}
+                  onPress={() => openSnap(snap.id, snapQueue)}
                 >
                   {/* A different ring on purpose: this is not a friend, and a
-                      student should be able to see that before they tap. */}
-                  <View style={[styles.snapBubbleRing, { borderColor: theme.primary }]}>
+                      student should be able to see that before they tap. Once
+                      read it dims like any other. */}
+                  <View
+                    style={[
+                      styles.snapBubbleRing,
+                      { borderColor: seen ? theme.border : theme.primary },
+                      seen && { opacity: 0.6 },
+                    ]}
+                  >
                     <Image source={{ uri: snap.imageUrl }} style={styles.snapBubbleImage} contentFit="cover" transition={160} />
                   </View>
                   <Text style={[styles.snapBubbleName, { color: theme.textSecondary }]} numberOfLines={1}>
                     {snap.authorName || 'Student'}
                   </Text>
                 </Pressable>
-              ))}
+                );
+              })}
 
-              {snapRowFriends.length === 0 && sharedSnaps.length === 0 && (
+              {snapRowFriends.length === 0 && orderedSharedSnaps.length === 0 && (
                 <View style={styles.snapRowEmpty}>
                   <Text style={[styles.snapRowEmptyText, { color: theme.textSecondary }]} numberOfLines={2}>
                     No snaps from friends yet today.
@@ -1593,23 +1764,6 @@ export default function CommunityMap() {
             </ScrollView>
           </View>
 
-          {/* Friends list */}
-          <ScrollView
-            style={styles.peopleList}
-            contentContainerStyle={styles.peopleListContent}
-            showsVerticalScrollIndicator={false}
-            alwaysBounceVertical
-            overScrollMode="always"
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshingCommunity}
-                onRefresh={handleRefreshCommunity}
-                tintColor="transparent"
-                colors={['transparent']}
-                progressBackgroundColor={Platform.OS === 'android' ? 'transparent' : undefined}
-              />
-            }
-          >
             {/* Me row — left: zoom to me on map; right: Set Status (opens popup; was unreachable inside one big Pressable) */}
             <View
               style={[
@@ -1749,10 +1903,14 @@ export default function CommunityMap() {
                   }}
                 >
                   <Pressable
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      router.push({ pathname: '/community/friend-profile', params: { friendId: friend.id } } as any);
-                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`About ${friend.name}`}
+                    // This used to call e.stopPropagation() before navigating,
+                    // and the tap did nothing at all — the picture looked
+                    // tappable and wasn't. Dropping the call is what made it
+                    // fire. The nested Pressable already keeps the touch away
+                    // from the row behind it, so nothing is lost.
+                    onPress={() => openPeek(friend)}
                   >
                     <Avatar name={friend.name} avatarUrl={friend.avatar_url} size={44} />
                   </Pressable>
@@ -1762,6 +1920,8 @@ export default function CommunityMap() {
                       style={[styles.personName, { color: theme.text }]}
                       numberOfLines={1}
                       ellipsizeMode="tail"
+                      onPress={() => openPeek(friend)}
+                      suppressHighlighting
                     >
                       {friend.name}
                     </Text>
@@ -1819,7 +1979,7 @@ export default function CommunityMap() {
             <View style={{ height: 120 }} />
           </ScrollView>
           {refreshingCommunity ? (
-            <View pointerEvents="none" style={styles.peopleRefreshOverlayTop}>
+            <View pointerEvents="none" style={[styles.peopleRefreshOverlayTop, { top: friendsListTop + 12 }]}>
               {isCatTheme || isDarkMinimal ? (
                 themePack === 'spider' ? (
                   <SpiderLottie variant="loading" style={styles.spiderLoadingLottie} />
@@ -1979,6 +2139,15 @@ export default function CommunityMap() {
       />
       </>
       )}
+      <FriendPeek
+        person={peekPerson}
+        onClose={() => setPeekPerson(null)}
+        onOpenProfile={(id) => {
+          setPeekPerson(null);
+          router.push({ pathname: '/community/friend-profile', params: { friendId: id } } as any);
+        }}
+      />
+
       {/* ─── EVENTS FAB (direct child of root for proper absolute positioning) ─── */}
       {communityTab === 'events' && (
         <Pressable
@@ -2504,7 +2673,8 @@ const styles = StyleSheet.create({
   },
 
   // Top bar
-  confessPeekWrap: { position: 'absolute', top: 10, left: 12, right: 12 },
+  // Clears the floating top bar above it (64pt tall, plus 10pt of air).
+  confessPeekWrap: { position: 'absolute', top: 74, left: 12, right: 12 },
   confessBubble: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16,
@@ -2519,13 +2689,16 @@ const styles = StyleSheet.create({
     borderLeftColor: 'transparent', borderRightColor: 'transparent',
   },
   topBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
     zIndex: 20,
   },
   /** Balances the left/right sections. */
@@ -2550,6 +2723,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
   },
   circleSelector: {
     flexDirection: 'row',
@@ -2558,6 +2736,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
   },
   circleName: { fontSize: 17, fontWeight: '700' },
   circleSelectorNameBtn: { maxWidth: 180 },
@@ -3234,11 +3417,33 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   favoriteRowText: { fontSize: 12, fontWeight: '700', flex: 1 },
+  /**
+   * The snap strip is set apart by two hairlines and a 3% wash of the theme's
+   * own text colour, not by a second surface.
+   *
+   * theme.background was the obvious choice and it was wrong. On the dark
+   * themes it is darker than the card, so the strip sank — which is what was
+   * wanted. On the light themes it is a grey against a white card, so the
+   * strip sank and the friends list below it jumped out instead: the same rule
+   * read backwards depending on the theme. A wash of theme.text can't invert,
+   * because it is always a step towards whatever counts as foreground on that
+   * theme. The hairlines do the real separating; the wash only confirms it.
+   */
   snapRow: {
+    borderTopWidth: StyleSheet.hairlineWidth,
     borderBottomWidth: StyleSheet.hairlineWidth,
+    // Cancels peopleListContent's side padding. The strip lives inside the
+    // friends list now, and a band of snaps indented to match a text column
+    // reads as part of the list rather than as its own thing.
+    marginHorizontal: -16,
+    marginBottom: 8,
+  },
+  sheetHeaderBlock: {
     marginBottom: 4,
   },
-  snapRowContent: { paddingHorizontal: 20, paddingBottom: 10, gap: 14 },
+  // paddingTop was missing, so the bubbles sat flush against the header above
+  // them while leaving 10pt underneath — the strip looked shunted upwards.
+  snapRowContent: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 10, gap: 14, alignItems: 'center' },
   snapBubbleWrap: { alignItems: 'center', width: SNAP_BUBBLE + 14 },
   snapBubbleRing: {
     width: SNAP_BUBBLE + 8,
@@ -3276,7 +3481,7 @@ const styles = StyleSheet.create({
   snapBubbleStreakText: { fontSize: 10, fontWeight: '800', color: '#ffffff' },
   snapBubbleName: { fontSize: 11, fontWeight: '600', marginTop: 5, maxWidth: SNAP_BUBBLE + 14 },
   snapRowDivider: { width: StyleSheet.hairlineWidth, alignSelf: 'stretch', marginVertical: 8 },
-  snapRowEmpty: { justifyContent: 'center', paddingLeft: 4, maxWidth: 190 },
+  snapRowEmpty: { justifyContent: 'center', paddingLeft: 4, maxWidth: 190, alignSelf: 'center' },
   snapRowEmptyText: { fontSize: 12, fontWeight: '600' },
   bottomSheetTitle: { fontSize: 22, fontWeight: '800' },
   bottomSheetActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -3319,7 +3524,8 @@ const styles = StyleSheet.create({
   peopleListContent: { paddingHorizontal: 16 },
   peopleRefreshOverlayTop: {
     position: 'absolute',
-    top: 52,
+    // top is set at render from the measured list position — see friendsListTop.
+    top: 0,
     left: 0,
     right: 0,
     alignItems: 'center',
@@ -3341,10 +3547,14 @@ const styles = StyleSheet.create({
     width: 124,
     height: 94,
   },
+  // 12pt of padding above and below each row added up to more than a whole
+  // extra friend's worth of empty space down the list. 8 keeps the row
+  // comfortably tappable — the avatar alone is 44pt, well past the 44pt
+  // minimum — while giving the map back the difference.
   personRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 8,
     paddingHorizontal: 4,
     gap: 8,
     borderRadius: 12,

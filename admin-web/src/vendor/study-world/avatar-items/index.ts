@@ -1,0 +1,27 @@
+import type { CategoryItems } from "./types";
+import { HAIR } from "./hair";
+import { EYES } from "./eyes";
+import { TOP } from "./top";
+import { BOTTOM } from "./bottom";
+import { SHOES } from "./shoes";
+import { HEAD } from "./head";
+import { FACE } from "./face";
+import { BACK } from "./back";
+import { PET } from "./pet";
+import { EFFECT } from "./effect";
+
+export type { ExtraItem, FxKit, ItemTier, NewItem, Painter } from "./types";
+
+/** New items by category, plugged into the catalogue and drawing in avatar.ts. */
+export const EXTRA_ITEMS: Record<string, CategoryItems> = {
+  hair: HAIR,
+  eyes: EYES,
+  top: TOP,
+  bottom: BOTTOM,
+  shoes: SHOES,
+  head: HEAD,
+  face: FACE,
+  back: BACK,
+  pet: PET,
+  effect: EFFECT,
+};

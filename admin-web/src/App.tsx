@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { LoginRoute } from './routes/LoginRoute';
 import { AdminLayout } from './routes/AdminLayout';
 import { DashboardRoute } from './routes/DashboardRoute';
@@ -20,7 +20,14 @@ import { AcademicCalendarsRoute } from './routes/AcademicCalendarsRoute';
 import { CommunicationsRoute } from './routes/CommunicationsRoute';
 import { InstitutionsRoute } from './routes/InstitutionsRoute';
 import { ConfessionsRoute } from './routes/ConfessionsRoute';
+import { StudyWorldRoute } from './routes/StudyWorldRoute';
 import { AuthProvider } from './state/AuthProvider';
+
+/** Study World became RenCity, then RenTaman; old links (with their ?s= / ?tab=) still work. */
+function ToRenTaman() {
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: '/rentaman', search }} replace />;
+}
 
 export default function App() {
   return (
@@ -48,6 +55,9 @@ export default function App() {
             <Route path="authorities" element={<Navigate to="/institutions?tab=authorities" replace />} />
             <Route path="services" element={<ServicesRoute />} />
             <Route path="confessions" element={<ConfessionsRoute />} />
+            <Route path="rentaman" element={<StudyWorldRoute />} />
+            <Route path="rencity" element={<ToRenTaman />} />
+            <Route path="study-world" element={<ToRenTaman />} />
             <Route path="campuses" element={<Navigate to="/institutions?tab=campuses" replace />} />
             <Route path="organizations" element={<Navigate to="/institutions?tab=organisations" replace />} />
             <Route path="communications" element={<CommunicationsRoute />} />

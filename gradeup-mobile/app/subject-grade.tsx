@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View, Text, Pressable, ScrollView, StyleSheet, TextInput,
   Switch, Alert, Modal, Platform, ActivityIndicator,
-  KeyboardAvoidingView, AppState
+  AppState
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -17,6 +17,7 @@ import {
   SCHEME_LABELS, getGradeTable,
 } from '@/src/lib/gradeCalculator';
 import { cacheSubjectGradeConfig, getSubjectGradeConfig, saveSubjectGradeConfig } from '@/src/lib/gradeStorage';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 // NetInfo is optional because older installed development clients may not
 // contain its native module. Avoid requiring it at runtime: Hermes can throw
@@ -412,7 +413,7 @@ export default function SubjectGradeScreen() {
         </View>
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingScreen style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={[ss.scroll, { paddingBottom: insets.bottom + 60 }]} keyboardShouldPersistTaps="handled">
           
           {/* ── Hero (Clean, Large) ── */}
@@ -562,7 +563,7 @@ export default function SubjectGradeScreen() {
           )}
 
         </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAvoidingScreen>
 
       {/* ═══════════════════════════════════════════════════════════════════
           Settings Modal (Slide up)
@@ -703,7 +704,7 @@ export default function SubjectGradeScreen() {
              </Pressable>
           </View>
           
-          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <KeyboardAvoidingScreen style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <ScrollView contentContainerStyle={ss.modalScroll} keyboardShouldPersistTaps="handled">
               
               <Text style={[ss.editorHint, { color: sub }]}>Add, edit, or remove grade levels. The maximum percentage is calculated automatically based on the minimum percentage of the level above it.</Text>
@@ -754,7 +755,7 @@ export default function SubjectGradeScreen() {
               </Pressable>
 
             </ScrollView>
-          </KeyboardAvoidingView>
+          </KeyboardAvoidingScreen>
         </View>
       </Modal>
 
@@ -773,7 +774,7 @@ export default function SubjectGradeScreen() {
              </Pressable>
           </View>
 
-          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <KeyboardAvoidingScreen style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 24 }} keyboardShouldPersistTaps="handled">
               
               <Text style={[ss.fieldLabel, { color: sub }]}>Name</Text>
@@ -817,7 +818,7 @@ export default function SubjectGradeScreen() {
               )}
 
             </ScrollView>
-          </KeyboardAvoidingView>
+          </KeyboardAvoidingScreen>
         </View>
       </Modal>
 

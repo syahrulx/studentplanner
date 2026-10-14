@@ -60,37 +60,41 @@ export function AdminTimetableGrid({ entries, onSlotClick, minColumnWidth = 96 }
     return h;
   }, []);
 
+  const daysMinWidth = WEEK_DAYS_MON_FIRST.length * minColumnWidth;
+
   return (
-    <div className="flex w-full min-w-0 rounded-2xl border border-slate-200 bg-slate-50/80 dark:border-slate-700 dark:bg-slate-950/50">
-      <div
-        className="shrink-0 border-r border-slate-200 pt-9 text-right text-[10px] font-bold text-slate-400 dark:border-slate-700"
-        style={{ width: TIME_GUTTER_W }}
-      >
-        {hours.slice(0, -1).map((hr) => (
-          <div
-            key={hr}
-            className="box-border pr-1 pt-0.5 leading-none"
-            style={{ height: HOUR_HEIGHT_PX }}
-          >
-            {String(hr).padStart(2, '0')}:00
-          </div>
-        ))}
-      </div>
-      <div className="flex min-w-[720px] flex-1 gap-0 overflow-x-auto">
+    // One scroll area for the hour labels and the days, so they always line up.
+    <div className="w-full overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50/80 dark:border-slate-700 dark:bg-slate-950/50">
+      <div className="flex" style={{ minWidth: daysMinWidth + TIME_GUTTER_W }}>
+        <div
+          className="shrink-0 border-r border-slate-200 text-right text-[10px] font-bold tabular-nums text-slate-400 dark:border-slate-700 dark:text-slate-500"
+          style={{ width: TIME_GUTTER_W }}
+        >
+          <div className="h-9 border-b border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900" aria-hidden="true" />
+          {hours.slice(0, -1).map((hr) => (
+            <div
+              key={hr}
+              className="box-border pr-1.5 pt-0.5 leading-none"
+              style={{ height: HOUR_HEIGHT_PX }}
+            >
+              {String(hr).padStart(2, '0')}:00
+            </div>
+          ))}
+        </div>
         {WEEK_DAYS_MON_FIRST.map((day) => (
           <div
             key={day}
             className="relative min-w-0 flex-1 basis-0 border-r border-slate-200 last:border-r-0 dark:border-slate-700"
             style={{ minWidth: minColumnWidth }}
           >
-            <div className="sticky top-0 z-10 border-b border-slate-200 bg-white py-2 text-center text-[11px] font-black uppercase tracking-wide text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+            <div className="flex h-9 items-center justify-center border-b border-slate-200 bg-white text-[11px] font-black uppercase tracking-wide text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
               {day.slice(0, 3)}
             </div>
             <div className="relative" style={{ height: gridBodyHeight }}>
               {hours.slice(0, -1).map((hr) => (
                 <div
                   key={hr}
-                  className="border-b border-slate-100 dark:border-slate-800/80"
+                  className="box-border border-b border-slate-100 dark:border-slate-800/80"
                   style={{ height: HOUR_HEIGHT_PX }}
                 />
               ))}
@@ -128,17 +132,17 @@ export function AdminTimetableGrid({ entries, onSlotClick, minColumnWidth = 96 }
                   >
                     {compactSlot ? (
                       <>
-                        <span className="shrink-0 whitespace-nowrap font-mono text-[8px] font-extrabold tracking-tight opacity-95">
+                        <span className="shrink-0 whitespace-nowrap font-mono text-[9px] font-extrabold tracking-tight opacity-95">
                           {timeLabel}
                         </span>
-                        <span className="min-w-0 truncate text-[9px] font-black leading-none">{s.title}</span>
+                        <span className="min-w-0 truncate text-[10px] font-black leading-none">{s.title}</span>
                       </>
                     ) : (
                       <>
-                        <div className="shrink-0 font-mono text-[9px] font-extrabold leading-none tracking-tight opacity-95">
+                        <div className="shrink-0 font-mono text-[10px] font-extrabold leading-none tracking-tight opacity-95">
                           {timeLabel}
                         </div>
-                        <div className="mt-1 min-h-0 flex-1 text-[10px] font-black leading-snug line-clamp-6">
+                        <div className="mt-1 min-h-0 flex-1 text-[11px] font-black leading-snug line-clamp-6">
                           {s.title}
                         </div>
                       </>

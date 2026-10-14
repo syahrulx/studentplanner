@@ -1,13 +1,10 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   deleteUser,
   listAiUsageForUsers,
   listUserCountries,
   listUsers,
-  MONTHLY_TOKEN_LIMITS,
   resetUserMonthlyTokens,
-  resolveMonthlyLimit,
   setUserStatus,
   setUserSubscriptionPlan,
   setUserTokenLimit,
@@ -17,552 +14,14 @@ import {
 } from '../lib/api';
 import { matchesAdminSearch } from '../lib/adminSearch';
 import { useAdminSearch } from '../state/AdminSearchContext';
-import { MotionPanel, MotionSection } from '../ui/motion';
 import { useSafeActionDialog } from '../components/SafeActionDialog';
-
-function Chip({ children, tone }: { children: string; tone: 'green' | 'amber' | 'rose' | 'slate' }) {
-  const cls =
-    tone === 'green'
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-100'
-      : tone === 'amber'
-        ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100'
-        : tone === 'rose'
-          ? 'border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100'
-          : 'border-slate-200 bg-white text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200';
-  return <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-black ${cls}`}>{children}</span>;
-}
-
-function formatTokens(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return '0';
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}k`;
-  return String(Math.round(n));
-}
-
-function formatJoinDate(iso: string | null | undefined): string {
-  if (!iso) return '-';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '-';
-  return d.toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: '2-digit',
-  });
-}
-
-function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return '-';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '-';
-  return d.toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function formatCountry(code: string | null | undefined): string {
-  const normalized = code?.trim().toUpperCase();
-  if (!normalized || !/^[A-Z]{2}$/.test(normalized)) return 'Unknown';
-  try {
-    return new Intl.DisplayNames(['en'], { type: 'region' }).of(normalized) || normalized;
-  } catch {
-    return normalized === 'MY' ? 'Malaysia' : normalized;
-  }
-}
-
-function formatBillingStatus(status: AdminUserRow['subscription_status']): string {
-  return status.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function billingTone(status: AdminUserRow['subscription_status']): 'green' | 'amber' | 'rose' | 'slate' {
-  if (status === 'active' || status === 'prepaid') return 'green';
-  if (status === 'trial' || status === 'introductory' || status === 'promotional' || status === 'temporary') return 'amber';
-  if (status === 'expired' || status === 'refunded' || status === 'billing_issue') return 'rose';
-  return 'slate';
-}
-
-function UserRowDetailPanel({
-  u,
-  usedThisMonth,
-}: {
-  u: AdminUserRow;
-  usedThisMonth: number;
-}) {
-  const planLimit = MONTHLY_TOKEN_LIMITS[u.subscription_plan] ?? MONTHLY_TOKEN_LIMITS.free;
-  const effectiveLimit = resolveMonthlyLimit(u.subscription_plan, u.ai_token_limit_override);
-  const pct =
-    effectiveLimit > 0 ? Math.min(100, Math.round((usedThisMonth / effectiveLimit) * 100)) : 0;
-
-  const fields: Array<{ label: string; value: string }> = [
-    { label: 'User ID', value: u.id },
-    { label: 'Email', value: u.email?.trim() || '—' },
-    { label: 'Display name', value: u.name?.trim() || '—' },
-    { label: 'Student ID', value: u.student_id?.trim() || '—' },
-    { label: 'University', value: u.university_id?.trim() || '—' },
-    { label: 'Country', value: formatCountry(u.country) },
-    { label: 'Device', value: u.device_platform ?? '—' },
-    { label: 'Status', value: u.status },
-    { label: 'Plan', value: u.subscription_plan },
-    { label: 'Billing state', value: formatBillingStatus(u.subscription_status) },
-    { label: 'Billing source', value: u.subscription_store || '—' },
-    { label: 'Environment', value: u.subscription_environment || '—' },
-    { label: 'Product', value: u.subscription_product_id || '—' },
-    {
-      label: 'Recorded price',
-      value: u.subscription_price == null
-        ? '—'
-        : `${u.subscription_currency || ''} ${u.subscription_price.toFixed(2)}`.trim(),
-    },
-    { label: 'Subscription expires', value: formatDateTime(u.subscription_expires_at) },
-    { label: 'Billing last synced', value: formatDateTime(u.subscription_updated_at) },
-    {
-      label: 'AI limit override',
-      value:
-        u.ai_token_limit_override != null && u.ai_token_limit_override > 0
-          ? `${u.ai_token_limit_override.toLocaleString()} tokens/mo (plan default ${planLimit.toLocaleString()})`
-          : `Plan default (${planLimit.toLocaleString()} tokens/mo)`,
-    },
-    { label: 'Joined', value: formatDateTime(u.created_at) },
-    { label: 'Profile updated', value: formatDateTime(u.updated_at) },
-    {
-      label: 'AI usage (this month, UTC)',
-      value: `${usedThisMonth.toLocaleString()} / ${effectiveLimit.toLocaleString()} (${pct}%)`,
-    },
-  ];
-
-  return (
-    <div className="border-t border-slate-200 bg-slate-50/90 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/50">
-      <div className="mb-3 text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-        User details
-      </div>
-      <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {fields.map(({ label, value }) => (
-          <div key={label} className="min-w-0">
-            <dt className="text-[10px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</dt>
-            <dd className="mt-0.5 break-all text-sm font-semibold text-slate-900 dark:text-slate-100">{value}</dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  );
-}
-
-function UsageBar({
-  used,
-  plan,
-  override,
-}: {
-  used: number;
-  plan: SubscriptionPlan;
-  override: number | null;
-}) {
-  const planLimit = MONTHLY_TOKEN_LIMITS[plan] ?? MONTHLY_TOKEN_LIMITS.free;
-  const limit = resolveMonthlyLimit(plan, override);
-  const hasOverride = override != null && override > 0 && override !== planLimit;
-  const pct = Math.min(100, Math.round((used / limit) * 100));
-  const tone =
-    pct >= 100
-      ? 'bg-rose-500 dark:bg-rose-500'
-      : pct >= 80
-        ? 'bg-amber-500 dark:bg-amber-400'
-        : 'bg-emerald-500 dark:bg-emerald-400';
-  const tooltip =
-    `AI tokens this month\n` +
-    `Used: ${used.toLocaleString()} / ${limit.toLocaleString()} (${pct}%)\n` +
-    `Plan: ${plan}${hasOverride ? ` (admin override)` : ''}\n` +
-    (hasOverride ? `Plan default: ${planLimit.toLocaleString()}\n` : '') +
-    `Remaining: ${Math.max(0, limit - used).toLocaleString()}`;
-  return (
-    <div className="min-w-[140px] max-w-[200px]" title={tooltip}>
-      <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-        <span className="flex items-center gap-1">
-          {formatTokens(used)} / {formatTokens(limit)}
-          {hasOverride ? (
-            <span className="rounded-full border border-brand-200 bg-brand-50 px-1.5 py-[1px] text-[9px] font-black uppercase text-brand-700 dark:border-brand-900/50 dark:bg-brand-950/40 dark:text-brand-200">
-              custom
-            </span>
-          ) : null}
-        </span>
-        <span
-          className={
-            pct >= 100
-              ? 'text-rose-600 dark:text-rose-300'
-              : pct >= 80
-                ? 'text-amber-600 dark:text-amber-300'
-                : 'text-emerald-600 dark:text-emerald-300'
-          }
-        >
-          {pct}%
-        </span>
-      </div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-        <div
-          className={`h-full rounded-full transition-all duration-300 ${tone}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-type ActionVariant = 'neutral' | 'amber' | 'rose' | 'danger';
-
-function ActionsMenu({
-  items,
-}: {
-  items: Array<{ label: string; onClick: () => void | Promise<void>; variant?: ActionVariant; divider?: boolean }>;
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (!rootRef.current) return;
-      if (!rootRef.current.contains(e.target as Node)) setOpen(false);
-    }
-    function onEsc(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false);
-    }
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onEsc);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onEsc);
-    };
-  }, [open]);
-
-  return (
-    <div ref={rootRef} className="relative inline-block text-left">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-900 shadow-sm hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-      >
-        Actions
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          className={`transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
-          aria-hidden="true"
-        >
-          <path
-            d="M2.5 4.5L6 8l3.5-3.5"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </button>
-
-      {open ? (
-        <div
-          role="menu"
-          className="absolute right-0 z-20 mt-2 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl ring-1 ring-black/5 dark:border-slate-800 dark:bg-slate-900 dark:ring-white/5"
-        >
-          <ul className="py-1">
-            {items.map((it, idx) => {
-              const variantCls =
-                it.variant === 'danger'
-                  ? 'text-white bg-slate-900 hover:bg-black dark:bg-slate-700 dark:hover:bg-slate-600'
-                  : it.variant === 'rose'
-                    ? 'text-rose-700 hover:bg-rose-50 dark:text-rose-200 dark:hover:bg-rose-950/40'
-                    : it.variant === 'amber'
-                      ? 'text-amber-700 hover:bg-amber-50 dark:text-amber-200 dark:hover:bg-amber-950/40'
-                      : 'text-slate-900 hover:bg-slate-50 dark:text-slate-100 dark:hover:bg-slate-800';
-              return (
-                <li key={idx} className={it.divider ? 'mt-1 border-t border-slate-200 pt-1 dark:border-slate-800' : ''}>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className={`block w-full px-3 py-2 text-left text-xs font-black ${variantCls}`}
-                    onClick={async () => {
-                      setOpen(false);
-                      await it.onClick();
-                    }}
-                  >
-                    {it.label}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-type TokenDialogMode = 'reset' | 'set_limit';
-
-type TokenDialogState = {
-  mode: TokenDialogMode;
-  user: AdminUserRow;
-  used: number;
-};
-
-function TokenActionDialog({
-  state,
-  onClose,
-  onApply,
-}: {
-  state: TokenDialogState;
-  onClose: () => void;
-  onApply: (opts: { limit: number | null }) => Promise<void>;
-}) {
-  const { mode, user, used } = state;
-  const planLimit = MONTHLY_TOKEN_LIMITS[user.subscription_plan] ?? MONTHLY_TOKEN_LIMITS.free;
-  const currentLimit = resolveMonthlyLimit(user.subscription_plan, user.ai_token_limit_override);
-  const userLabel = user.name || user.student_id || user.id.slice(0, 8);
-
-  // Step 1 = review; step 2 = final confirm (double-confirmation the user asked for).
-  const [step, setStep] = useState<1 | 2>(1);
-  const [limitInput, setLimitInput] = useState<string>(
-    mode === 'set_limit' && user.ai_token_limit_override ? String(user.ai_token_limit_override) : '',
-  );
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-
-  const parsedLimit: number | null = useMemo(() => {
-    if (mode !== 'set_limit') return null;
-    const trimmed = limitInput.trim();
-    if (!trimmed) return null;
-    const n = Number(trimmed.replace(/[_,\s]/g, ''));
-    if (!Number.isFinite(n) || n <= 0) return null;
-    return Math.floor(n);
-  }, [mode, limitInput]);
-  const limitInputValid =
-    mode !== 'set_limit' || limitInput.trim() === '' || parsedLimit != null;
-
-  useEffect(() => {
-    function onEsc(e: KeyboardEvent) {
-      if (e.key === 'Escape' && !busy) onClose();
-    }
-    document.addEventListener('keydown', onEsc);
-    // Prevent background scroll while the dialog is open.
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onEsc);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [onClose, busy]);
-
-  const title =
-    mode === 'reset' ? `Reset this month's AI usage` : `Set custom AI token limit`;
-
-  const goNext = () => {
-    setErr('');
-    if (mode === 'set_limit' && !limitInputValid) {
-      setErr('Enter a positive whole number, or leave blank to clear the override.');
-      return;
-    }
-    setStep(2);
-  };
-
-  const apply = async () => {
-    setErr('');
-    setBusy(true);
-    try {
-      if (mode === 'reset') {
-        await onApply({ limit: null });
-      } else {
-        // Blank input → clear the override (revert to plan default).
-        await onApply({ limit: parsedLimit });
-      }
-      onClose();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Action failed');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 px-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="token-action-title"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !busy) onClose();
-      }}
-    >
-      <div
-        className="w-full max-w-md overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="border-b border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-950/60">
-          <div id="token-action-title" className="text-base font-black text-slate-900 dark:text-slate-100">
-            {title}
-          </div>
-          <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-            {userLabel} · plan <span className="font-black uppercase">{user.subscription_plan}</span>
-          </div>
-        </div>
-
-        <div className="space-y-4 px-5 py-5 text-sm">
-          <div className="grid grid-cols-2 gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3 text-xs dark:border-slate-800 dark:bg-slate-950/40">
-            <div>
-              <div className="font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                This month used
-              </div>
-              <div className="mt-1 font-black text-slate-900 dark:text-slate-100">
-                {used.toLocaleString()}
-              </div>
-            </div>
-            <div>
-              <div className="font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                Current limit
-              </div>
-              <div className="mt-1 font-black text-slate-900 dark:text-slate-100">
-                {currentLimit.toLocaleString()}
-                {user.ai_token_limit_override ? (
-                  <span className="ml-1 text-[10px] font-black uppercase text-brand-600 dark:text-brand-300">
-                    (custom)
-                  </span>
-                ) : null}
-              </div>
-            </div>
-          </div>
-
-          {mode === 'reset' ? (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100">
-              This will delete all <span className="font-black">ai_token_usage</span> rows for this
-              user in the current UTC month. The user's "X / {currentLimit.toLocaleString()}" bar
-              resets to 0 and they can keep using AI immediately. Historic totals from previous
-              months are not affected.
-            </div>
-          ) : null}
-
-          {mode === 'set_limit' ? (
-            <label className="block">
-              <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                New monthly limit (tokens)
-              </div>
-              <input
-                inputMode="numeric"
-                value={limitInput}
-                onChange={(e) => setLimitInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && step === 1) goNext();
-                }}
-                placeholder={`Plan default is ${planLimit.toLocaleString()}`}
-                disabled={busy || step === 2}
-                className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 disabled:opacity-60 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-              />
-              <div className="mt-2 flex flex-wrap gap-2">
-                {[planLimit, 50_000, 100_000, 200_000, 500_000].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    disabled={busy || step === 2}
-                    onClick={() => setLimitInput(String(n))}
-                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-black text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                  >
-                    {n.toLocaleString()}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  disabled={busy || step === 2}
-                  onClick={() => setLimitInput('')}
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-black text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                >
-                  Clear override
-                </button>
-              </div>
-              <div className="mt-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                Leave blank to remove the override and fall back to the plan default
-                ({planLimit.toLocaleString()} tokens).
-              </div>
-            </label>
-          ) : null}
-
-          {step === 2 ? (
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
-              {mode === 'reset' ? (
-                <>
-                  Final confirmation. You're about to reset{' '}
-                  <span className="font-black">{userLabel}</span>'s AI usage for this month to 0.
-                </>
-              ) : parsedLimit == null ? (
-                <>
-                  Final confirmation. You're about to remove the custom limit for{' '}
-                  <span className="font-black">{userLabel}</span> and revert to the plan default of{' '}
-                  <span className="font-black">{planLimit.toLocaleString()}</span> tokens/month.
-                </>
-              ) : (
-                <>
-                  Final confirmation. You're about to set{' '}
-                  <span className="font-black">{userLabel}</span>'s monthly limit to{' '}
-                  <span className="font-black">{parsedLimit.toLocaleString()}</span> tokens
-                  {parsedLimit < used ? (
-                    <>
-                      {' '}— note that this is{' '}
-                      <span className="font-black">below</span> their current usage of{' '}
-                      {used.toLocaleString()}, so the user will already be capped.
-                    </>
-                  ) : null}
-                  .
-                </>
-              )}
-            </div>
-          ) : null}
-
-          {err ? (
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
-              {err}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3 dark:border-slate-800 dark:bg-slate-950/60">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-900 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-          >
-            Cancel
-          </button>
-          {step === 1 ? (
-            <button
-              type="button"
-              onClick={goNext}
-              disabled={busy || (mode === 'set_limit' && !limitInputValid)}
-              className="h-9 rounded-xl bg-slate-900 px-3 text-xs font-black text-white hover:bg-black disabled:opacity-60 dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-white"
-            >
-              Continue
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={apply}
-              disabled={busy}
-              className={`h-9 rounded-xl px-3 text-xs font-black text-white disabled:opacity-60 ${
-                mode === 'reset'
-                  ? 'bg-amber-600 hover:bg-amber-700'
-                  : 'bg-brand-600 hover:bg-brand-700'
-              }`}
-            >
-              {busy ? 'Applying…' : mode === 'reset' ? 'Reset usage' : 'Apply limit'}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
-}
+import { Button } from '../ui/Button';
+import { Label, Select, TextInput } from '../ui/Input';
+import { EmptyState, Notice, PageHeader, Panel, SidePanel, SkeletonRows } from '../ui/page';
+import { formatCountry } from '../components/people/format';
+import { TokenActionDialog, type TokenDialogState } from '../components/people/TokenActionDialog';
+import { UserActionGroups, type UserActionItem } from '../components/people/UserActions';
+import { UserChips, UserFacts, UserRow } from '../components/people/UserParts';
 
 export function UsersRoute() {
   type RowLimit = 25 | 50 | 100 | 200;
@@ -674,352 +133,224 @@ export function UsersRoute() {
 
   const rows = filteredRows;
   const pageCount = Math.max(1, Math.ceil(count / rowLimit));
+  // The detail panel follows the loaded rows, so it shows fresh data after an
+  // action reloads the list, and closes if the user is no longer in the list.
+  const selectedUser = expandedUserId ? items.find((u) => u.id === expandedUserId) ?? null : null;
+
+  // Same actions, confirmations and calls as before; only where they are shown changed.
+  const userActions = (u: AdminUserRow, used: number): UserActionItem[] => [
+    {
+      label: 'Activate',
+      group: 'Account',
+      onClick: async () => {
+        requestSafeAction({ title: 'Activate user', operation: 'Activate', affectedCount: 1, subject: `${u.name || u.id} (${u.id})`, confirmationText: 'ACTIVATE', requireReason: true, onConfirm: async (reason) => { await setUserStatus(u.id, 'active', reason); await refresh(); return { affected: 1 }; } });
+      },
+    },
+    {
+      label: 'Disable',
+      group: 'Account',
+      variant: 'amber',
+      onClick: async () => {
+        requestSafeAction({ title: 'Disable user', operation: 'Disable', affectedCount: 1, subject: `${u.name || u.id} (${u.id})`, confirmationText: 'DISABLE', requireReason: true, warning: 'The user may lose access until reactivated.', onConfirm: async (reason) => { await setUserStatus(u.id, 'disabled', reason); await refresh(); return { affected: 1 }; } });
+      },
+    },
+    {
+      label: 'Ban',
+      group: 'Account',
+      variant: 'rose',
+      onClick: async () => {
+        requestSafeAction({ title: 'Ban user', operation: 'Ban', affectedCount: 1, subject: `${u.name || u.id} (${u.id})`, confirmationText: 'BAN', requireReason: true, warning: 'This blocks the user account. It does not delete their data.', onConfirm: async (reason) => { await setUserStatus(u.id, 'banned', reason); await refresh(); return { affected: 1 }; } });
+      },
+    },
+    {
+      label: 'Set Free',
+      group: 'Plan',
+      variant: 'amber',
+      onClick: async () => {
+        requestSafeAction({ title: 'Change subscription plan', operation: 'Set Free', affectedCount: 1, subject: `${u.name || u.id} → Free`, confirmationText: 'SET FREE', requireReason: true, warning: 'Only the explicit admin grant is removed. Valid RevenueCat or Curlec access remains authoritative.', onConfirm: async (reason) => { await setUserSubscriptionPlan(u.id, 'free', reason); await refresh(); return { affected: 1 }; } });
+      },
+    },
+    {
+      label: 'Set Plus',
+      group: 'Plan',
+      onClick: async () => {
+        requestSafeAction({ title: 'Grant Plus access', operation: 'Set Plus', affectedCount: 1, subject: `${u.name || u.id} → Plus`, confirmationText: 'SET PLUS', requireReason: true, onConfirm: async (reason) => { await setUserSubscriptionPlan(u.id, 'plus', reason); await refresh(); return { affected: 1 }; } });
+      },
+    },
+    {
+      label: 'Set Pro',
+      group: 'Plan',
+      onClick: async () => {
+        requestSafeAction({ title: 'Grant Pro access', operation: 'Set Pro', affectedCount: 1, subject: `${u.name || u.id} → Pro`, confirmationText: 'SET PRO', requireReason: true, onConfirm: async (reason) => { await setUserSubscriptionPlan(u.id, 'pro', reason); await refresh(); return { affected: 1 }; } });
+      },
+    },
+    {
+      label: 'Reset AI usage',
+      group: 'AI usage',
+      variant: 'amber',
+      onClick: () => {
+        setTokenDialog({ mode: 'reset', user: u, used });
+      },
+    },
+    {
+      label: 'Set AI limit',
+      group: 'AI usage',
+      onClick: () => {
+        setTokenDialog({ mode: 'set_limit', user: u, used });
+      },
+    },
+    {
+      label: 'Delete user',
+      group: 'Delete',
+      variant: 'danger',
+      onClick: async () => {
+        const expected = (u.student_id && u.student_id.trim()) || u.id.slice(0, 8);
+        requestSafeAction({ title: 'Permanently delete user', operation: 'Delete user', affectedCount: 1, subject: `${u.name || u.id} (${u.id})`, confirmationText: expected, requireReason: true, irreversible: true, warning: 'This permanently deletes the authentication account and associated data. Undo is unavailable.', onConfirm: async (reason) => { await deleteUser(u.id, reason); await refresh(); return { affected: 1 }; } });
+      },
+    },
+  ];
+
+  const searching = searchQuery.trim().length > 0;
 
   return (
-    <div>
-      <MotionSection>
-        <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Users</div>
-        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Search, view, disable/ban, and delete users.
-          {searchQuery.trim() ? (
-            <span className="mt-1 block text-xs font-bold text-brand-600 dark:text-brand-400">
-              Also filtering loaded rows by the top search bar.
-            </span>
-          ) : null}
-        </div>
-      </MotionSection>
+    <div className="space-y-6">
+      <PageHeader title="Users" description="Find a student, see their details, change their access or plan, or delete their account." />
 
-      <MotionSection delay={0.05} className="mt-6">
-        <MotionPanel>
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-              <div className="flex flex-1 flex-col gap-3 lg:flex-row lg:flex-wrap">
-                <label className="block min-w-[220px] flex-1">
-                  <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                    Search
-                  </div>
-                  <input
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Email, name, student ID or user ID"
-                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                  />
-                </label>
-
-                <label className="block lg:w-64">
-                  <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                    University
-                  </div>
-                  <input
-                    value={universityId}
-                    onChange={(e) => setUniversityId(e.target.value)}
-                    placeholder="e.g. uitm"
-                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                  />
-                </label>
-
-                <label className="block lg:w-48">
-                  <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                    Country
-                  </div>
-                  <select
-                    value={countryFilter}
-                    onChange={(e) => setCountryFilter(e.target.value)}
-                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                  >
-                    <option value="">All countries</option>
-                    {countries.map((c) => (
-                      <option key={c.country} value={c.country}>
-                        {formatCountry(c.country)} ({c.userCount.toLocaleString()})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="block lg:w-36">
-                  <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                    Show
-                  </div>
-                  <select
-                    value={rowLimit}
-                    onChange={(e) => setRowLimit(Number(e.target.value) as RowLimit)}
-                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                  >
-                    <option value={25}>25 users</option>
-                    <option value={50}>50 users</option>
-                    <option value={100}>100 users</option>
-                    <option value={200}>200 users</option>
-                  </select>
-                </label>
-
-                <label className="block lg:w-36">
-                  <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Plan</div>
-                  <select value={planFilter} onChange={(e) => setPlanFilter(e.target.value as 'all' | SubscriptionPlan)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
-                    <option value="all">All plans</option><option value="free">Free</option><option value="plus">Plus</option><option value="pro">Pro</option>
-                  </select>
-                </label>
-
-                <label className="block lg:w-40">
-                  <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Status</div>
-                  <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as 'all' | AdminUserRow['status'])} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
-                    <option value="all">All statuses</option><option value="active">Active</option><option value="disabled">Disabled</option><option value="banned">Banned</option>
-                  </select>
-                </label>
-
-                <label className="block lg:w-40"><div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Joined from</div><input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" /></label>
-                <label className="block lg:w-40"><div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Joined to</div><input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold dark:border-slate-800 dark:bg-slate-950" /></label>
-
-                <label className="block lg:w-56">
-                  <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">
-                    Sort
-                  </div>
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as SortKey)}
-                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                  >
-                    <option value="newest">Newest joined</option>
-                    <option value="oldest">Oldest joined</option>
-                    <option value="name_az">Name A-Z</option>
-                    <option value="name_za">Name Z-A</option>
-                  </select>
-                </label>
-              </div>
-
-              <button
-                onClick={() => void refresh(0)}
-                disabled={busy}
-                className="h-11 shrink-0 rounded-2xl bg-brand-600 px-5 text-sm font-black text-white shadow-soft hover:bg-brand-700 disabled:opacity-70"
-              >
-                {busy ? 'Loading…' : 'Search'}
-              </button>
-            </div>
-
-            {err ? (
-              <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
-                {err}
-              </div>
-            ) : null}
-
-            <div className="mt-4 flex flex-col gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                Showing {rows.length} of {count}
-                <span className="ml-1">· page {page + 1} of {pageCount}</span>
-              </div>
-              {usageLoading ? (
-                <div className="text-brand-600 dark:text-brand-400">Loading AI usage…</div>
-              ) : null}
-            </div>
-
-            <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[1080px]">
-                  <thead className="bg-slate-50 text-left text-[11px] font-black uppercase tracking-wide text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
-                    <tr>
-                      <th className="px-4 py-3">Name &amp; email</th>
-                      <th className="px-4 py-3">Student ID</th>
-                      <th className="px-4 py-3">University</th>
-                      <th className="px-4 py-3">Country</th>
-                      <th className="px-4 py-3">Plan</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3">Joined</th>
-                      <th
-                        className="px-4 py-3"
-                        title="AI tokens used this calendar month (UTC). Hover the bar for details."
-                      >
-                        AI usage · this month
-                      </th>
-                      <th className="px-4 py-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {rows.map((u) => {
-                      const tone = u.status === 'active' ? 'green' : u.status === 'disabled' ? 'amber' : 'rose';
-                      const planTone =
-                        u.subscription_plan === 'free'
-                          ? 'slate'
-                          : u.subscription_plan === 'plus'
-                            ? 'green'
-                            : 'amber';
-                      const used = usageByUser[u.id] ?? 0;
-                      const expanded = expandedUserId === u.id;
-                      return (
-                        <Fragment key={u.id}>
-                        <tr
-                          role="button"
-                          tabIndex={0}
-                          aria-expanded={expanded}
-                          onClick={() => setExpandedUserId((prev) => (prev === u.id ? null : u.id))}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault();
-                              setExpandedUserId((prev) => (prev === u.id ? null : u.id));
-                            }
-                          }}
-                          className="cursor-pointer bg-white transition hover:bg-slate-50 dark:bg-transparent dark:hover:bg-slate-900/40"
-                        >
-                          <td className="px-4 py-3">
-                            <div className="flex items-start gap-2">
-                              <span
-                                className={`mt-0.5 inline-flex shrink-0 text-slate-400 transition-transform dark:text-slate-500 ${expanded ? 'rotate-90' : ''}`}
-                                aria-hidden
-                              >
-                                <svg width="14" height="14" viewBox="0 0 12 12" fill="none">
-                                  <path
-                                    d="M4.5 2.5L8 6l-3.5 3.5"
-                                    stroke="currentColor"
-                                    strokeWidth="1.6"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                  />
-                                </svg>
-                              </span>
-                              <div>
-                                <div className="text-sm font-black text-slate-900 dark:text-slate-100">{u.name || '-'}</div>
-                                <div className="mt-0.5 text-xs font-semibold text-slate-600 dark:text-slate-300" title={u.email ?? undefined}>
-                                  {u.email || '—'}
-                                </div>
-                                <div className="mt-0.5 text-xs font-semibold text-slate-400 dark:text-slate-500">
-                                  {u.id.slice(0, 8)}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
-                            {u.student_id || '-'}
-                          </td>
-                          <td className="px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
-                            {u.university_id || '-'}
-                          </td>
-                          <td className="px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
-                            {formatCountry(u.country)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex flex-col items-start gap-1">
-                              <Chip tone={planTone}>{u.subscription_plan}</Chip>
-                              {u.subscription_status !== 'free' && (
-                                <Chip tone={billingTone(u.subscription_status)}>
-                                  {formatBillingStatus(u.subscription_status)}
-                                </Chip>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <Chip tone={tone}>{u.status}</Chip>
-                          </td>
-                          <td
-                            className="px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200"
-                            title={u.created_at || '-'}
-                          >
-                            {formatJoinDate(u.created_at)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <UsageBar used={used} plan={u.subscription_plan} override={u.ai_token_limit_override} />
-                          </td>
-                          <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                            <ActionsMenu
-                              items={[
-                                {
-                                  label: 'Activate',
-                                  onClick: async () => {
-                                    requestSafeAction({ title: 'Activate user', operation: 'Activate', affectedCount: 1, subject: `${u.name || u.id} (${u.id})`, confirmationText: 'ACTIVATE', requireReason: true, onConfirm: async (reason) => { await setUserStatus(u.id, 'active', reason); await refresh(); return { affected: 1 }; } });
-                                  },
-                                },
-                                {
-                                  label: 'Disable',
-                                  variant: 'amber',
-                                  onClick: async () => {
-                                    requestSafeAction({ title: 'Disable user', operation: 'Disable', affectedCount: 1, subject: `${u.name || u.id} (${u.id})`, confirmationText: 'DISABLE', requireReason: true, warning: 'The user may lose access until reactivated.', onConfirm: async (reason) => { await setUserStatus(u.id, 'disabled', reason); await refresh(); return { affected: 1 }; } });
-                                  },
-                                },
-                                {
-                                  label: 'Ban',
-                                  variant: 'rose',
-                                  onClick: async () => {
-                                    requestSafeAction({ title: 'Ban user', operation: 'Ban', affectedCount: 1, subject: `${u.name || u.id} (${u.id})`, confirmationText: 'BAN', requireReason: true, warning: 'This blocks the user account. It does not delete their data.', onConfirm: async (reason) => { await setUserStatus(u.id, 'banned', reason); await refresh(); return { affected: 1 }; } });
-                                  },
-                                },
-                                {
-                                  label: '⭐ Set Plan → Free',
-                                  variant: 'amber',
-                                  divider: true,
-                                  onClick: async () => {
-                                    requestSafeAction({ title: 'Change subscription plan', operation: 'Set Free', affectedCount: 1, subject: `${u.name || u.id} → Free`, confirmationText: 'SET FREE', requireReason: true, warning: 'Only the explicit admin grant is removed. Valid RevenueCat or Curlec access remains authoritative.', onConfirm: async (reason) => { await setUserSubscriptionPlan(u.id, 'free', reason); await refresh(); return { affected: 1 }; } });
-                                  },
-                                },
-                                {
-                                  label: '⭐ Set Plan → Plus',
-                                  onClick: async () => {
-                                    requestSafeAction({ title: 'Grant Plus access', operation: 'Set Plus', affectedCount: 1, subject: `${u.name || u.id} → Plus`, confirmationText: 'SET PLUS', requireReason: true, onConfirm: async (reason) => { await setUserSubscriptionPlan(u.id, 'plus', reason); await refresh(); return { affected: 1 }; } });
-                                  },
-                                },
-                                {
-                                  label: '⭐ Set Plan → Pro',
-                                  onClick: async () => {
-                                    requestSafeAction({ title: 'Grant Pro access', operation: 'Set Pro', affectedCount: 1, subject: `${u.name || u.id} → Pro`, confirmationText: 'SET PRO', requireReason: true, onConfirm: async (reason) => { await setUserSubscriptionPlan(u.id, 'pro', reason); await refresh(); return { affected: 1 }; } });
-                                  },
-                                },
-                                {
-                                  label: 'Reset AI usage',
-                                  variant: 'amber',
-                                  divider: true,
-                                  onClick: () => {
-                                    setTokenDialog({ mode: 'reset', user: u, used });
-                                  },
-                                },
-                                {
-                                  label: 'Set AI limit',
-                                  onClick: () => {
-                                    setTokenDialog({ mode: 'set_limit', user: u, used });
-                                  },
-                                },
-                                {
-                                  label: 'Delete',
-                                  variant: 'danger',
-                                  divider: true,
-                                  onClick: async () => {
-                                    const expected = (u.student_id && u.student_id.trim()) || u.id.slice(0, 8);
-                                    requestSafeAction({ title: 'Permanently delete user', operation: 'Delete user', affectedCount: 1, subject: `${u.name || u.id} (${u.id})`, confirmationText: expected, requireReason: true, irreversible: true, warning: 'This permanently deletes the authentication account and associated data. Undo is unavailable.', onConfirm: async (reason) => { await deleteUser(u.id, reason); await refresh(); return { affected: 1 }; } });
-                                  },
-                                },
-                              ]}
-                            />
-                          </td>
-                        </tr>
-                        {expanded ? (
-                          <tr className="bg-slate-50/50 dark:bg-slate-950/30">
-                            <td colSpan={9} className="p-0">
-                              <UserRowDetailPanel u={u} usedThisMonth={used} />
-                            </td>
-                          </tr>
-                        ) : null}
-                        </Fragment>
-                      );
-                    })}
-                    {rows.length === 0 && !busy ? (
-                      <tr>
-                        <td
-                          colSpan={9}
-                          className="px-4 py-10 text-center text-sm font-semibold text-slate-500 dark:text-slate-400"
-                        >
-                          {searchQuery.trim() && items.length > 0
-                            ? 'No loaded users match the top search. Clear it or run Search again.'
-                            : 'No users found.'}
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            <div className="mt-4 flex items-center justify-between gap-3">
-              <button type="button" disabled={busy || page === 0} onClick={() => void refresh(page - 1)} className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-900 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950 dark:text-white">Previous</button>
-              <div className="text-xs font-bold text-slate-500">Page {page + 1} of {pageCount}</div>
-              <button type="button" disabled={busy || page + 1 >= pageCount} onClick={() => void refresh(page + 1)} className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-900 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950 dark:text-white">Next</button>
-            </div>
+      <Panel>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="sm:col-span-2">
+            <Label htmlFor="users-search" className="mb-1">Search</Label>
+            <TextInput id="users-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Email, name, student ID or user ID" />
           </div>
-        </MotionPanel>
-      </MotionSection>
+          <div>
+            <Label htmlFor="users-university" className="mb-1">University</Label>
+            <TextInput id="users-university" value={universityId} onChange={(e) => setUniversityId(e.target.value)} placeholder="e.g. uitm" />
+          </div>
+          <div>
+            <Label htmlFor="users-country" className="mb-1">Country</Label>
+            <Select id="users-country" value={countryFilter} onChange={(e) => setCountryFilter(e.target.value)}>
+              <option value="">All countries</option>
+              {countries.map((c) => (
+                <option key={c.country} value={c.country}>
+                  {formatCountry(c.country)} ({c.userCount.toLocaleString()})
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="users-plan" className="mb-1">Plan</Label>
+            <Select id="users-plan" value={planFilter} onChange={(e) => setPlanFilter(e.target.value as 'all' | SubscriptionPlan)}>
+              <option value="all">All plans</option>
+              <option value="free">Free</option>
+              <option value="plus">Plus</option>
+              <option value="pro">Pro</option>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="users-status" className="mb-1">Status</Label>
+            <Select id="users-status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as 'all' | AdminUserRow['status'])}>
+              <option value="all">All statuses</option>
+              <option value="active">Active</option>
+              <option value="disabled">Disabled</option>
+              <option value="banned">Banned</option>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="users-from" className="mb-1">Joined from</Label>
+            <TextInput id="users-from" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          </div>
+          <div>
+            <Label htmlFor="users-to" className="mb-1">Joined to</Label>
+            <TextInput id="users-to" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          </div>
+          <div>
+            <Label htmlFor="users-sort" className="mb-1">Sort</Label>
+            <Select id="users-sort" value={sortBy} onChange={(e) => setSortBy(e.target.value as SortKey)}>
+              <option value="newest">Newest joined</option>
+              <option value="oldest">Oldest joined</option>
+              <option value="name_az">Name A-Z</option>
+              <option value="name_za">Name Z-A</option>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="users-limit" className="mb-1">Show</Label>
+            <Select id="users-limit" value={rowLimit} onChange={(e) => setRowLimit(Number(e.target.value) as RowLimit)}>
+              <option value={25}>25 users</option>
+              <option value={50}>50 users</option>
+              <option value={100}>100 users</option>
+              <option value={200}>200 users</option>
+            </Select>
+          </div>
+          <div className="flex items-end sm:col-span-2 sm:justify-end">
+            <Button onClick={() => void refresh(0)} disabled={busy} className="w-full sm:w-auto sm:px-8">
+              {busy ? 'Loading…' : 'Search'}
+            </Button>
+          </div>
+        </div>
+        <p className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
+          Country and Show apply straight away. Other filters apply when you press Search.
+        </p>
+      </Panel>
+
+      {err ? <Notice tone="danger">{err}</Notice> : null}
+
+      <Panel
+        padded={false}
+        title={`Showing ${rows.length.toLocaleString()} of ${count.toLocaleString()} users`}
+        description={
+          [searching ? 'Also filtered by the top search bar.' : '', usageLoading ? 'Loading AI usage…' : '']
+            .filter(Boolean)
+            .join(' ') || 'Click a user to see all their details and actions.'
+        }
+      >
+        {busy && items.length === 0 ? (
+          <div className="p-5">
+            <SkeletonRows rows={6} height="h-16" />
+          </div>
+        ) : rows.length === 0 ? (
+          busy ? null : (
+            <div className="p-5">
+              <EmptyState title={searching && items.length > 0 ? 'No loaded users match the top search' : 'No users found'}>
+                {searching && items.length > 0 ? 'Clear it or run Search again.' : 'Try different filters, then press Search.'}
+              </EmptyState>
+            </div>
+          )
+        ) : (
+          <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+            {rows.map((u) => (
+              <li key={u.id}>
+                <UserRow u={u} used={usageByUser[u.id] ?? 0} onOpen={() => setExpandedUserId(u.id)} />
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 dark:border-slate-800">
+          <Button variant="secondary" size="sm" disabled={busy || page === 0} onClick={() => void refresh(page - 1)}>
+            Previous
+          </Button>
+          <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
+            Page {page + 1} of {pageCount}
+          </div>
+          <Button variant="secondary" size="sm" disabled={busy || page + 1 >= pageCount} onClick={() => void refresh(page + 1)}>
+            Next
+          </Button>
+        </div>
+      </Panel>
+
+      {selectedUser ? (
+        <SidePanel
+          title={selectedUser.name || selectedUser.email || selectedUser.id.slice(0, 8)}
+          subtitle={selectedUser.email || selectedUser.id}
+          chips={<UserChips u={selectedUser} />}
+          onClose={() => setExpandedUserId(null)}
+        >
+          <section>
+            <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Actions</h3>
+            <UserActionGroups items={userActions(selectedUser, usageByUser[selectedUser.id] ?? 0)} />
+          </section>
+          <UserFacts u={selectedUser} usedThisMonth={usageByUser[selectedUser.id] ?? 0} />
+        </SidePanel>
+      ) : null}
 
       {tokenDialog ? (
         <TokenActionDialog

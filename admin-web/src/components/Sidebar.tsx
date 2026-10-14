@@ -1,8 +1,12 @@
 import { NavLink } from 'react-router-dom';
 import { cn } from '../ui/cn';
+import { useWorldAlerts } from '../lib/studyWorldAlerts';
+import { ALERT_LABEL, useAdminAlerts, type AdminAlertKey } from '../lib/adminAlerts';
+import { useEffect } from 'react';
 import { MotionSidebarItem } from '../ui/motion';
 import {
   IconCalendar,
+  IconCircles,
   IconClipboard,
   IconFileText,
   IconGrid,
@@ -15,26 +19,27 @@ import {
 
 type NavItem = 
   | { header: string }
-  | { to: string; label: string; Icon: React.ElementType };
+  | { to: string; label: string; Icon: React.ElementType; alerts?: 'studyWorld' | AdminAlertKey };
 
 const nav: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', Icon: IconGrid },
-  { to: '/users', label: 'Users', Icon: IconUsers },
+  { to: '/users', label: 'Users', Icon: IconUsers, alerts: 'users' },
   { to: '/subscriptions', label: 'Subscriptions', Icon: IconSubscription },
-  { to: '/share-rewards', label: 'Share Rewards', Icon: IconSubscription },
-  { to: '/institutions', label: 'Institutions', Icon: IconSchool },
+  { to: '/share-rewards', label: 'Share Rewards', Icon: IconSubscription, alerts: 'share_rewards' },
+  { to: '/institutions', label: 'Institutions', Icon: IconSchool, alerts: 'institutions' },
   { to: '/timetables', label: 'Timetables', Icon: IconCalendar },
   { to: '/performance', label: 'Attendance Insights', Icon: IconBell },
-  { to: '/academic-calendars', label: 'Academic Calendars', Icon: IconCalendar },
+  { to: '/academic-calendars', label: 'Academic Calendars', Icon: IconCalendar, alerts: 'calendars' },
   
   { header: 'Community' },
-  { to: '/events', label: 'Events', Icon: IconClipboard },
-  { to: '/services', label: 'Services', Icon: IconBriefcase },
-  { to: '/confessions', label: 'Confessions', Icon: IconFileText },
+  { to: '/events', label: 'Events', Icon: IconClipboard, alerts: 'events' },
+  { to: '/services', label: 'Services', Icon: IconBriefcase, alerts: 'services' },
+  { to: '/confessions', label: 'Confessions', Icon: IconFileText, alerts: 'confessions' },
+  { to: '/rentaman', label: 'RenTaman', Icon: IconCircles, alerts: 'studyWorld' },
 
   { header: 'App Config' },
   { to: '/task-categories', label: 'Task Categories', Icon: IconClipboard },
-  { to: '/user-reports', label: 'User Reports', Icon: IconFileText },
+  { to: '/user-reports', label: 'User Reports', Icon: IconFileText, alerts: 'user_reports' },
   { to: '/feedback-surveys', label: 'Feedback Surveys', Icon: IconClipboard },
   { to: '/minigames', label: 'Minigames', Icon: IconGrid },
   { to: '/communications', label: 'Communications', Icon: IconBell },
@@ -44,6 +49,22 @@ const nav: NavItem[] = [
 ];
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
+  const world = useWorldAlerts();
+  const admin = useAdminAlerts();
+  // Reports and chat words waiting for an admin decision.
+  const worldTodo = world.openReports + world.pendingWords;
+  const countFor = (key: NonNullable<Extract<NavItem, { to: string }>['alerts']>) =>
+    key === 'studyWorld' ? worldTodo : admin[key];
+  const titleFor = (key: NonNullable<Extract<NavItem, { to: string }>['alerts']>) =>
+    key === 'studyWorld'
+      ? `${world.openReports} report(s) and ${world.pendingWords} chat word(s) to check`
+      : `${admin[key]} ${ALERT_LABEL[key]}`;
+  // Total in the browser tab title, so it shows even on another tab.
+  const total = worldTodo + Object.values(admin).reduce((a, b) => a + b, 0);
+  useEffect(() => {
+    const base = document.title.replace(/^\(\d+\+?\)\s*/, '');
+    document.title = total > 0 ? `(${total > 99 ? '99+' : total}) ${base}` : base;
+  }, [total]);
   return (
     <aside className="h-full w-[280px] shrink-0 overflow-y-auto overscroll-contain border-r border-slate-200 bg-white/80 px-3 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/40">
       <div className="px-2 pb-3">
@@ -86,6 +107,14 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               >
                 <n.Icon className="h-5 w-5 opacity-90" />
                 <span className="truncate">{n.label}</span>
+                {n.alerts && countFor(n.alerts) > 0 ? (
+                  <span
+                    className="ml-auto rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-black text-white"
+                    title={titleFor(n.alerts)}
+                  >
+                    {countFor(n.alerts) > 99 ? '99+' : countFor(n.alerts)}
+                  </span>
+                ) : null}
               </NavLink>
             </MotionSidebarItem>
           );

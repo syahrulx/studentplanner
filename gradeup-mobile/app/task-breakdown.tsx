@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -23,6 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { SharedTask } from '@/src/types';
 import { getSharedTaskParticipants, removeTaskCollaborator } from '@/src/lib/communityApi';
 import ThemedDateTimePicker from '@/components/ThemedDateTimePicker';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 type DraftStep = { id: string; title: string; existing: boolean; dueDate: string; assigneeId?: string };
 
@@ -295,7 +295,7 @@ export default function TaskBreakdownScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardAvoidingScreen
       style={[styles.root, { backgroundColor: theme.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
@@ -459,7 +459,7 @@ export default function TaskBreakdownScreen() {
           </Pressable>
         </Pressable>
       </Modal>
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingScreen>
   );
 }
 

@@ -6,7 +6,6 @@ import {
   FlatList,
   TextInput,
   StyleSheet,
-  KeyboardAvoidingView,
   Platform,
   Alert,
   ActivityIndicator,
@@ -40,6 +39,7 @@ import {
   PlaygroundCodexPet,
   type CodexPetAnimationName,
 } from '@/components/PlaygroundCodexPet';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 /** Generate a unique ID without external deps. */
 function generateId(): string {
@@ -737,7 +737,7 @@ export default function ChatRoomScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardAvoidingScreen
       style={[styles.root, { backgroundColor: theme.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={0}
@@ -1038,7 +1038,7 @@ export default function ChatRoomScreen() {
           </ScrollView>
         </View>
       </Modal>
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingScreen>
   );
 }
 

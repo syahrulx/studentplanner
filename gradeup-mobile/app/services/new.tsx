@@ -10,8 +10,7 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
-  KeyboardAvoidingView,
-} from 'react-native';
+  } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Feather from '@expo/vector-icons/Feather';
@@ -33,6 +32,7 @@ import {
   type ServiceNegotiationMode,
 } from '@/src/lib/servicesApi';
 import ThemedDateTimePicker from '@/components/ThemedDateTimePicker';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 const KIND_OPTIONS: { id: ServiceKind; title: string; subtitle: string; icon: string; tint: string }[] = [
   { id: 'request', title: 'Need a service', subtitle: 'Ask the community for help', icon: 'help-circle', tint: '#0A84FF' },
@@ -339,7 +339,7 @@ export default function NewServiceScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardAvoidingScreen
       style={[styles.root, { backgroundColor: theme.backgroundSecondary ?? theme.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
@@ -756,7 +756,7 @@ export default function NewServiceScreen() {
           )}
         </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardAvoidingScreen>
   );
 }
 

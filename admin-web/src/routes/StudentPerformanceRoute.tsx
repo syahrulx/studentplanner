@@ -7,7 +7,12 @@ import {
 } from '../lib/api';
 import { matchesAdminSearch } from '../lib/adminSearch';
 import { useAdminSearch } from '../state/AdminSearchContext';
-import { MotionPanel, MotionSection } from '../ui/motion';
+import { MotionSection } from '../ui/motion';
+import { Button } from '../ui/Button';
+import { Label, Select, TextInput } from '../ui/Input';
+import { cn } from '../ui/cn';
+import { Chip, EmptyState, FactGrid, Notice, PageHeader, Panel, Pill, PillGroup, SidePanel, SkeletonRows, StatItem, StatStrip } from '../ui/page';
+import type { Tone } from '../ui/tones';
 
 function pct01(x: number): string {
   const v = Number.isFinite(x) ? x : 0;
@@ -24,13 +29,13 @@ function clamp01(v: number): number {
   return Math.max(0, Math.min(1, v));
 }
 
-function statusBadge(s: AttendanceEventRow['status']) {
-  if (s === 'present') return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
-  if (s === 'absent') return 'bg-rose-500/15 text-rose-700 dark:text-rose-300';
-  return 'bg-slate-500/15 text-slate-700 dark:text-slate-300';
+function statusTone(s: AttendanceEventRow['status']): Tone {
+  if (s === 'present') return 'success';
+  if (s === 'absent') return 'danger';
+  return 'neutral';
 }
 
-function riskMeta(u: AttendanceUserSummaryRow): { label: 'Strong' | 'Watch' | 'At risk'; cls: string; reason: string } {
+function riskMeta(u: AttendanceUserSummaryRow): { label: 'Strong' | 'Watch' | 'At risk'; tone: Tone; reason: string } {
   const total = Number(u.total ?? 0);
   const pr = clamp01(Number(u.present_rate ?? 0));
   const lr = clamp01(Number(u.last_present_rate ?? 0));
@@ -52,24 +57,22 @@ function riskMeta(u: AttendanceUserSummaryRow): { label: 'Strong' | 'Watch' | 'A
         : highCancelled
           ? 'High cancellations'
           : 'Low present rate';
-    return { label: 'At risk', cls: 'bg-rose-500/15 text-rose-700 dark:text-rose-300', reason };
+    return { label: 'At risk', tone: 'danger', reason };
   }
 
   if (!lowData && (pr < 0.85 || (lr > 0 && lr < 0.85))) {
     const reason = lr > 0 && lr < pr ? 'Recent dip' : 'Room to improve';
-    return { label: 'Watch', cls: 'bg-amber-500/15 text-amber-700 dark:text-amber-300', reason };
+    return { label: 'Watch', tone: 'warning', reason };
   }
 
   if (lowData) {
-    return { label: 'Watch', cls: 'bg-slate-500/15 text-slate-700 dark:text-slate-300', reason: 'Low data volume' };
+    return { label: 'Watch', tone: 'neutral', reason: 'Low data volume' };
   }
 
-  return { label: 'Strong', cls: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300', reason: 'Consistent attendance' };
+  return { label: 'Strong', tone: 'success', reason: 'Consistent attendance' };
 }
 
-function Sparkline({ points, strokeClass }: { points: number[]; strokeClass: string }) {
-  const w = 140;
-  const h = 34;
+function Sparkline({ points, strokeClass, w = 140, h = 34 }: { points: number[]; strokeClass: string; w?: number; h?: number }) {
   const pad = 2;
   const safe = points.length ? points : [0];
   const min = Math.min(...safe);
@@ -82,7 +85,7 @@ function Sparkline({ points, strokeClass }: { points: number[]; strokeClass: str
   };
   const d = safe.map((v, i) => toXY(v, i).join(',')).join(' ');
   return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="shrink-0">
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="shrink-0" aria-hidden="true">
       <polyline points={d} fill="none" className={strokeClass} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
@@ -304,138 +307,131 @@ export function StudentPerformanceRoute() {
     [sortKey],
   );
 
+  const closeDetails = () => {
+    setSelectedUserId(null);
+    setEvents([]);
+    setEventsErr('');
+    setEventsBusy(false);
+  };
+
+  const sortHeader = (k: typeof sortKey, label: string, right?: boolean) => (
+    <th
+      className={cn('px-3 py-2.5', right && 'text-right')}
+      aria-sort={sortKey === k ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
+    >
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-slate-900 dark:hover:text-white"
+        onClick={() => toggleSort(k)}
+      >
+        {label}
+        {sortKey === k ? <span className="text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span> : null}
+      </button>
+    </th>
+  );
+
+  const capital = (x: string) => (x ? x.charAt(0).toUpperCase() + x.slice(1) : x);
+
   return (
-    <div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Attendance insights"
+        description="Attendance check-ins recorded from the mobile notification (and the in-app fallback)."
+        actions={
+          <Button variant="secondary" size="sm" onClick={() => void load()} disabled={busy}>
+            {busy ? 'Loading…' : 'Refresh'}
+          </Button>
+        }
+      />
+
+      {err ? <Notice tone="danger">{err}</Notice> : null}
+
       <MotionSection>
-        <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Attendance Insights</div>
-        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Attendance check-ins recorded from the mobile notification (and in-app fallback).
-        </div>
+        <StatStrip>
+          <StatItem label="Students tracked" value={kpis.students} hint="Based on current filters" />
+          <StatItem
+            label="Total check-ins"
+            value={kpis.totalEvents}
+            hint={`${kpis.presentEvents} present · ${kpis.absentEvents} absent · ${kpis.cancelledEvents} cancelled`}
+          />
+          <StatItem
+            label="Avg present rate"
+            value={pct01(kpis.weightedPresentRate)}
+            hint={
+              <span className="inline-flex items-center gap-1.5">
+                <Sparkline
+                  w={40}
+                  h={14}
+                  points={[kpis.weightedPresentRate, kpis.weightedLastRate]}
+                  strokeClass="stroke-brand-600 dark:stroke-brand-400"
+                />
+                Trend: {kpis.deltaPct >= 0 ? '+' : ''}{kpis.deltaPct}% vs recent rate
+              </span>
+            }
+          />
+          <StatItem
+            label="At-risk students"
+            value={kpis.atRisk}
+            tone={kpis.atRisk > 0 ? 'danger' : 'neutral'}
+            hint="Heuristic based on attendance only"
+          />
+        </StatStrip>
       </MotionSection>
 
-      <MotionSection delay={0.04} className="mt-6">
-        <MotionPanel>
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-3xl border border-slate-100 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/30">
-                <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Students tracked</div>
-                <div className="mt-1 text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">{kpis.students}</div>
-                <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Based on current filters</div>
-              </div>
-              <div className="rounded-3xl border border-slate-100 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/30">
-                <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Total check-ins</div>
-                <div className="mt-1 text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">{kpis.totalEvents}</div>
-                <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  {kpis.presentEvents} present · {kpis.absentEvents} absent · {kpis.cancelledEvents} cancelled
-                </div>
-              </div>
-              <div className="rounded-3xl border border-slate-100 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/30">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Avg present rate</div>
-                  <Sparkline points={[kpis.weightedPresentRate, kpis.weightedLastRate]} strokeClass="stroke-brand-600 dark:stroke-brand-400" />
-                </div>
-                <div className="mt-1 text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">
-                  {pct01(kpis.weightedPresentRate)}
-                </div>
-                <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  Trend: {kpis.deltaPct >= 0 ? '+' : ''}
-                  {kpis.deltaPct}% vs recent rate
-                </div>
-              </div>
-              <div className="rounded-3xl border border-slate-100 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/30">
-                <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">At-risk students</div>
-                <div className="mt-1 text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">{kpis.atRisk}</div>
-                <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Heuristic based on attendance only</div>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <MotionSection delay={0.04}>
+        <Panel
+          title="Students"
+          description={`${busy ? 'Loading…' : `${filtered.length} rows`} · rates for the last ${sinceDays} days · click a student for details`}
+          actions={
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setUniversityFilter('');
+                setMinTotal(0);
+                setMaxPresentRatePct('');
+                setSinceDays(14);
+              }}
+            >
+              Reset filters
+            </Button>
+          }
+          padded={false}
+        >
+          <div className="space-y-3 border-b border-slate-100 p-5 dark:border-slate-800">
+            <PillGroup label="Period">
+              {[7, 14, 30, 60, 90].map((d) => (
+                <Pill key={d} active={sinceDays === d} onClick={() => setSinceDays(clampInt(d, 1, 365))}>
+                  {d} days
+                </Pill>
+              ))}
+            </PillGroup>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
-                <div className="text-sm font-black text-slate-900 dark:text-slate-100">Students</div>
-                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  {busy ? 'Loading…' : `${filtered.length} rows`} (rate shown for last {sinceDays} days)
-                </div>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setUniversityFilter('');
-                    setMinTotal(0);
-                    setMaxPresentRatePct('');
-                    setSinceDays(14);
-                  }}
-                  className="h-10 rounded-2xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-900 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
-                >
-                  Reset filters
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void load()}
-                  disabled={busy}
-                  className="h-10 rounded-2xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-900 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
-                >
-                  Refresh
-                </button>
-              </div>
-            </div>
-
-            {err ? (
-              <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
-                {err}
-              </div>
-            ) : null}
-
-            <div className="mt-4 grid grid-cols-1 gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/30 sm:grid-cols-2 lg:grid-cols-4">
-              <label className="block">
-                <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Since (days)</div>
-                <select
-                  className="mt-1 h-10 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                  value={sinceDays}
-                  onChange={(e) => setSinceDays(clampInt(Number(e.target.value), 1, 365))}
-                >
-                  <option value={7}>7</option>
-                  <option value={14}>14</option>
-                  <option value={30}>30</option>
-                  <option value={60}>60</option>
-                  <option value={90}>90</option>
-                </select>
-              </label>
-
-              <label className="block">
-                <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">University</div>
-                <select
-                  className="mt-1 h-10 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                  value={universityFilter}
-                  onChange={(e) => setUniversityFilter(e.target.value)}
-                >
+                <Label htmlFor="att-university" className="mb-1">University</Label>
+                <Select id="att-university" value={universityFilter} onChange={(e) => setUniversityFilter(e.target.value)}>
                   <option value="">All</option>
                   {universities.map((u) => (
-                    <option key={u} value={u}>
-                      {u}
-                    </option>
+                    <option key={u} value={u}>{u}</option>
                   ))}
-                </select>
-              </label>
-
-              <label className="block">
-                <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Min total</div>
-                <input
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="att-min-total" className="mb-1">Min total</Label>
+                <TextInput
+                  id="att-min-total"
                   type="number"
                   min={0}
                   step={1}
                   value={minTotal}
                   onChange={(e) => setMinTotal(clampInt(Number(e.target.value), 0, 100000))}
-                  className="mt-1 h-10 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                   placeholder="0"
                 />
-              </label>
-
-              <label className="block">
-                <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  Max present rate (%)
-                </div>
-                <input
+              </div>
+              <div>
+                <Label htmlFor="att-max-rate" className="mb-1">Max present rate (%)</Label>
+                <TextInput
+                  id="att-max-rate"
                   type="number"
                   min={0}
                   max={100}
@@ -446,60 +442,28 @@ export function StudentPerformanceRoute() {
                     if (raw === '') setMaxPresentRatePct('');
                     else setMaxPresentRatePct(clampInt(Number(raw), 0, 100));
                   }}
-                  className="mt-1 h-10 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                   placeholder="e.g. 60"
                 />
-              </label>
+              </div>
             </div>
+          </div>
 
-            <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-100 dark:border-slate-800">
-              <table className="w-full min-w-[900px] text-left text-sm">
-                <thead className="bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500 dark:bg-slate-950 dark:text-slate-400">
+          {busy && items.length === 0 ? (
+            <div className="p-5"><SkeletonRows rows={5} height="h-12" /></div>
+          ) : filtered.length === 0 ? (
+            !busy ? <div className="p-5"><EmptyState title="No attendance events yet." /></div> : null
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] text-left text-sm">
+                <thead className="text-[11px] font-black text-slate-500 dark:text-slate-400">
                   <tr>
-                    <th className="px-3 py-2">
-                      <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort('name')}>
-                        Name
-                        {sortKey === 'name' ? <span className="text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span> : null}
-                      </button>
-                    </th>
-                    <th className="px-3 py-2">
-                      <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort('student_id')}>
-                        Student ID
-                        {sortKey === 'student_id' ? <span className="text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span> : null}
-                      </button>
-                    </th>
-                    <th className="px-3 py-2">
-                      <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort('university')}>
-                        University
-                        {sortKey === 'university' ? <span className="text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span> : null}
-                      </button>
-                    </th>
-                    <th className="px-3 py-2 text-right">
-                      <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort('total')}>
-                        Total
-                        {sortKey === 'total' ? <span className="text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span> : null}
-                      </button>
-                    </th>
-                    <th className="px-3 py-2 text-right">
-                      <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort('present_rate')}>
-                        Present rate
-                        {sortKey === 'present_rate' ? <span className="text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span> : null}
-                      </button>
-                    </th>
-                    <th className="px-3 py-2 text-right">
-                      <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort('last_present_rate')}>
-                        Last {sinceDays}d rate
-                        {sortKey === 'last_present_rate' ? (
-                          <span className="text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span>
-                        ) : null}
-                      </button>
-                    </th>
-                    <th className="px-3 py-2 text-right">
-                      <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort('risk')}>
-                        Risk
-                        {sortKey === 'risk' ? <span className="text-[10px]">{sortDir === 'asc' ? '▲' : '▼'}</span> : null}
-                      </button>
-                    </th>
+                    {sortHeader('name', 'Name')}
+                    {sortHeader('student_id', 'Student ID')}
+                    {sortHeader('university', 'University')}
+                    {sortHeader('total', 'Total', true)}
+                    {sortHeader('present_rate', 'Present rate', true)}
+                    {sortHeader('last_present_rate', `Last ${sinceDays}d rate`, true)}
+                    {sortHeader('risk', 'Risk', true)}
                   </tr>
                 </thead>
                 <tbody>
@@ -513,263 +477,195 @@ export function StudentPerformanceRoute() {
                     return (
                       <tr
                         key={u.user_id}
-                        className={`cursor-pointer border-t border-slate-100 transition-colors hover:bg-slate-50 dark:border-slate-800/80 dark:hover:bg-slate-800/40 ${
-                          selected ? 'bg-brand-500/12 dark:bg-brand-500/20' : ''
-                        }`}
+                        className={cn(
+                          'cursor-pointer border-t border-slate-100 transition-colors focus:outline-none focus-visible:bg-slate-50 dark:border-slate-800 dark:focus-visible:bg-slate-800/40',
+                          selected ? 'bg-brand-50 dark:bg-brand-900/30' : 'hover:bg-slate-50 dark:hover:bg-slate-800/40',
+                        )}
                         onClick={() => void loadEvents(u.user_id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            void loadEvents(u.user_id);
+                          }
+                        }}
                         tabIndex={0}
                         role="button"
                         aria-label={`Open performance for ${name}`}
                         aria-selected={selected}
                       >
-                        <td className="px-3 py-2">
-                          <span className="font-black text-brand-600 dark:text-brand-400">{name}</span>
-                          <div className="text-[10px] font-mono font-semibold text-slate-400">{u.user_id}</div>
+                        <td className="px-3 py-2.5">
+                          <div className="font-black text-slate-900 dark:text-slate-100">{name}</div>
+                          <div className="break-all font-mono text-[10px] font-semibold text-slate-400 dark:text-slate-500">{u.user_id}</div>
                         </td>
-                        <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">{sid}</td>
-                        <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{uni}</td>
-                        <td className="px-3 py-2 text-right font-black text-slate-900 dark:text-slate-100">{u.total}</td>
-                        <td className="px-3 py-2 text-right font-black text-slate-900 dark:text-slate-100">
-                          {pct01(u.present_rate)}
-                        </td>
-                        <td className="px-3 py-2 text-right font-black text-slate-900 dark:text-slate-100">
-                          {pct01(u.last_present_rate)}
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          <span title={risk.reason} className={`inline-flex rounded-full px-2 py-1 text-[11px] font-black ${risk.cls}`}>
-                            {risk.label}
-                          </span>
+                        <td className="px-3 py-2.5 font-semibold text-slate-700 dark:text-slate-200">{sid}</td>
+                        <td className="px-3 py-2.5 font-semibold text-slate-600 dark:text-slate-300">{uni}</td>
+                        <td className="px-3 py-2.5 text-right font-black tabular-nums text-slate-900 dark:text-slate-100">{u.total}</td>
+                        <td className="px-3 py-2.5 text-right font-black tabular-nums text-slate-900 dark:text-slate-100">{pct01(u.present_rate)}</td>
+                        <td className="px-3 py-2.5 text-right font-black tabular-nums text-slate-900 dark:text-slate-100">{pct01(u.last_present_rate)}</td>
+                        <td className="px-3 py-2.5 text-right">
+                          <Chip tone={risk.tone} title={risk.reason}>{risk.label}</Chip>
                         </td>
                       </tr>
                     );
                   })}
-                  {filtered.length === 0 && !busy ? (
-                    <tr>
-                      <td colSpan={7} className="px-3 py-8 text-center font-semibold text-slate-500 dark:text-slate-400">
-                        No attendance events yet.
-                      </td>
-                    </tr>
-                  ) : null}
                 </tbody>
               </table>
             </div>
-          </div>
-        </MotionPanel>
+          )}
+        </Panel>
       </MotionSection>
 
       {selectedUserId ? (
-        <MotionSection delay={0.08} className="mt-6">
-          <MotionPanel>
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="text-sm font-black text-slate-900 dark:text-slate-100">Recent events</div>
-                  <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                    {eventsBusy ? 'Loading…' : `${filteredEvents.length} events`} for selected student
+        <SidePanel
+          width="max-w-3xl"
+          title={selectedUser?.profile?.name || '—'}
+          subtitle={<span className="break-all font-mono">{selectedUserId}</span>}
+          chips={
+            selectedRisk ? (
+              <>
+                <Chip tone={selectedRisk.tone}>{selectedRisk.label}</Chip>
+                <Chip tone="neutral">{selectedRisk.reason}</Chip>
+              </>
+            ) : null
+          }
+          onClose={closeDetails}
+        >
+          {eventsErr ? <Notice tone="danger">{eventsErr}</Notice> : null}
+
+          {selectedUser ? (
+            <>
+              <FactGrid
+                items={[
+                  ['University', selectedUser.profile?.university_id || '—'],
+                  ['Student ID', selectedUser.profile?.student_id || '—'],
+                ]}
+              />
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">14-day present trend</div>
+                    <Sparkline w={110} h={30} points={selectedSeries.points} strokeClass="stroke-emerald-600 dark:stroke-emerald-400" />
+                  </div>
+                  <div className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    Latest:{' '}
+                    <span className="font-black text-slate-900 dark:text-slate-100">
+                      {selectedSeries.points.length ? `${pct01(selectedSeries.points.at(-1) as number)}` : '—'}
+                    </span>
+                    {' · '}{selectedSeries.points.length} day(s) · based on loaded events
                   </div>
                 </div>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedUserId(null);
-                      setEvents([]);
-                      setEventsErr('');
-                      setEventsBusy(false);
-                    }}
-                    className="h-10 rounded-2xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-900 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
-                  >
-                    Close details
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEventsFrom('');
-                      setEventsTo('');
-                      setEventsStatus('all');
-                    }}
-                    className="h-10 rounded-2xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-900 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
-                  >
-                    Reset events filters
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void loadEvents(selectedUserId, { keepSelection: true })}
-                    disabled={eventsBusy}
-                    className="h-10 rounded-2xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-900 hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
-                  >
-                    Reload
-                  </button>
-                </div>
-              </div>
 
-              {eventsErr ? (
-                <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
-                  {eventsErr}
-                </div>
-              ) : null}
-
-              {selectedUser ? (
-                <div className="mt-4 grid grid-cols-1 gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/30 lg:grid-cols-3">
-                  <div className="rounded-2xl border border-slate-100 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                    <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Student</div>
-                    <div className="mt-1 text-sm font-black text-slate-900 dark:text-slate-100">{selectedUser.profile?.name || '—'}</div>
-                    <div className="mt-1 text-xs font-mono font-semibold text-slate-400">{selectedUser.user_id}</div>
-                    <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                      {selectedUser.profile?.university_id || '—'} · {selectedUser.profile?.student_id || '—'}
-                    </div>
-                    {selectedRisk ? (
-                      <div className="mt-2 flex items-center gap-2">
-                        <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-black ${selectedRisk.cls}`}>
-                          {selectedRisk.label}
-                        </span>
-                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{selectedRisk.reason}</span>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-100 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        14-day present trend
-                      </div>
-                      <Sparkline points={selectedSeries.points} strokeClass="stroke-emerald-600 dark:stroke-emerald-400" />
-                    </div>
-                    <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                      <span>Latest:</span>
-                      <span className="font-black text-slate-900 dark:text-slate-100">
-                        {selectedSeries.points.length ? `${pct01(selectedSeries.points.at(-1) as number)}` : '—'}
-                      </span>
-                      <span>·</span>
-                      <span>{selectedSeries.points.length} day(s)</span>
-                    </div>
-                    <div className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                      Based on loaded events for this user.
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-100 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                    <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Status breakdown</div>
-                    <div className="mt-3 space-y-2">
-                      {(
-                        [
-                          { k: 'present', v: selectedBreakdown.present, cls: 'bg-emerald-500' },
-                          { k: 'absent', v: selectedBreakdown.absent, cls: 'bg-rose-500' },
-                          { k: 'cancelled', v: selectedBreakdown.cancelled, cls: 'bg-slate-500' },
-                        ] as const
-                      ).map((row) => {
-                        const pct = selectedBreakdown.total > 0 ? Math.round((row.v / selectedBreakdown.total) * 100) : 0;
-                        return (
-                          <div key={row.k}>
-                            <div className="flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-300">
-                              <span className="capitalize">{row.k}</span>
-                              <span className="font-black text-slate-900 dark:text-slate-100">
-                                {row.v} · {pct}%
-                              </span>
-                            </div>
-                            <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                              <div className={`h-2 ${row.cls}`} style={{ width: `${pct}%` }} />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              <div className="mt-4 grid grid-cols-1 gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/30 sm:grid-cols-3">
-                <label className="block">
-                  <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">From</div>
-                  <input
-                    type="datetime-local"
-                    value={eventsFrom}
-                    onChange={(e) => setEventsFrom(e.target.value)}
-                    className="mt-1 h-10 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                  />
-                </label>
-                <label className="block">
-                  <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">To</div>
-                  <input
-                    type="datetime-local"
-                    value={eventsTo}
-                    onChange={(e) => setEventsTo(e.target.value)}
-                    className="mt-1 h-10 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                  />
-                </label>
-                <label className="block">
-                  <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Status</div>
-                  <select
-                    value={eventsStatus}
-                    onChange={(e) => setEventsStatus(e.target.value as any)}
-                    className="mt-1 h-10 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                  >
-                    <option value="all">All</option>
-                    <option value="present">present</option>
-                    <option value="absent">absent</option>
-                    <option value="cancelled">cancelled</option>
-                  </select>
-                </label>
-                <div className="sm:col-span-3">
-                  <button
-                    type="button"
-                    onClick={() => void loadEvents(selectedUserId, { keepSelection: true })}
-                    disabled={eventsBusy}
-                    className="h-10 rounded-2xl bg-brand-600 px-4 text-xs font-black text-white hover:bg-brand-700 disabled:opacity-60"
-                  >
-                    Apply (reload from server)
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-100 dark:border-slate-800">
-                <table className="w-full min-w-[860px] text-left text-sm">
-                  <thead className="bg-slate-50 text-xs font-black uppercase tracking-wide text-slate-500 dark:bg-slate-950 dark:text-slate-400">
-                    <tr>
-                      <th className="px-3 py-2">When</th>
-                      <th className="px-3 py-2">Subject</th>
-                      <th className="px-3 py-2">Status</th>
-                      <th className="px-3 py-2">Source</th>
-                      <th className="px-3 py-2">Recorded</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredEvents.map((e) => {
-                      const subject = (e.subject_name || e.subject_code || 'Class').trim();
+                <div className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
+                  <div className="text-[11px] font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Status breakdown</div>
+                  <div className="mt-3 space-y-2">
+                    {(
+                      [
+                        { k: 'present', v: selectedBreakdown.present, cls: 'bg-emerald-500' },
+                        { k: 'absent', v: selectedBreakdown.absent, cls: 'bg-rose-500' },
+                        { k: 'cancelled', v: selectedBreakdown.cancelled, cls: 'bg-slate-400 dark:bg-slate-500' },
+                      ] as const
+                    ).map((row) => {
+                      const pct = selectedBreakdown.total > 0 ? Math.round((row.v / selectedBreakdown.total) * 100) : 0;
                       return (
-                        <tr key={e.id} className="border-t border-slate-100 dark:border-slate-800/80">
-                          <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">
-                            {new Date(e.scheduled_start_at).toLocaleString()}
-                          </td>
-                          <td className="px-3 py-2">
-                            <div className="font-black text-slate-900 dark:text-slate-100">{subject}</div>
-                            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">{e.subject_code}</div>
-                          </td>
-                          <td className="px-3 py-2">
-                            <span className={`inline-flex rounded-full px-2 py-1 text-xs font-black ${statusBadge(e.status)}`}>
-                              {e.status}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 font-semibold text-slate-600 dark:text-slate-300">{e.source}</td>
-                          <td className="px-3 py-2 font-semibold text-slate-600 dark:text-slate-300">
-                            {new Date(e.recorded_at).toLocaleString()}
-                          </td>
-                        </tr>
+                        <div key={row.k}>
+                          <div className="flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-300">
+                            <span>{capital(row.k)}</span>
+                            <span className="font-black tabular-nums text-slate-900 dark:text-slate-100">{row.v} · {pct}%</span>
+                          </div>
+                          <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                            <div className={`h-2 ${row.cls}`} style={{ width: `${pct}%` }} />
+                          </div>
+                        </div>
                       );
                     })}
-                    {filteredEvents.length === 0 && !eventsBusy ? (
-                      <tr>
-                        <td colSpan={5} className="px-3 py-8 text-center font-semibold text-slate-500 dark:text-slate-400">
-                          No events for this user yet.
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : null}
+
+          <section className="space-y-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h3 className="text-sm font-black text-slate-900 dark:text-white">Recent events</h3>
+              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                {eventsBusy ? 'Loading…' : `${filteredEvents.length} events`}
               </div>
             </div>
-          </MotionPanel>
-        </MotionSection>
+
+            <div className="space-y-3 rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="att-events-from" className="mb-1">From</Label>
+                  <TextInput id="att-events-from" type="datetime-local" value={eventsFrom} onChange={(e) => setEventsFrom(e.target.value)} />
+                </div>
+                <div>
+                  <Label htmlFor="att-events-to" className="mb-1">To</Label>
+                  <TextInput id="att-events-to" type="datetime-local" value={eventsTo} onChange={(e) => setEventsTo(e.target.value)} />
+                </div>
+              </div>
+              <PillGroup label="Status">
+                {(['all', 'present', 'absent', 'cancelled'] as const).map((st) => (
+                  <Pill key={st} active={eventsStatus === st} onClick={() => setEventsStatus(st)}>
+                    {capital(st)}
+                  </Pill>
+                ))}
+              </PillGroup>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => void loadEvents(selectedUserId, { keepSelection: true })} disabled={eventsBusy}>
+                  {eventsBusy ? 'Loading…' : 'Apply dates and reload'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setEventsFrom('');
+                    setEventsTo('');
+                    setEventsStatus('all');
+                  }}
+                >
+                  Reset event filters
+                </Button>
+              </div>
+            </div>
+
+            {eventsBusy && events.length === 0 ? (
+              <SkeletonRows rows={3} height="h-16" />
+            ) : filteredEvents.length === 0 ? (
+              !eventsBusy ? <EmptyState title="No events for this user yet." /> : null
+            ) : (
+              <ul className="space-y-2">
+                {filteredEvents.map((e) => {
+                  const subject = (e.subject_name || e.subject_code || 'Class').trim();
+                  return (
+                    <li key={e.id} className="rounded-2xl border border-slate-200 px-4 py-3 dark:border-slate-800">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-black text-slate-900 dark:text-slate-100">{subject}</div>
+                          <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">{e.subject_code}</div>
+                        </div>
+                        <Chip tone={statusTone(e.status)}>{capital(e.status)}</Chip>
+                      </div>
+                      <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
+                        <div>
+                          <dt className="inline font-black text-slate-400">When </dt>
+                          <dd className="inline font-semibold text-slate-700 dark:text-slate-200">{new Date(e.scheduled_start_at).toLocaleString()}</dd>
+                        </div>
+                        <div>
+                          <dt className="inline font-black text-slate-400">Recorded </dt>
+                          <dd className="inline font-semibold text-slate-700 dark:text-slate-200">{new Date(e.recorded_at).toLocaleString()}</dd>
+                        </div>
+                        <div>
+                          <dt className="inline font-black text-slate-400">Source </dt>
+                          <dd className="inline font-semibold text-slate-700 dark:text-slate-200">{e.source}</dd>
+                        </div>
+                      </dl>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        </SidePanel>
       ) : null}
     </div>
   );

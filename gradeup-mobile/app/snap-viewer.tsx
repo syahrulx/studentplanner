@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -26,9 +28,42 @@ import {
   reportSnap,
 } from '@/src/lib/snapApi';
 import { Avatar } from '@/components/Avatar';
-import type { StudySnap, SnapReaction } from '@/src/types';
+import { markSnapSeen } from '@/src/lib/snapSeen';
+import type { StudySnap, SnapReaction, SnapAudience } from '@/src/types';
 
 const REACTION_EMOJIS = ['🔥', '💪', '📚', '❤️', '👍', '🎉'];
+
+/**
+ * Who a snap went to, said plainly on the snap itself.
+ *
+ * The audience is chosen when posting and was then never shown again, so
+ * neither the author nor anyone looking could tell whether a photo had gone to
+ * a handful of friends or to a whole university. That is worth knowing before
+ * you react to it, and worth remembering before you post the next one.
+ *
+ * Same words and icons as the camera's own picker, so the label you chose is
+ * the label you see back.
+ */
+const AUDIENCE_LABEL: Record<SnapAudience, { label: string; icon: 'users' | 'map-pin' | 'home' }> = {
+  friends: { label: 'Friends', icon: 'users' },
+  campus: { label: 'My campus', icon: 'map-pin' },
+  university: { label: 'My uni', icon: 'home' },
+};
+
+/**
+ * The rest, behind the "+".
+ *
+ * Six on the bar is as many as fit without the buttons getting too small to
+ * hit. These are the ones people actually reach for when six is not enough —
+ * laughing, crying, shock, agreement — rather than a full keyboard, which
+ * would turn a one-tap reaction into a search.
+ */
+const MORE_REACTION_EMOJIS = [
+  '😂', '😭', '💀', '😮', '🥹', '🫡',
+  '🙌', '👏', '🤝', '🫶', '✨', '⭐',
+  '😎', '🤓', '🧠', '☕', '🍜', '😴',
+  '😤', '🙃', '🤯', '🥳', '💯', '🫠',
+];
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -41,8 +76,45 @@ function timeAgo(dateStr: string): string {
 }
 
 export default function SnapViewer() {
-  const { snapId: snapIdParam } = useLocalSearchParams<{ snapId: string }>();
+  const { snapId: snapIdParam, queue: queueParam } = useLocalSearchParams<{
+    snapId: string;
+    queue?: string;
+  }>();
   const snapId = typeof snapIdParam === 'string' ? snapIdParam : '';
+
+  /**
+   * The rest of the row, in the order it was drawn.
+   *
+   * Held in state rather than read from params on every render, because
+   * advancing replaces the route and the next screen has to carry the same
+   * queue forward — reading it fresh each time would work, but keeping it
+   * local means the row cannot change under a student mid-watch.
+   */
+  const queue = useMemo(
+    () => (typeof queueParam === 'string' ? queueParam.split(',').filter(Boolean) : []),
+    [queueParam],
+  );
+  const nextSnapId = useMemo(() => {
+    const i = queue.indexOf(snapId);
+    return i >= 0 && i < queue.length - 1 ? queue[i + 1] : null;
+  }, [queue, snapId]);
+
+  /**
+   * Tap: on to the next snap, or out if this was the last.
+   *
+   * `replace` rather than `push`, so watching six snaps does not build six
+   * screens of history that all have to be backed out of one at a time.
+   */
+  const goNext = useCallback(() => {
+    if (nextSnapId) {
+      router.replace({
+        pathname: '/snap-viewer',
+        params: { snapId: nextSnapId, queue: queue.join(',') },
+      } as any);
+    } else {
+      router.back();
+    }
+  }, [nextSnapId, queue]);
 
   const { user } = useApp();
   const theme = useTheme();
@@ -55,6 +127,20 @@ export default function SnapViewer() {
   const [myReaction, setMyReaction] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [viewBlocked, setViewBlocked] = useState(false);
+  const [showReactors, setShowReactors] = useState(false);
+  const [showMoreEmoji, setShowMoreEmoji] = useState(false);
+
+  /**
+   * Who liked a snap is shown to the person who posted it, and to nobody else.
+   *
+   * A snap can be shared with a whole campus or a whole university, and the
+   * students who react to one of those are not friends with each other. Putting
+   * that list in front of every viewer would hand each of them a roll of names
+   * they never agreed to share. The author already knows who their audience is,
+   * so the list tells them nothing new about anyone else. Everyone still sees
+   * the counts.
+   */
+  const isMySnap = Boolean(snap && user.id && snap.userId === user.id);
 
   const loadSnap = useCallback(async () => {
     if (!snapId) {
@@ -86,6 +172,11 @@ export default function SnapViewer() {
       }
 
       setSnap(data);
+      // Outside the free-tier branch above on purpose: that branch exists to
+      // meter daily views, and metering has nothing to do with whether this
+      // phone has read the snap. Inside it, a Plus or Pro student would never
+      // have a snap marked as seen and their row would never dim.
+      void markSnapSeen(data.id);
 
       const rx = await getSnapReactions(data.id);
       setReactions(rx);
@@ -260,6 +351,17 @@ export default function SnapViewer() {
       {/* Full-screen snap image */}
       <Image source={{ uri: snap.imageUrl }} style={s.fullImage} resizeMode="cover" />
 
+      {/* Tap the picture for the next snap, or out if this is the last.
+          It sits directly on the image and under every control, so the close
+          button, the reaction bar and the likes row all still take their own
+          taps — only the bare photograph advances. */}
+      <Pressable
+        style={s.advanceLayer}
+        onPress={goNext}
+        accessibilityRole="button"
+        accessibilityLabel={nextSnapId ? 'Next snap' : 'Close'}
+      />
+
       {/* Top overlay: author info + close */}
       <View style={s.topOverlay}>
         <Pressable onPress={() => router.back()} style={s.closeBtn}>
@@ -267,9 +369,17 @@ export default function SnapViewer() {
         </Pressable>
         <View style={s.authorRow}>
           <Avatar name={snap.authorName} avatarUrl={snap.authorAvatar} size={36} />
-          <View>
+          <View style={{ flexShrink: 1 }}>
             <Text style={s.authorName}>{snap.authorName || 'Friend'}</Text>
-            <Text style={s.timestamp}>{timeAgo(snap.createdAt)}</Text>
+            <View style={s.metaRow}>
+              <Text style={s.timestamp}>{timeAgo(snap.createdAt)}</Text>
+              {AUDIENCE_LABEL[snap.audience] && (
+                <View style={s.audiencePill}>
+                  <Feather name={AUDIENCE_LABEL[snap.audience].icon} size={10} color="rgba(255,255,255,0.9)" />
+                  <Text style={s.audienceText}>{AUDIENCE_LABEL[snap.audience].label}</Text>
+                </View>
+              )}
+            </View>
           </View>
         </View>
         {snap.userId === user.id ? (
@@ -295,9 +405,20 @@ export default function SnapViewer() {
           <Text style={s.captionText}>{snap.caption}</Text>
         ) : null}
 
-        {/* Reaction counts */}
+        {/* Reaction counts. The whole row opens the list of names, but only
+            for the author — see isMySnap. */}
         {reactions.length > 0 && (
-          <View style={s.reactionSummary}>
+          <Pressable
+            accessibilityRole={isMySnap ? 'button' : undefined}
+            accessibilityLabel={
+              isMySnap
+                ? `${reactions.length} ${reactions.length === 1 ? 'like' : 'likes'}. See who liked this`
+                : `${reactions.length} ${reactions.length === 1 ? 'like' : 'likes'}`
+            }
+            disabled={!isMySnap}
+            onPress={() => setShowReactors(true)}
+            style={({ pressed }) => [s.reactionSummary, pressed && isMySnap && { opacity: 0.7 }]}
+          >
             {Object.entries(
               reactions.reduce<Record<string, number>>((acc, r) => {
                 acc[r.emoji] = (acc[r.emoji] || 0) + 1;
@@ -309,7 +430,13 @@ export default function SnapViewer() {
                 <Text style={s.reactionCount}>{count}</Text>
               </View>
             ))}
-          </View>
+            <View style={s.reactionTotal}>
+              <Text style={s.reactionTotalText}>
+                {reactions.length} {reactions.length === 1 ? 'like' : 'likes'}
+              </Text>
+              {isMySnap && <Feather name="chevron-right" size={13} color="rgba(255,255,255,0.75)" />}
+            </View>
+          </Pressable>
         )}
 
         {/* Reaction bar */}
@@ -328,6 +455,26 @@ export default function SnapViewer() {
               <Text style={s.reactionBtnEmoji}>{emoji}</Text>
             </Pressable>
           ))}
+          {canReact && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="More reactions"
+              style={({ pressed }) => [
+                s.reactionBtn,
+                // Marked when the current reaction is not on the bar, so a
+                // student who picked 😂 can see where it came from.
+                myReaction && !REACTION_EMOJIS.includes(myReaction) && s.reactionBtnActive,
+                pressed && { transform: [{ scale: 0.9 }] },
+              ]}
+              onPress={() => setShowMoreEmoji(true)}
+            >
+              {myReaction && !REACTION_EMOJIS.includes(myReaction) ? (
+                <Text style={s.reactionBtnEmoji}>{myReaction}</Text>
+              ) : (
+                <Feather name="plus" size={20} color="rgba(255,255,255,0.85)" />
+              )}
+            </Pressable>
+          )}
           {!canReact && (
             <Pressable
               style={s.lockHint}
@@ -344,12 +491,80 @@ export default function SnapViewer() {
           )}
         </View>
       </View>
+
+      {/* The rest of the emoji. */}
+      <Modal
+        visible={showMoreEmoji}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowMoreEmoji(false)}
+      >
+        <Pressable style={s.reactorsBackdrop} onPress={() => setShowMoreEmoji(false)}>
+          <Pressable style={[s.reactorsSheet, { backgroundColor: theme.card }]} onPress={() => {}}>
+            <View style={[s.reactorsHandle, { backgroundColor: theme.textSecondary + '40' }]} />
+            <Text style={[s.reactorsTitle, { color: theme.text }]}>React</Text>
+            <View style={s.emojiGrid}>
+              {MORE_REACTION_EMOJIS.map((emoji) => (
+                <Pressable
+                  key={emoji}
+                  accessibilityRole="button"
+                  accessibilityLabel={`React with ${emoji}`}
+                  onPress={() => {
+                    setShowMoreEmoji(false);
+                    void handleReact(emoji);
+                  }}
+                  style={({ pressed }) => [
+                    s.emojiCell,
+                    myReaction === emoji && { backgroundColor: theme.primary + '33' },
+                    pressed && { opacity: 0.6 },
+                  ]}
+                >
+                  <Text style={s.emojiCellText}>{emoji}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={{ height: 16 }} />
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Who liked it — author only. */}
+      <Modal
+        visible={showReactors && isMySnap}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowReactors(false)}
+      >
+        <Pressable style={s.reactorsBackdrop} onPress={() => setShowReactors(false)}>
+          <Pressable style={[s.reactorsSheet, { backgroundColor: theme.card }]} onPress={() => {}}>
+            <View style={[s.reactorsHandle, { backgroundColor: theme.textSecondary + '40' }]} />
+            <Text style={[s.reactorsTitle, { color: theme.text }]}>
+              {reactions.length} {reactions.length === 1 ? 'like' : 'likes'}
+            </Text>
+            <ScrollView style={s.reactorsList} showsVerticalScrollIndicator={false}>
+              {reactions.map((r) => (
+                <View key={r.id} style={s.reactorRow}>
+                  <Avatar name={r.reactorName || 'Someone'} avatarUrl={r.reactorAvatar} size={38} />
+                  <Text style={[s.reactorName, { color: theme.text }]} numberOfLines={1}>
+                    {r.reactorName || 'Someone'}
+                  </Text>
+                  <Text style={s.reactorEmoji}>{r.emoji}</Text>
+                </View>
+              ))}
+              <View style={{ height: 24 }} />
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
 
 const s = StyleSheet.create({
   container: { flex: 1 },
+  // Above the image, below everything else — the overlays are later in the
+  // tree, so they sit on top of this and keep their own taps.
+  advanceLayer: { ...StyleSheet.absoluteFillObject },
   fullImage: {
     ...StyleSheet.absoluteFillObject,
     width: '100%',
@@ -409,6 +624,45 @@ const s = StyleSheet.create({
     borderRadius: 20,
   },
   reactionEmoji: { fontSize: 14 },
+  reactionTotal: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingLeft: 2 },
+  reactionTotalText: { color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: '700' },
+  reactorsBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  reactorsSheet: {
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingTop: 10,
+    paddingHorizontal: 20,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    maxHeight: '70%',
+  },
+  reactorsHandle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12 },
+  reactorsTitle: { fontSize: 17, fontWeight: '800', marginBottom: 10 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 1 },
+  audiencePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 9,
+    // Its own backing, because it sits on a photograph that could be any
+    // colour at all.
+    backgroundColor: 'rgba(0,0,0,0.42)',
+  },
+  audienceText: { color: 'rgba(255,255,255,0.9)', fontSize: 10, fontWeight: '700' },
+  reactorsList: { flexGrow: 0 },
+  emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  emojiCell: {
+    width: '14.5%',
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+  },
+  emojiCellText: { fontSize: 26 },
+  reactorRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 9 },
+  reactorName: { flex: 1, fontSize: 15, fontWeight: '600' },
+  reactorEmoji: { fontSize: 19 },
   reactionCount: { color: '#fff', fontSize: 12, fontWeight: '700' },
 
   reactionBar: {

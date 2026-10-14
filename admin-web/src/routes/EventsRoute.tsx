@@ -2,19 +2,26 @@ import { useEffect, useMemo, useState } from 'react';
 import { listCommunityPosts, updateCommunityPost, deleteCommunityPost, type AdminCommunityPostRow } from '../lib/api';
 import { matchesAdminSearch } from '../lib/adminSearch';
 import { useAdminSearch } from '../state/AdminSearchContext';
-import { MotionPanel, MotionSection } from '../ui/motion';
+import { Button } from '../ui/Button';
+import { EmptyState, Notice, PageHeader, Panel, Pill, PillGroup, SkeletonRows } from '../ui/page';
+import { AdminPostComposer } from '../components/AdminPostComposer';
+import { CommunityPostDrawer } from '../components/CommunityPostDrawer';
+import { PostCard } from '../components/events/PostCard';
 
-const TYPE_BADGE: Record<string, { label: string; color: string }> = {
-  event: { label: 'Event', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' },
-  service: { label: 'Service', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' },
-  memo: { label: 'Memo', color: 'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300' },
-};
+const LOAD_LIMIT = 300;
 
-const STATUS_BADGE: Record<string, string> = {
-  active: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300',
-  closed: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
-  flagged: 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300',
-};
+const TYPE_PILLS = [
+  { value: 'all', label: 'All' },
+  { value: 'event', label: 'Events' },
+  { value: 'memo', label: 'Memos' },
+  { value: 'service', label: 'Services' },
+] as const;
+
+const STATUS_PILLS = [
+  { value: 'active', label: 'Active' },
+  { value: 'flagged', label: 'Flagged' },
+  { value: 'closed', label: 'Closed' },
+] as const;
 
 export function EventsRoute() {
   const { searchQuery } = useAdminSearch();
@@ -23,6 +30,9 @@ export function EventsRoute() {
   const [items, setItems] = useState<AdminCommunityPostRow[]>([]);
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [composing, setComposing] = useState(false);
+  const [viewing, setViewing] = useState<string | null>(null);
+  const [loadedOnce, setLoadedOnce] = useState(false);
 
   const refresh = async () => {
     setBusy(true);
@@ -31,13 +41,14 @@ export function EventsRoute() {
       const rows = await listCommunityPosts({
         postType: typeFilter !== 'all' ? typeFilter : undefined,
         status: statusFilter !== 'all' ? statusFilter : undefined,
-        limit: 300,
+        limit: LOAD_LIMIT,
       });
       setItems(rows);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to load posts');
     } finally {
       setBusy(false);
+      setLoadedOnce(true);
     }
   };
 
@@ -52,11 +63,23 @@ export function EventsRoute() {
     );
   }, [items, searchQuery]);
 
-  const formatDate = (iso: string) => {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
-    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-  };
+  // Counts come from the posts loaded right now (the server already applied
+  // the type/status filters). A count is only shown when it is true for the
+  // loaded list: e.g. while "Events" is picked we cannot know how many memos exist.
+  const counts = useMemo(() => {
+    const byType: Record<string, number> = { all: items.length };
+    const byStatus: Record<string, number> = {};
+    for (const p of items) {
+      byType[p.post_type] = (byType[p.post_type] ?? 0) + 1;
+      byStatus[p.status] = (byStatus[p.status] ?? 0) + 1;
+    }
+    return { byType, byStatus };
+  }, [items]);
+
+  const typeCount = (value: string) =>
+    typeFilter === 'all' || typeFilter === value ? (counts.byType[value] ?? 0) : null;
+  const statusCount = (value: string) =>
+    statusFilter === 'all' || statusFilter === value ? (counts.byStatus[value] ?? 0) : null;
 
   const handleTogglePin = async (post: AdminCommunityPostRow) => {
     try {
@@ -86,169 +109,105 @@ export function EventsRoute() {
     }
   };
 
+  const searching = searchQuery.trim().length > 0;
+  const showSkeletons = busy && (!loadedOnce || items.length === 0);
+
   return (
-    <div>
-      <MotionSection>
-        <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Events & Posts</div>
-        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Manage community events, services, and memos.
-        </div>
-      </MotionSection>
-
-      <MotionPanel className="mt-6">
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900">
-          {/* Filters */}
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div className="flex gap-3">
-              <label className="block">
-                <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Type</div>
-                <select
-                  value={typeFilter}
-                  onChange={(e) => setTypeFilter(e.target.value)}
-                  className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                >
-                  <option value="all">All types</option>
-                  <option value="event">Events</option>
-                  <option value="service">Services</option>
-                  <option value="memo">Memos</option>
-                </select>
-              </label>
-              <label className="block">
-                <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Status</div>
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-                >
-                  <option value="all">All status</option>
-                  <option value="active">Active</option>
-                  <option value="closed">Closed</option>
-                  <option value="flagged">Flagged</option>
-                </select>
-              </label>
-            </div>
-            <button
-              onClick={() => void refresh()}
-              disabled={busy}
-              className="h-11 rounded-2xl bg-brand-600 px-4 text-sm font-black text-white shadow-soft hover:bg-brand-700 disabled:opacity-70"
-            >
+    <div className="space-y-5">
+      <PageHeader
+        title="Events & posts"
+        description="Events, memos and services students post in the app. Open one to see its photos, comments, likes and reports."
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => void refresh()} disabled={busy}>
               {busy ? 'Loading…' : 'Refresh'}
-            </button>
+            </Button>
+            <Button onClick={() => setComposing(true)}>+ Post as Admin Rencana</Button>
+          </>
+        }
+      />
+
+      {/* Quick filters with counts */}
+      <Panel>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-6">
+          <div role="group" aria-label="Filter by type">
+            <PillGroup label="Type">
+              {TYPE_PILLS.map((p) => (
+                <Pill key={p.value} count={typeCount(p.value)} active={typeFilter === p.value} onClick={() => setTypeFilter(p.value)}>
+                  {p.label}
+                </Pill>
+              ))}
+            </PillGroup>
           </div>
-
-          {err ? (
-            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
-              {err}
-            </div>
-          ) : null}
-
-          {/* Table */}
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[900px] border-separate border-spacing-y-2">
-              <thead>
-                <tr className="text-left text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  <th className="px-3 py-2">Post</th>
-                  <th className="px-3 py-2">Type</th>
-                  <th className="px-3 py-2">Author</th>
-                  <th className="px-3 py-2">University</th>
-                  <th className="px-3 py-2">Photos</th>
-                  <th className="px-3 py-2">Likes</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Date</th>
-                  <th className="px-3 py-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((p) => {
-                  const tb = TYPE_BADGE[p.post_type] || { label: p.post_type, color: 'bg-slate-100' };
-                  const sb = STATUS_BADGE[p.status] || '';
-                  return (
-                    <tr
-                      key={p.id}
-                      className="border border-slate-200 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-950/40"
-                    >
-                      <td className="px-3 py-3">
-                        <div className="flex items-center gap-2">
-                          {p.pinned && <span title="Pinned">📌</span>}
-                          <div>
-                            <div className="text-sm font-black text-slate-900 dark:text-slate-100 max-w-[280px] truncate">{p.title}</div>
-                            {p.body && (
-                              <div className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400 max-w-[280px] truncate">{p.body}</div>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-3 py-3">
-                        <span className={`inline-flex rounded-xl px-2.5 py-1 text-xs font-bold ${tb.color}`}>{tb.label}</span>
-                      </td>
-                      <td className="px-3 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">{p.author_name || '—'}</td>
-                      <td className="px-3 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                        {p.university_id?.toUpperCase() || '—'}
-                        {p.campus ? ` / ${p.campus}` : ''}
-                      </td>
-                      <td className="px-3 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                        {p.image_urls?.length ?? (p.image_url ? 1 : 0)} / 3
-                      </td>
-                      <td className="px-3 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                        ♡ {p.like_count ?? 0}
-                      </td>
-                      <td className="px-3 py-3">
-                        <span className={`inline-flex rounded-xl px-2.5 py-1 text-xs font-bold ${sb}`}>{p.status}</span>
-                      </td>
-                      <td className="px-3 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap tabular-nums">
-                        {formatDate(p.created_at)}
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="flex justify-end gap-1.5">
-                          <button
-                            onClick={() => handleTogglePin(p)}
-                            className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
-                            title={p.pinned ? 'Unpin' : 'Pin'}
-                          >
-                            {p.pinned ? '📌 Unpin' : 'Pin'}
-                          </button>
-                          {p.status === 'active' ? (
-                            <button
-                              onClick={() => handleSetStatus(p, 'flagged')}
-                              className="rounded-xl border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-black text-amber-800 hover:bg-amber-100 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-200"
-                            >
-                              Flag
-                            </button>
-                          ) : p.status === 'flagged' ? (
-                            <button
-                              onClick={() => handleSetStatus(p, 'active')}
-                              className="rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-black text-emerald-800 hover:bg-emerald-100 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-200"
-                            >
-                              Unflag
-                            </button>
-                          ) : null}
-                          <button
-                            onClick={() => handleDelete(p)}
-                            className="rounded-xl border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-black text-rose-800 hover:bg-rose-100 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-200"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {filtered.length === 0 && !busy ? (
-                  <tr>
-                    <td colSpan={9} className="px-3 py-6 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
-                      No posts found.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-            {filtered.length} post{filtered.length !== 1 ? 's' : ''}
+          <div role="group" aria-label="Filter by status">
+            <PillGroup label="Status">
+              {STATUS_PILLS.map((p) => (
+                <Pill
+                  key={p.value}
+                  count={statusCount(p.value)}
+                  active={statusFilter === p.value}
+                  alert={p.value === 'flagged'}
+                  title={statusFilter === p.value ? 'Click again to show every status' : undefined}
+                  onClick={() => setStatusFilter(statusFilter === p.value ? 'all' : p.value)}
+                >
+                  {p.label}
+                </Pill>
+              ))}
+            </PillGroup>
           </div>
         </div>
-      </MotionPanel>
+        <div className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
+          {items.length >= LOAD_LIMIT
+            ? `Counts are for the newest ${LOAD_LIMIT} posts loaded, so real totals may be higher.`
+            : 'Counts are for the posts loaded with these filters.'}
+          {searching ? ` ${filtered.length} of ${items.length} match your search.` : ''}
+        </div>
+      </Panel>
+
+      {err ? <Notice tone="danger">{err}</Notice> : null}
+
+      {/* List */}
+      {showSkeletons ? (
+        <SkeletonRows rows={3} height="h-28" />
+      ) : filtered.length === 0 && err && items.length === 0 ? null : filtered.length === 0 ? (
+        <EmptyState
+          title={searching ? 'Nothing matches your search.' : 'No posts here yet.'}
+          action={<Button onClick={() => setComposing(true)}>+ Post as Admin Rencana</Button>}
+        >
+          {searching
+            ? 'Try other words, or clear the search box at the top.'
+            : typeFilter !== 'all' || statusFilter !== 'all'
+              ? 'Try another filter above, or share something with students yourself.'
+              : 'When students share events, memos or services, they show up here. You can also post one yourself.'}
+        </EmptyState>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((p) => (
+            <PostCard
+              key={p.id}
+              post={p}
+              onView={() => setViewing(p.id)}
+              onTogglePin={() => void handleTogglePin(p)}
+              onSetStatus={(status) => void handleSetStatus(p, status)}
+              onDelete={() => void handleDelete(p)}
+            />
+          ))}
+          <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+            Showing {filtered.length} post{filtered.length !== 1 ? 's' : ''}
+          </div>
+        </div>
+      )}
+
+      {viewing ? <CommunityPostDrawer postId={viewing} onClose={() => setViewing(null)} onChanged={() => void refresh()} /> : null}
+      {composing ? (
+        <AdminPostComposer
+          onClose={() => setComposing(false)}
+          onPosted={async () => {
+            setComposing(false);
+            await refresh();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

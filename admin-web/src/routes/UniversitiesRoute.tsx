@@ -1,36 +1,22 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { deleteUniversity, getMapping, getUniversityDeleteImpact, listUniversities, saveMapping, testFetch, upsertUniversity, type UniversityRow } from '../lib/api';
 import { Button } from '../ui/Button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/Card';
-import { Label, TextInput } from '../ui/Input';
+import { Select, TextInput, Textarea } from '../ui/Input';
 import { matchesAdminSearch } from '../lib/adminSearch';
 import { useAdminSearch } from '../state/AdminSearchContext';
-import { MotionPanel, MotionSection, MotionStagger, MotionStaggerItem } from '../ui/motion';
 import { duplicateRecordIds, normaliseRecordName } from '../lib/dataQuality';
+import { Chip, EmptyState, Notice, PageHeader, Panel, Pill, PillGroup, SidePanel, SkeletonRows } from '../ui/page';
+import { Field, ListToolbar, PanelSection, RecordRow } from '../components/institutions/InstitutionUi';
 
-function Input({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-}) {
-  return (
-    <label className="block">
-      <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">{label}</div>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-      />
-    </label>
-  );
-}
+const BLANK_UNIVERSITY: UniversityRow = {
+  id: '',
+  name: '',
+  api_endpoint: '',
+  login_method: 'manual',
+  request_method: 'GET',
+  required_params: [],
+  response_sample: null,
+};
 
 export function UniversitiesRoute() {
   const { searchQuery } = useAdminSearch();
@@ -64,16 +50,7 @@ export function UniversitiesRoute() {
   }, []);
 
   const form = useMemo(() => {
-    const base: UniversityRow =
-      editing ?? ({
-        id: '',
-        name: '',
-        api_endpoint: '',
-        login_method: 'manual',
-        request_method: 'GET',
-        required_params: [],
-        response_sample: null,
-      } as any);
+    const base: UniversityRow = editing ?? { ...BLANK_UNIVERSITY };
     return base;
   }, [editing]);
 
@@ -92,193 +69,116 @@ export function UniversitiesRoute() {
     return list;
   }, [items, query, searchQuery, duplicatesOnly, duplicateIds]);
 
+  const closeEditor = useCallback(() => setEditing(null), []);
+
+  const handleDelete = async (u: UniversityRow) => {
+    setErr('');
+    try {
+      const impact = await getUniversityDeleteImpact(u.id);
+      if (impact.total > 0) {
+        const detail = Object.entries(impact.counts)
+          .filter(([, count]) => count > 0)
+          .map(([name, count]) => `${name}: ${count}`)
+          .join('\n');
+        alert(`Cannot delete ${u.name}. Reassign these affected records first:\n\n${detail}`);
+        return;
+      }
+      const ok = confirm(`Delete unused university ${u.name} (${u.id})?\n\nAffected records: 0`);
+      if (!ok) return;
+      await deleteUniversity(u.id);
+      if (editing?.id === u.id) setEditing(null);
+      await refresh();
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : 'University deletion failed');
+    }
+  };
+
   return (
-    <div>
-      <MotionSection>
-        <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Universities</div>
-        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Manage universities and integrations.
-          {searchQuery.trim() ? (
-            <span className="mt-1 block text-xs font-bold text-brand-600 dark:text-brand-400">
-              List filtered by the top search bar.
-            </span>
-          ) : null}
-        </div>
-      </MotionSection>
+    <div className="space-y-4">
+      <PageHeader
+        title="Universities"
+        description="Manage universities and integrations."
+        actions={<Button size="sm" onClick={() => setEditing({ ...BLANK_UNIVERSITY })}>Add university</Button>}
+      />
 
-      <MotionStagger className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,480px)_1fr] 3xl:grid-cols-[minmax(0,560px)_1fr]">
-        <MotionStaggerItem>
-          <MotionPanel className="h-full">
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle>University list</CardTitle>
-              <CardDescription>{busy ? 'Loading…' : `${filtered.length} shown`}</CardDescription>
-            </div>
-            <Button
-              size="sm"
-              onClick={() =>
-                setEditing({
-                  id: '',
-                  name: '',
-                  api_endpoint: '',
-                  login_method: 'manual',
-                  request_method: 'GET',
-                  required_params: [],
-                  response_sample: null,
-                } as any)
-              }
+      {err ? <Notice tone="danger">{err}</Notice> : null}
+
+      <Panel padded={false}>
+        <ListToolbar
+          query={query}
+          onQuery={setQuery}
+          placeholder="Search by id or name"
+          searchLabel="Search universities"
+          shown={filtered.length}
+          busy={busy}
+          topSearchActive={Boolean(searchQuery.trim())}
+        >
+          <PillGroup>
+            <Pill active={!duplicatesOnly} onClick={() => setDuplicatesOnly(false)}>All</Pill>
+            <Pill
+              active={duplicatesOnly}
+              count={duplicateIds.size}
+              alert
+              onClick={() => setDuplicatesOnly(true)}
+              title="Universities with the same name in the same country"
             >
-              + Add
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-3">
-              <div>
-                <Label>Search</Label>
-                <TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by id or name" />
-              </div>
-              <label className="flex cursor-pointer items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
-                <input type="checkbox" checked={duplicatesOnly} onChange={(e) => setDuplicatesOnly(e.target.checked)} />
-                Show redundancy only ({duplicateIds.size})
-              </label>
+              Redundant only
+            </Pill>
+          </PillGroup>
+        </ListToolbar>
 
-              {err ? (
-                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
-                  {err}
-                </div>
-              ) : null}
-
-              <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
-                <table className="w-full min-w-[420px]">
-                  <thead className="bg-slate-50 text-left text-[11px] font-black uppercase tracking-wide text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
-                    <tr>
-                      <th className="px-4 py-3">University</th>
-                      <th className="px-4 py-3">Method</th>
-                      <th className="px-4 py-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {filtered.map((u) => (
-                      <tr
-                        key={u.id}
-                        className="cursor-pointer bg-white transition hover:bg-slate-50 dark:bg-transparent dark:hover:bg-slate-900/40"
-                        onClick={() => setEditing(u)}
-                      >
-                        <td className="px-4 py-3">
-                          <div className="text-sm font-black text-slate-900 dark:text-slate-100">
-                            {u.name}
-                            {duplicateIds.has(u.id) ? (
-                              <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Redundant</span>
-                            ) : null}
-                            {u.country && u.country !== 'MY' ? (
-                              <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                                {u.country}
-                              </span>
-                            ) : null}
-                          </div>
-                          <div className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">{u.id}</div>
-                        </td>
-                        <td className="px-4 py-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
-                          {u.request_method} • {u.login_method}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="inline-flex gap-2">
-                            <Button variant="secondary" size="sm" onClick={() => setEditing(u)}>
-                              Edit
-                            </Button>
-                            <Button
-                              variant="danger"
-                              size="sm"
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                setErr('');
-                                try {
-                                  const impact = await getUniversityDeleteImpact(u.id);
-                                  if (impact.total > 0) {
-                                    const detail = Object.entries(impact.counts)
-                                      .filter(([, count]) => count > 0)
-                                      .map(([name, count]) => `${name}: ${count}`)
-                                      .join('\n');
-                                    alert(`Cannot delete ${u.name}. Reassign these affected records first:\n\n${detail}`);
-                                    return;
-                                  }
-                                  const ok = confirm(`Delete unused university ${u.name} (${u.id})?\n\nAffected records: 0`);
-                                  if (!ok) return;
-                                  await deleteUniversity(u.id);
-                                  if (editing?.id === u.id) setEditing(null);
-                                  await refresh();
-                                } catch (error) {
-                                  setErr(error instanceof Error ? error.message : 'University deletion failed');
-                                }
-                              }}
-                            >
-                              Delete
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-
-                    {filtered.length === 0 && !busy ? (
-                      <tr>
-                        <td colSpan={3} className="px-4 py-8 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
-                          {items.length > 0 && (query.trim() || searchQuery.trim())
-                            ? 'No universities match your filters. Adjust the list search or clear the top search.'
-                            : 'No universities found.'}
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-          </MotionPanel>
-        </MotionStaggerItem>
-
-        <MotionStaggerItem>
-          <MotionPanel className="h-full">
-        <Card className="min-h-[420px]">
-          <CardHeader>
-            <div>
-              <CardTitle>{editing?.id ? 'Edit university' : 'Setup'}</CardTitle>
-              <CardDescription>Configure endpoint, request method, params, and mappings.</CardDescription>
-            </div>
-            {editing ? (
-              <Button variant="secondary" size="sm" onClick={() => setEditing(null)}>
-                Close
-              </Button>
-            ) : null}
-          </CardHeader>
-          <CardContent>
-            {!editing ? (
-              <div className="grid place-items-center rounded-3xl border border-dashed border-slate-200 p-10 text-center dark:border-slate-800">
-                <div className="text-sm font-black text-slate-900 dark:text-slate-100">Select a university</div>
-                <div className="mt-1 max-w-md text-sm font-semibold text-slate-500 dark:text-slate-400">
-                  Pick one from the list to edit, or click <span className="font-black text-slate-700 dark:text-slate-200">+ Add</span>.
-                </div>
-              </div>
-            ) : (
-              <UniEditor
-                key={editing.id || 'new'}
-                initial={form}
-                onCancel={() => setEditing(null)}
-                onSaved={async () => {
-                  setEditing(null);
-                  await refresh();
-                }}
+        {busy && items.length === 0 ? (
+          <div className="p-5"><SkeletonRows rows={4} height="h-14" /></div>
+        ) : filtered.length === 0 ? (
+          <div className="p-5">
+            <EmptyState title={items.length > 0 && (query.trim() || searchQuery.trim()) ? 'No universities match your filters' : 'No universities found'}>
+              {items.length > 0 && (query.trim() || searchQuery.trim()) ? 'Adjust the list search or clear the top search.' : null}
+            </EmptyState>
+          </div>
+        ) : (
+          <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+            {filtered.map((u) => (
+              <RecordRow
+                key={u.id}
+                onOpen={() => setEditing(u)}
+                title={u.name}
+                meta={u.id}
+                chips={
+                  <>
+                    {duplicateIds.has(u.id) ? <Chip tone="warning">Redundant</Chip> : null}
+                    {u.country && u.country !== 'MY' ? <Chip>{u.country}</Chip> : null}
+                    <Chip tone="info">{u.request_method} · {u.login_method}</Chip>
+                  </>
+                }
+                actions={
+                  <>
+                    <Button variant="secondary" size="sm" onClick={() => setEditing(u)}>Edit</Button>
+                    <Button variant="danger" size="sm" onClick={() => void handleDelete(u)}>Delete</Button>
+                  </>
+                }
               />
-            )}
-          </CardContent>
-        </Card>
-          </MotionPanel>
-        </MotionStaggerItem>
-      </MotionStagger>
+            ))}
+          </ul>
+        )}
+      </Panel>
+
+      {editing ? (
+        <UniEditor
+          key={editing.id || 'new'}
+          initial={form}
+          onCancel={closeEditor}
+          onSaved={async () => {
+            setEditing(null);
+            await refresh();
+          }}
+        />
+      ) : null}
     </div>
   );
 }
+
+const DEFAULT_TEST_PARAMS = '{\n  "studentId": "",\n  "password": ""\n}';
+const DEFAULT_MAPPING = '{\n  "subject_name": "subject_name",\n  "lecturer": "lecturer",\n  "class_time": "start_time",\n  "location": "location"\n}';
 
 function UniEditor({
   initial,
@@ -296,11 +196,11 @@ function UniEditor({
   const [loginMethod, setLoginMethod] = useState<UniversityRow['login_method']>(initial.login_method);
   const [reqMethod, setReqMethod] = useState<UniversityRow['request_method']>(initial.request_method);
   const [paramsJson, setParamsJson] = useState(() => JSON.stringify(initial.required_params ?? [], null, 2));
-  const [testParamsJson, setTestParamsJson] = useState('{\n  \"studentId\": \"\",\n  \"password\": \"\"\n}');
+  const [testParamsJson, setTestParamsJson] = useState(DEFAULT_TEST_PARAMS);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const [testRes, setTestRes] = useState<any>(null);
-  const [mappingJson, setMappingJson] = useState('{\n  \"subject_name\": \"subject_name\",\n  \"lecturer\": \"lecturer\",\n  \"class_time\": \"start_time\",\n  \"location\": \"location\"\n}');
+  const [testRes, setTestRes] = useState<unknown>(null);
+  const [mappingJson, setMappingJson] = useState(DEFAULT_MAPPING);
 
   useEffect(() => {
     let cancelled = false;
@@ -310,7 +210,9 @@ function UniEditor({
         const existing = await getMapping(id.trim());
         if (cancelled) return;
         if (existing?.timetable_mapping) setMappingJson(JSON.stringify(existing.timetable_mapping, null, 2));
-      } catch {}
+      } catch {
+        // No saved mapping yet (or not reachable): keep the default text.
+      }
     };
     void load();
     return () => {
@@ -318,125 +220,90 @@ function UniEditor({
     };
   }, [id]);
 
+  const save = async () => {
+    setBusy(true);
+    setErr('');
+    try {
+      const required_params = JSON.parse(paramsJson || '[]');
+      await upsertUniversity({
+        id: id.trim(),
+        name: name.trim(),
+        country: country.trim().toUpperCase() || 'MY',
+        api_endpoint: api.trim() || null,
+        login_method: loginMethod,
+        request_method: reqMethod,
+        required_params,
+        response_sample: initial.response_sample ?? null,
+      });
+      await onSaved();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to save');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <div className="mt-4 space-y-3">
-      <Input label="University ID" value={id} onChange={setId} placeholder="e.g. uitm" />
-      <Input label="Name" value={name} onChange={setName} placeholder="UiTM" />
-      <Input label="API endpoint" value={api} onChange={setApi} placeholder="https://example.com/api" />
-
-      <label className="block">
-        <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Country</div>
-        <select
-          value={country}
-          onChange={(e) => setCountry(e.target.value)}
-          className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-        >
-          <option value="MY">🇲🇾 Malaysia</option>
-          <option value="US">🇺🇸 United States</option>
-          <option value="GB">🇬🇧 United Kingdom</option>
-          <option value="CA">🇨🇦 Canada</option>
-          <option value="AU">🇦🇺 Australia</option>
-        </select>
-      </label>
-
-      <div className="grid gap-3 md:grid-cols-2">
-        <label className="block">
-          <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Login method</div>
-          <select
-            value={loginMethod}
-            onChange={(e) => setLoginMethod(e.target.value as any)}
-            className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-          >
-            <option value="manual">manual</option>
-            <option value="api">api</option>
-          </select>
-        </label>
-        <label className="block">
-          <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Request method</div>
-          <select
-            value={reqMethod}
-            onChange={(e) => setReqMethod(e.target.value as any)}
-            className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-          >
-            <option value="GET">GET</option>
-            <option value="POST">POST</option>
-          </select>
-        </label>
-      </div>
-
-      <label className="block">
-        <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Required params schema (JSON)</div>
-        <textarea
-          value={paramsJson}
-          onChange={(e) => setParamsJson(e.target.value)}
-          rows={5}
-          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-        />
-      </label>
-
-      {err ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
-          {err}
+    <SidePanel
+      title={initial.id ? 'Edit university' : 'Add university'}
+      subtitle={initial.id ? `${initial.name} · ${initial.id}` : 'Configure endpoint, request method, params, and mappings.'}
+      onClose={onCancel}
+      footer={
+        <>
+          {err ? <Notice tone="danger" className="w-full py-2">{err}</Notice> : null}
+          <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+          <Button disabled={busy} onClick={() => void save()}>Save</Button>
+        </>
+      }
+    >
+      <PanelSection title="Details">
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="University ID">
+            <TextInput value={id} onChange={(e) => setId(e.target.value)} placeholder="e.g. uitm" />
+          </Field>
+          <Field label="Name">
+            <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="UiTM" />
+          </Field>
         </div>
-      ) : null}
-
-      <div className="flex flex-wrap gap-2">
-        <button
-          disabled={busy}
-          className="h-11 rounded-2xl bg-brand-600 px-4 text-sm font-black text-white shadow-soft hover:bg-brand-700 disabled:opacity-70"
-          onClick={async () => {
-            setBusy(true);
-            setErr('');
-            try {
-              const required_params = JSON.parse(paramsJson || '[]');
-              await upsertUniversity({
-                id: id.trim(),
-                name: name.trim(),
-                country: country.trim().toUpperCase() || 'MY',
-                api_endpoint: api.trim() || null,
-                login_method: loginMethod,
-                request_method: reqMethod,
-                required_params,
-                response_sample: initial.response_sample ?? null,
-              } as any);
-              await onSaved();
-            } catch (e) {
-              setErr(e instanceof Error ? e.message : 'Failed to save');
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          Save
-        </button>
-        <button
-          className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-900 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-          onClick={onCancel}
-        >
-          Cancel
-        </button>
-      </div>
-
-      <div className="mt-6 border-t border-slate-200 pt-4 dark:border-slate-800">
-        <div className="text-sm font-black text-slate-900 dark:text-slate-100">Test Fetch</div>
-        <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-          Calls the Supabase Edge Function `admin_test_fetch` (server-side proxy).
+        <Field label="API endpoint">
+          <TextInput value={api} onChange={(e) => setApi(e.target.value)} placeholder="https://example.com/api" />
+        </Field>
+        <div className="grid gap-3 md:grid-cols-3">
+          <Field label="Country">
+            <Select value={country} onChange={(e) => setCountry(e.target.value)}>
+              <option value="MY">Malaysia</option>
+              <option value="US">United States</option>
+              <option value="GB">United Kingdom</option>
+              <option value="CA">Canada</option>
+              <option value="AU">Australia</option>
+            </Select>
+          </Field>
+          <Field label="Login method">
+            <Select value={loginMethod} onChange={(e) => setLoginMethod(e.target.value as UniversityRow['login_method'])}>
+              <option value="manual">manual</option>
+              <option value="api">api</option>
+            </Select>
+          </Field>
+          <Field label="Request method">
+            <Select value={reqMethod} onChange={(e) => setReqMethod(e.target.value as UniversityRow['request_method'])}>
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+            </Select>
+          </Field>
         </div>
+        <Field label="Required params schema (JSON)">
+          <Textarea value={paramsJson} onChange={(e) => setParamsJson(e.target.value)} rows={5} className="font-mono" />
+        </Field>
+      </PanelSection>
 
-        <label className="mt-3 block">
-          <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Test params (JSON)</div>
-          <textarea
-            value={testParamsJson}
-            onChange={(e) => setTestParamsJson(e.target.value)}
-            rows={5}
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-          />
-        </label>
-
-        <div className="mt-3 flex gap-2">
-          <button
+      <PanelSection title="Test fetch" description="Runs a test call to the university endpoint through the server-side proxy.">
+        <Field label="Test params (JSON)">
+          <Textarea value={testParamsJson} onChange={(e) => setTestParamsJson(e.target.value)} rows={5} className="font-mono" />
+        </Field>
+        <div>
+          <Button
+            variant="secondary"
             disabled={busy}
-            className="h-11 rounded-2xl bg-slate-900 px-4 text-sm font-black text-white hover:bg-black disabled:opacity-70 dark:bg-slate-700 dark:hover:bg-slate-600"
             onClick={async () => {
               setBusy(true);
               setErr('');
@@ -452,37 +319,24 @@ function UniEditor({
               }
             }}
           >
-            Test Fetch
-          </button>
+            Test fetch
+          </Button>
         </div>
-
         {testRes ? (
-          <pre className="mt-3 max-h-64 overflow-auto rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
+          <pre className="max-h-64 overflow-auto rounded-2xl border border-slate-200 bg-slate-50 p-3 font-mono text-xs font-semibold text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100">
             {JSON.stringify(testRes, null, 2)}
           </pre>
         ) : null}
-      </div>
+      </PanelSection>
 
-      <div className="mt-6 border-t border-slate-200 pt-4 dark:border-slate-800">
-        <div className="text-sm font-black text-slate-900 dark:text-slate-100">Data mapping</div>
-        <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-          Map university response fields to Rencana timetable fields. Stored per university.
-        </div>
-
-        <label className="mt-3 block">
-          <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">Timetable mapping (JSON)</div>
-          <textarea
-            value={mappingJson}
-            onChange={(e) => setMappingJson(e.target.value)}
-            rows={7}
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-          />
-        </label>
-
-        <div className="mt-3 flex gap-2">
-          <button
+      <PanelSection title="Data mapping" description="Map university response fields to Rencana timetable fields. Stored per university.">
+        <Field label="Timetable mapping (JSON)">
+          <Textarea value={mappingJson} onChange={(e) => setMappingJson(e.target.value)} rows={7} className="font-mono" />
+        </Field>
+        <div>
+          <Button
+            variant="secondary"
             disabled={busy}
-            className="h-11 rounded-2xl bg-brand-600 px-4 text-sm font-black text-white shadow-soft hover:bg-brand-700 disabled:opacity-70"
             onClick={async () => {
               setBusy(true);
               setErr('');
@@ -497,9 +351,9 @@ function UniEditor({
             }}
           >
             Save mapping
-          </button>
+          </Button>
         </div>
-      </div>
-    </div>
+      </PanelSection>
+    </SidePanel>
   );
 }

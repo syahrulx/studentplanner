@@ -1,36 +1,19 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listCampuses, createCampus, updateCampus, deleteCampus, getCampusDeleteImpact, type AdminCampusRow, listUniversities, type UniversityRow } from '../lib/api';
 import { Button } from '../ui/Button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/Card';
-import { Label, TextInput } from '../ui/Input';
+import { Select, TextInput } from '../ui/Input';
 import { matchesAdminSearch } from '../lib/adminSearch';
 import { useAdminSearch } from '../state/AdminSearchContext';
-import { MotionPanel, MotionSection, MotionStagger, MotionStaggerItem } from '../ui/motion';
 import { duplicateRecordIds, normaliseRecordName } from '../lib/dataQuality';
+import { Chip, EmptyState, Notice, PageHeader, Panel, Pill, PillGroup, SidePanel, SkeletonRows } from '../ui/page';
+import { Field, ListToolbar, RecordRow } from '../components/institutions/InstitutionUi';
 
-function Input({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-}) {
-  return (
-    <label className="block">
-      <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">{label}</div>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-      />
-    </label>
-  );
-}
+const BLANK_CAMPUS: AdminCampusRow = {
+  id: '',
+  university_id: '',
+  name: '',
+  created_at: '',
+};
 
 export function CampusesRoute() {
   const { searchQuery } = useAdminSearch();
@@ -76,13 +59,7 @@ export function CampusesRoute() {
   }, []);
 
   const form = useMemo(() => {
-    const base: AdminCampusRow =
-      editing ?? ({
-        id: '',
-        university_id: '',
-        name: '',
-        created_at: '',
-      });
+    const base: AdminCampusRow = editing ?? { ...BLANK_CAMPUS };
     return base;
   }, [editing]);
 
@@ -110,211 +87,138 @@ export function CampusesRoute() {
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [filtered]);
 
+  const closeEditor = useCallback(() => setEditing(null), []);
+  const searching = Boolean(query.trim() || searchQuery.trim());
+
+  const handleDelete = async (u: AdminCampusRow) => {
+    setErr('');
+    try {
+      const impact = await getCampusDeleteImpact(u.id);
+      if (impact.total > 0) {
+        const detail = Object.entries(impact.counts)
+          .filter(([, count]) => count > 0)
+          .map(([name, count]) => `${name}: ${count}`)
+          .join('\n');
+        alert(`Cannot delete ${u.name}. Reassign these affected records first:\n\n${detail}`);
+        return;
+      }
+      const ok = confirm(`Delete unused campus ${u.name}?\n\nAffected records: 0`);
+      if (!ok) return;
+      await deleteCampus(u.id);
+      if (editing?.id === u.id) setEditing(null);
+      await refresh();
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : 'Campus deletion failed');
+    }
+  };
+
   return (
-    <div>
-      <MotionSection>
-        <div className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100">Campuses</div>
-        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
-          Manage university campuses for the community.
-        </div>
-      </MotionSection>
+    <div className="space-y-4">
+      <PageHeader
+        title="Campuses"
+        description="Manage university campuses for the community."
+        actions={<Button size="sm" onClick={() => setEditing({ ...BLANK_CAMPUS })}>Add campus</Button>}
+      />
 
-      <MotionStagger className="mt-6 grid gap-4 xl:grid-cols-[420px_1fr]">
-        <MotionStaggerItem>
-          <MotionPanel className="h-full">
-            <Card>
-              <CardHeader>
-                <div>
-                  <CardTitle>Campus list</CardTitle>
-                  <CardDescription>{busy ? 'Loading…' : `${filtered.length} shown`}</CardDescription>
-                </div>
-                <Button
-                  size="sm"
-                  onClick={() =>
-                    setEditing({
-                      id: '',
-                      university_id: '',
-                      name: '',
-                      created_at: '',
-                    })
-                  }
-                >
-                  + Add
-                </Button>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-3">
-                  <div>
-                    <Label>Search</Label>
-                    <TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name or university" />
-                  </div>
-                  <label className="flex cursor-pointer items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
-                    <input type="checkbox" checked={duplicatesOnly} onChange={(e) => setDuplicatesOnly(e.target.checked)} />
-                    Show redundancy only ({duplicateIds.size})
-                  </label>
+      {err ? <Notice tone="danger">{err}</Notice> : null}
 
-                  {err ? (
-                    <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
-                      {err}
-                    </div>
+      <Panel padded={false}>
+        <ListToolbar
+          query={query}
+          onQuery={setQuery}
+          placeholder="Search by name or university"
+          searchLabel="Search campuses"
+          shown={filtered.length}
+          busy={busy}
+          topSearchActive={Boolean(searchQuery.trim())}
+        >
+          <PillGroup>
+            <Pill active={!duplicatesOnly} onClick={() => setDuplicatesOnly(false)}>All</Pill>
+            <Pill
+              active={duplicatesOnly}
+              count={duplicateIds.size}
+              alert
+              onClick={() => setDuplicatesOnly(true)}
+              title="Campuses with the same name under the same university"
+            >
+              Redundant only
+            </Pill>
+          </PillGroup>
+        </ListToolbar>
+
+        {busy && items.length === 0 ? (
+          <div className="p-5"><SkeletonRows rows={4} height="h-14" /></div>
+        ) : filtered.length === 0 ? (
+          <div className="p-5">
+            <EmptyState title={items.length > 0 && searching ? 'No campuses match your filters' : 'No campuses found'} />
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {grouped.map(([uniId, groupCampuses]) => {
+              // Open every group while searching so matches are visible.
+              const isExpanded = expandedUnis.has(uniId) || searching;
+              const uniName = universities.find((u) => u.id === uniId)?.name || '';
+              return (
+                <div key={uniId}>
+                  <button
+                    type="button"
+                    onClick={() => toggleUni(uniId)}
+                    aria-expanded={isExpanded}
+                    className="flex w-full items-center justify-between gap-3 bg-slate-50 px-5 py-3 text-left transition hover:bg-slate-100 dark:bg-slate-900/60 dark:hover:bg-slate-800/60"
+                  >
+                    <span className="min-w-0 truncate text-sm font-black">
+                      <span className="text-brand-700 dark:text-brand-300">{uniId.toUpperCase()}</span>
+                      {uniName ? <span className="ml-2 font-semibold text-slate-500 dark:text-slate-400">{uniName}</span> : null}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <Chip>{groupCampuses.length} campus{groupCampuses.length !== 1 ? 'es' : ''}</Chip>
+                      <span
+                        aria-hidden
+                        className="inline-block text-xs text-slate-400 transition-transform duration-200"
+                        style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                      >
+                        ▼
+                      </span>
+                    </span>
+                  </button>
+                  {isExpanded ? (
+                    <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {groupCampuses.map((u) => (
+                        <RecordRow
+                          key={u.id}
+                          className="pl-8"
+                          onOpen={() => setEditing(u)}
+                          title={u.name}
+                          chips={duplicateIds.has(u.id) ? <Chip tone="warning">Redundant</Chip> : null}
+                          actions={
+                            <>
+                              <Button variant="secondary" size="sm" onClick={() => setEditing(u)}>Edit</Button>
+                              <Button variant="danger" size="sm" onClick={() => void handleDelete(u)}>Delete</Button>
+                            </>
+                          }
+                        />
+                      ))}
+                    </ul>
                   ) : null}
-
-                  <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
-                    <table className="w-full">
-                      <thead className="bg-slate-50 text-left text-[11px] font-black uppercase tracking-wide text-slate-500 dark:bg-slate-900/40 dark:text-slate-400">
-                        <tr>
-                          <th className="px-4 py-3">Campus</th>
-                          <th className="px-4 py-3">University</th>
-                          <th className="px-4 py-3 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {grouped.map(([uniId, groupCampuses]) => {
-                          const isExpanded = expandedUnis.has(uniId) || (query.trim() || searchQuery.trim() ? true : false); // auto expand if searching
-                          const uniName = universities.find((u) => u.id === uniId)?.name || '';
-                          return (
-                            <React.Fragment key={uniId}>
-                              <tr
-                                className="cursor-pointer bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/30 dark:hover:bg-slate-900/50 transition"
-                                onClick={() => toggleUni(uniId)}
-                              >
-                                <td colSpan={3} className="px-4 py-3 font-black text-slate-800 dark:text-slate-200">
-                                  <div className="flex items-center justify-between">
-                                    <div className="truncate">
-                                      <span className="text-brand-600 dark:text-brand-400">{uniId.toUpperCase()}</span>
-                                      {uniName && <span className="text-slate-500 dark:text-slate-400 font-semibold ml-2">— {uniName}</span>}
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <div className="text-[11px] font-bold uppercase tracking-widest text-slate-500 bg-white dark:bg-slate-800 px-2.5 py-1 rounded-full shadow-sm border border-slate-200 dark:border-slate-700/50">
-                                        {groupCampuses.length} campus{groupCampuses.length !== 1 ? 'es' : ''}
-                                      </div>
-                                      <span
-                                        className="inline-block text-slate-400 transition-transform duration-200"
-                                        style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                                      >
-                                        ▼
-                                      </span>
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-                              {isExpanded &&
-                                groupCampuses.map((u) => (
-                                  <tr
-                                    key={u.id}
-                                    className="cursor-pointer bg-white transition hover:bg-slate-50 dark:bg-transparent dark:hover:bg-slate-900/40"
-                                    onClick={() => setEditing(u)}
-                                  >
-                                    <td className="px-4 py-3 pl-8 relative">
-                                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand-200 dark:bg-brand-900/50" />
-                                      <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                                        {u.name}
-                                        {duplicateIds.has(u.id) ? (
-                                          <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Redundant</span>
-                                        ) : null}
-                                      </div>
-                                    </td>
-                                    <td className="px-4 py-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
-                                      {u.university_id.toUpperCase()}
-                                    </td>
-                                    <td className="px-4 py-3 text-right">
-                                      <div className="inline-flex gap-2">
-                                        <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); setEditing(u); }}>
-                                          Edit
-                                        </Button>
-                                        <Button
-                                          variant="danger"
-                                          size="sm"
-                                          onClick={async (e) => {
-                                            e.stopPropagation();
-                                            setErr('');
-                                            try {
-                                              const impact = await getCampusDeleteImpact(u.id);
-                                              if (impact.total > 0) {
-                                                const detail = Object.entries(impact.counts)
-                                                  .filter(([, count]) => count > 0)
-                                                  .map(([name, count]) => `${name}: ${count}`)
-                                                  .join('\n');
-                                                alert(`Cannot delete ${u.name}. Reassign these affected records first:\n\n${detail}`);
-                                                return;
-                                              }
-                                              const ok = confirm(`Delete unused campus ${u.name}?\n\nAffected records: 0`);
-                                              if (!ok) return;
-                                              await deleteCampus(u.id);
-                                              if (editing?.id === u.id) setEditing(null);
-                                              await refresh();
-                                            } catch (error) {
-                                              setErr(error instanceof Error ? error.message : 'Campus deletion failed');
-                                            }
-                                          }}
-                                        >
-                                          Delete
-                                        </Button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
-                            </React.Fragment>
-                          );
-                        })}
-
-                        {filtered.length === 0 && !busy ? (
-                          <tr>
-                            <td colSpan={3} className="px-4 py-8 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
-                              {items.length > 0 && (query.trim() || searchQuery.trim())
-                                ? 'No campuses match your filters.'
-                                : 'No campuses found.'}
-                            </td>
-                          </tr>
-                        ) : null}
-                      </tbody>
-                    </table>
-                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          </MotionPanel>
-        </MotionStaggerItem>
+              );
+            })}
+          </div>
+        )}
+      </Panel>
 
-        <MotionStaggerItem>
-          <MotionPanel className="h-full">
-            <Card className="min-h-[420px]">
-              <CardHeader>
-                <div>
-                  <CardTitle>{editing?.id ? 'Edit campus' : 'Setup'}</CardTitle>
-                  <CardDescription>Configure campus details.</CardDescription>
-                </div>
-                {editing ? (
-                  <Button variant="secondary" size="sm" onClick={() => setEditing(null)}>
-                    Close
-                  </Button>
-                ) : null}
-              </CardHeader>
-              <CardContent>
-                {!editing ? (
-                  <div className="grid place-items-center rounded-3xl border border-dashed border-slate-200 p-10 text-center dark:border-slate-800">
-                    <div className="text-sm font-black text-slate-900 dark:text-slate-100">Select a campus</div>
-                    <div className="mt-1 max-w-md text-sm font-semibold text-slate-500 dark:text-slate-400">
-                      Pick one from the list to edit, or click <span className="font-black text-slate-700 dark:text-slate-200">+ Add</span>.
-                    </div>
-                  </div>
-                ) : (
-                  <CampusEditor
-                    key={editing.id || 'new'}
-                    initial={form}
-                    universities={universities}
-                    onCancel={() => setEditing(null)}
-                    onSaved={async () => {
-                      setEditing(null);
-                      await refresh();
-                    }}
-                  />
-                )}
-              </CardContent>
-            </Card>
-          </MotionPanel>
-        </MotionStaggerItem>
-      </MotionStagger>
+      {editing ? (
+        <CampusEditor
+          key={editing.id || 'new'}
+          initial={form}
+          universities={universities}
+          onCancel={closeEditor}
+          onSaved={async () => {
+            setEditing(null);
+            await refresh();
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -336,59 +240,57 @@ function CampusEditor({
   const [err, setErr] = useState('');
 
   return (
-    <div className="mt-4 space-y-3">
-      <Input label="Campus Name" value={name} onChange={setName} placeholder="e.g. Puncak Alam" />
-      
-      <label className="block">
-        <div className="mb-1 text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">University</div>
-        <select
-          value={universityId}
-          onChange={(e) => setUniversityId(e.target.value)}
-          className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
-        >
-          <option value="" disabled>Select University</option>
+    <SidePanel
+      title={initial.id ? 'Edit campus' : 'Add campus'}
+      subtitle={initial.id ? `${initial.name} · ${initial.university_id.toUpperCase()}` : 'Configure campus details.'}
+      onClose={onCancel}
+      width="max-w-lg"
+      footer={
+        <>
+          {err ? <Notice tone="danger" className="w-full py-2">{err}</Notice> : null}
+          <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+          <Button
+            disabled={busy || !name.trim() || !universityId.trim()}
+            onClick={async () => {
+              setBusy(true);
+              setErr('');
+              try {
+                if (initial.id) {
+                  await updateCampus(initial.id, name.trim());
+                } else {
+                  await createCampus(universityId.trim(), name.trim());
+                }
+                await onSaved();
+              } catch (e) {
+                setErr(e instanceof Error ? e.message : 'Failed to save');
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Save
+          </Button>
+        </>
+      }
+    >
+      <Field label="Campus name">
+        <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Puncak Alam" />
+      </Field>
+      <Field label="University">
+        {/* Saving an existing campus only updates its name (updateCampus), so the
+            university can't be changed here; it used to look changeable but wasn't. */}
+        <Select value={universityId} disabled={Boolean(initial.id)} onChange={(e) => setUniversityId(e.target.value)}>
+          <option value="" disabled>Select university</option>
           {universities.map(u => (
             <option key={u.id} value={u.id}>{u.id.toUpperCase()} - {u.name}</option>
           ))}
-        </select>
-      </label>
-
-      {err ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-100">
-          {err}
-        </div>
-      ) : null}
-
-      <div className="flex flex-wrap gap-2 pt-4">
-        <button
-          disabled={busy || !name.trim() || !universityId.trim()}
-          className="h-11 rounded-2xl bg-brand-600 px-4 text-sm font-black text-white shadow-soft hover:bg-brand-700 disabled:opacity-70"
-          onClick={async () => {
-            setBusy(true);
-            setErr('');
-            try {
-              if (initial.id) {
-                await updateCampus(initial.id, name.trim());
-              } else {
-                await createCampus(universityId.trim(), name.trim());
-              }
-              await onSaved();
-            } catch (e) {
-              setErr(e instanceof Error ? e.message : 'Failed to save');
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          Save
-        </button>
-        <button
-          className="h-11 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-900 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-          onClick={onCancel}
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
+        </Select>
+        {initial.id ? (
+          <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+            A campus stays with its university. To put it under another one, add it there as a new campus.
+          </p>
+        ) : null}
+      </Field>
+    </SidePanel>
   );
 }

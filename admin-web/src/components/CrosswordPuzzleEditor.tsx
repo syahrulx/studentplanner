@@ -5,6 +5,10 @@ import {
   type AdminCrosswordPuzzle,
   type CrosswordWordInput,
 } from '../lib/api';
+import { Button } from '../ui/Button';
+import { Notice, SidePanel } from '../ui/page';
+import { DANGER_TEXT_BTN } from './config/buttons';
+import { errorText } from './config/errorText';
 
 type Props = {
   /** null = creating a new level. */
@@ -80,6 +84,18 @@ export function CrosswordPuzzleEditor({ puzzle, onClose, onSaved }: Props) {
 
   const { grid, conflicts } = useMemo(() => buildPreviewGrid(size, words), [size, words]);
 
+  // Display only: has anything changed since the panel opened? Used to ask
+  // before an accidental close (Esc, clicking outside, ✕) throws work away.
+  const [initialSnapshot] = useState(() => JSON.stringify([title, size, bonusWord, bonusHint, isPublished, words]));
+  const dirty =
+    JSON.stringify([title, size, bonusWord, bonusHint, isPublished, words]) !== initialSnapshot ||
+    wAnswer.trim() !== '' || wClue.trim() !== '';
+  function closeFromPanel() {
+    if (saving) return;
+    if (dirty && !window.confirm('Close without saving? Your changes to this level will be lost.')) return;
+    onClose();
+  }
+
   function addWord() {
     const answer = wAnswer.toUpperCase().replace(/[^A-Z]/g, '');
     if (!answer || answer.length < 2) {
@@ -122,12 +138,12 @@ export function CrosswordPuzzleEditor({ puzzle, onClose, onSaved }: Props) {
         words,
       });
       onSaved();
-    } catch (e: any) {
+    } catch (e) {
       // The server re-validates everything (grid bounds, letter conflicts,
       // clue numbering) independently — a save can still fail here even
       // when the client-side preview looks clean, so this message is the
       // one that actually matters.
-      setError(e?.message || 'Could not save this level.');
+      setError(errorText(e, 'Could not save this level.'));
     } finally {
       setSaving(false);
     }
@@ -141,221 +157,196 @@ export function CrosswordPuzzleEditor({ puzzle, onClose, onSaved }: Props) {
     try {
       await deleteAdminCrosswordPuzzle(puzzle.id);
       onSaved();
-    } catch (e: any) {
-      setError(e?.message || 'Could not delete this level.');
+    } catch (e) {
+      setError(errorText(e, 'Could not delete this level.'));
       setSaving(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 dark:border-slate-800">
-          <h2 className="text-lg font-black text-slate-900 dark:text-slate-100">
-            {puzzle ? `Edit Level #${puzzle.id}` : 'New Crossword Level'}
-          </h2>
-          <button
-            onClick={onClose}
-            className="rounded-xl px-3 py-1.5 text-sm font-bold text-slate-500 transition hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-          >
-            Close
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-6 py-5">
-          {error && (
-            <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
-              {error}
-            </div>
-          )}
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Title">
-              <input className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. In the Kitchen" />
-            </Field>
-            <Field label="Grid size">
-              <input
-                type="number"
-                min={5}
-                max={15}
-                className={inputCls}
-                value={size}
-                onChange={(e) => setSize(Math.max(5, Math.min(15, Number(e.target.value) || 7)))}
-              />
-            </Field>
-            <Field label="Bonus word">
-              <input
-                className={inputCls}
-                value={bonusWord}
-                onChange={(e) => setBonusWord(e.target.value)}
-                placeholder="Hidden word — never appears on the grid"
-              />
-            </Field>
-            <Field label="Bonus hint">
-              <input className={inputCls} value={bonusHint} onChange={(e) => setBonusHint(e.target.value)} placeholder="Shown to the player" />
-            </Field>
-          </div>
-
-          <label className="mt-4 flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
-            <input type="checkbox" checked={isPublished} onChange={(e) => setIsPublished(e.target.checked)} />
-            Published (visible to players)
-          </label>
-
-          <div className="mt-6 grid gap-6 lg:grid-cols-[auto_1fr]">
-            {/* Live grid preview */}
-            <div>
-              <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Live preview</div>
-              <div
-                className="mt-2 grid gap-[2px] rounded-xl bg-slate-200 p-[2px] dark:bg-slate-700"
-                style={{ gridTemplateColumns: `repeat(${size}, 28px)` }}
-              >
-                {grid.flatMap((rowArr, r) =>
-                  rowArr.map((ch, c) => {
-                    const key = `${r},${c}`;
-                    const hasConflict = conflicts.has(key);
-                    return (
-                      <div
-                        key={key}
-                        className={
-                          'grid h-[28px] w-[28px] place-items-center rounded-[3px] text-xs font-black ' +
-                          (hasConflict
-                            ? 'bg-red-400 text-white'
-                            : ch != null
-                              ? 'bg-white text-slate-900 dark:bg-slate-100 dark:text-slate-900'
-                              : 'bg-slate-300 dark:bg-slate-800')
-                        }
-                      >
-                        {ch}
-                      </div>
-                    );
-                  }),
-                )}
-              </div>
-              {conflicts.size > 0 && (
-                <div className="mt-2 text-xs font-bold text-red-600 dark:text-red-400">
-                  {conflicts.size} conflicting/out-of-bounds cell{conflicts.size === 1 ? '' : 's'} — fix before saving.
-                </div>
-              )}
-            </div>
-
-            {/* Word list */}
-            <div className="min-w-0">
-              <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Words ({words.length})</div>
-              <div className="mt-2 flex flex-col gap-2">
-                {words.map((w, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950/40"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-black text-slate-900 dark:text-slate-100">
-                        {w.answer}{' '}
-                        <span className="font-semibold text-slate-400">
-                          · {w.direction} · row {w.row + 1}, col {w.col + 1}
-                        </span>
-                      </div>
-                      <div className="truncate text-xs font-semibold text-slate-500 dark:text-slate-400">{w.clue}</div>
-                    </div>
-                    <button
-                      onClick={() => removeWord(i)}
-                      className="shrink-0 rounded-xl px-2 py-1 text-xs font-bold text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-                {words.length === 0 && <div className="text-sm font-semibold text-slate-400">No words yet — add one below.</div>}
-              </div>
-
-              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 p-4 dark:border-slate-700">
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-6">
-                  <input
-                    className={inputCls + ' sm:col-span-2'}
-                    placeholder="Answer"
-                    value={wAnswer}
-                    onChange={(e) => setWAnswer(e.target.value)}
-                  />
-                  <select className={inputCls} value={wDirection} onChange={(e) => setWDirection(e.target.value as Direction)}>
-                    <option value="across">Across</option>
-                    <option value="down">Down</option>
-                  </select>
-                  <input
-                    type="number"
-                    min={1}
-                    max={size}
-                    className={inputCls}
-                    placeholder="Row"
-                    value={wRow}
-                    onChange={(e) => setWRow(Number(e.target.value) || 1)}
-                  />
-                  <input
-                    type="number"
-                    min={1}
-                    max={size}
-                    className={inputCls}
-                    placeholder="Col"
-                    value={wCol}
-                    onChange={(e) => setWCol(Number(e.target.value) || 1)}
-                  />
-                  <button
-                    onClick={addWord}
-                    className="rounded-2xl bg-slate-900 px-3 py-2 text-sm font-bold text-white transition hover:bg-slate-700 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
-                  >
-                    + Add
-                  </button>
-                </div>
-                <input
-                  className={inputCls + ' mt-2 w-full'}
-                  placeholder="Clue text"
-                  value={wClue}
-                  onChange={(e) => setWClue(e.target.value)}
-                />
-                <div className="mt-1 text-[11px] font-semibold text-slate-400">Row/col are 1-indexed from the top-left.</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between border-t border-slate-100 px-6 py-4 dark:border-slate-800">
+    <SidePanel
+      title={puzzle ? `Edit level #${puzzle.id}` : 'New crossword level'}
+      subtitle="The server checks the grid again when you save."
+      width="max-w-4xl"
+      onClose={closeFromPanel}
+      footer={
+        <>
+          {/* In the always-visible footer so a failed save is seen next to the button. */}
+          {error ? <Notice tone="danger" className="w-full">{error}</Notice> : null}
           {puzzle ? (
-            <button
-              onClick={handleDelete}
-              disabled={saving}
-              className="rounded-2xl px-4 py-2.5 text-sm font-bold text-red-600 transition hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/30"
-            >
+            <button type="button" onClick={handleDelete} disabled={saving} className={`mr-auto ${DANGER_TEXT_BTN}`}>
               Delete level
             </button>
-          ) : (
-            <div />
+          ) : null}
+          <Button type="button" variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+          <Button type="button" size="sm" onClick={handleSave} disabled={saving}>
+            {saving ? 'Saving…' : 'Save level'}
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Title" htmlFor="cw-title">
+          <input id="cw-title" className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. In the Kitchen" />
+        </Field>
+        <Field label="Grid size (5–15)" htmlFor="cw-size">
+          <input
+            id="cw-size"
+            type="number"
+            min={5}
+            max={15}
+            className={inputCls}
+            value={size}
+            onChange={(e) => setSize(Math.max(5, Math.min(15, Number(e.target.value) || 7)))}
+          />
+        </Field>
+        <Field label="Bonus word" htmlFor="cw-bonus-word">
+          <input
+            id="cw-bonus-word"
+            className={inputCls}
+            value={bonusWord}
+            onChange={(e) => setBonusWord(e.target.value)}
+            placeholder="Hidden word, never on the grid"
+          />
+        </Field>
+        <Field label="Bonus hint" htmlFor="cw-bonus-hint">
+          <input id="cw-bonus-hint" className={inputCls} value={bonusHint} onChange={(e) => setBonusHint(e.target.value)} placeholder="Shown to the player" />
+        </Field>
+      </div>
+
+      <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+        <input
+          type="checkbox"
+          checked={isPublished}
+          onChange={(e) => setIsPublished(e.target.checked)}
+          className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-600 dark:border-slate-700 dark:bg-slate-950"
+        />
+        Published (visible to players)
+      </label>
+
+      <div className="grid gap-6 lg:grid-cols-[auto_1fr]">
+        {/* Live grid preview */}
+        <div>
+          <div className={SUB_LABEL}>Live preview</div>
+          <div
+            className="mt-2 grid w-max gap-[2px] rounded-xl bg-slate-200 p-[2px] dark:bg-slate-700"
+            style={{ gridTemplateColumns: `repeat(${size}, 28px)` }}
+          >
+            {grid.flatMap((rowArr, r) =>
+              rowArr.map((ch, c) => {
+                const key = `${r},${c}`;
+                const hasConflict = conflicts.has(key);
+                return (
+                  <div
+                    key={key}
+                    className={
+                      'grid h-[28px] w-[28px] place-items-center rounded-[3px] text-xs font-black ' +
+                      (hasConflict
+                        ? 'bg-rose-500 text-white dark:bg-rose-500'
+                        : ch != null
+                          ? 'bg-white text-slate-900 dark:bg-slate-100 dark:text-slate-900'
+                          : 'bg-slate-300 dark:bg-slate-800')
+                    }
+                  >
+                    {ch}
+                  </div>
+                );
+              }),
+            )}
+          </div>
+          {conflicts.size > 0 && (
+            <div className="mt-2 max-w-[260px] text-xs font-bold text-rose-600 dark:text-rose-400">
+              {conflicts.size} conflicting or out-of-bounds cell{conflicts.size === 1 ? '' : 's'}. Fix before saving.
+            </div>
           )}
-          <div className="flex gap-3">
-            <button
-              onClick={onClose}
-              className="rounded-2xl border border-slate-200 px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="rounded-2xl bg-slate-900 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-slate-700 disabled:opacity-50 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
-            >
-              {saving ? 'Saving…' : 'Save level'}
-            </button>
+        </div>
+
+        {/* Word list */}
+        <div className="min-w-0">
+          <div className={SUB_LABEL}>Words ({words.length})</div>
+          <div className="mt-2 flex flex-col gap-2">
+            {words.map((w, i) => (
+              <div
+                key={i}
+                className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 px-3 py-2 dark:border-slate-800"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-black text-slate-900 dark:text-slate-100">
+                    {w.answer}{' '}
+                    <span className="font-semibold text-slate-400 dark:text-slate-500">
+                      · {w.direction} · row {w.row + 1}, col {w.col + 1}
+                    </span>
+                  </div>
+                  <div className="truncate text-xs font-semibold text-slate-500 dark:text-slate-400">{w.clue}</div>
+                </div>
+                <button type="button" onClick={() => removeWord(i)} className={`shrink-0 ${DANGER_TEXT_BTN}`}>
+                  Remove
+                </button>
+              </div>
+            ))}
+            {words.length === 0 && <div className="text-sm font-semibold text-slate-400 dark:text-slate-500">No words yet. Add one below.</div>}
+          </div>
+
+          <div className="mt-4 rounded-2xl bg-slate-50 p-4 dark:bg-slate-950/50">
+            <div className={SUB_LABEL}>Add a word</div>
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-6">
+              <input
+                className={inputCls + ' sm:col-span-2'}
+                placeholder="Answer"
+                aria-label="Answer"
+                value={wAnswer}
+                onChange={(e) => setWAnswer(e.target.value)}
+              />
+              <select className={inputCls} aria-label="Direction" value={wDirection} onChange={(e) => setWDirection(e.target.value as Direction)}>
+                <option value="across">Across</option>
+                <option value="down">Down</option>
+              </select>
+              <input
+                type="number"
+                min={1}
+                max={size}
+                className={inputCls}
+                placeholder="Row"
+                aria-label="Row (from 1, top)"
+                value={wRow}
+                onChange={(e) => setWRow(Number(e.target.value) || 1)}
+              />
+              <input
+                type="number"
+                min={1}
+                max={size}
+                className={inputCls}
+                placeholder="Col"
+                aria-label="Column (from 1, left)"
+                value={wCol}
+                onChange={(e) => setWCol(Number(e.target.value) || 1)}
+              />
+              <Button type="button" size="sm" onClick={addWord}>+ Add</Button>
+            </div>
+            <input
+              className={inputCls + ' mt-2 w-full'}
+              placeholder="Clue text"
+              aria-label="Clue text"
+              value={wClue}
+              onChange={(e) => setWClue(e.target.value)}
+            />
+            <div className="mt-1 text-[11px] font-semibold text-slate-400 dark:text-slate-500">Row and column count from 1, starting at the top-left.</div>
           </div>
         </div>
       </div>
-    </div>
+    </SidePanel>
   );
 }
 
-const inputCls =
-  'w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100';
+const SUB_LABEL = 'text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400';
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+const inputCls =
+  'w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 dark:border-slate-800 dark:bg-slate-950/30 dark:text-slate-100';
+
+function Field({ label, htmlFor, children }: { label: string; htmlFor: string; children: ReactNode }) {
   return (
     <div>
-      <label className="mb-1 block text-xs font-black uppercase tracking-wider text-slate-400">{label}</label>
+      <label htmlFor={htmlFor} className="mb-1 block text-xs font-black uppercase tracking-wide text-slate-600 dark:text-slate-300">{label}</label>
       {children}
     </div>
   );

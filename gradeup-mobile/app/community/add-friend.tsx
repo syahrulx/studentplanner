@@ -13,6 +13,7 @@ import {
   Share,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { FriendPeek, type FriendPeekPerson } from '@/components/FriendPeek';
 import * as Linking from 'expo-linking';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
@@ -124,6 +125,9 @@ export default function AddFriendScreen() {
 
   const [tab, setTab] = useState<Tab>('nearby');
   const [searchQuery, setSearchQuery] = useState('');
+  /** The student whose peek card is open. No "open full profile" here — you
+   *  are not friends yet, so there is no profile screen to send them to. */
+  const [peekPerson, setPeekPerson] = useState<FriendPeekPerson | null>(null);
   const [searchResults, setSearchResults] = useState<FriendProfile[]>([]);
   const [suggestions, setSuggestions] = useState<FriendProfile[]>([]);
   const [outgoingRequests, setOutgoingRequests] = useState<Friendship[]>([]);
@@ -382,14 +386,36 @@ export default function AddFriendScreen() {
   const outgoingIds = useMemo(() => new Set(outgoingRequests.map((r) => r.addressee_id)), [outgoingRequests]);
 
   const renderPerson = (person: FriendProfile) => {
+    const peek = () =>
+      setPeekPerson({
+        id: person.id,
+        name: person.name,
+        avatar_url: person.avatar_url,
+        university: person.university,
+        campus: person.campus,
+        faculty: person.faculty,
+        course: person.program || person.course,
+      });
     const isFriend = friendIds.has(person.id);
     const incoming = isFriend ? undefined : incomingByRequester.get(person.id);
     const isSent = !isFriend && !incoming && (sentIds.has(person.id) || outgoingIds.has(person.id));
     return (
       <View key={person.id} style={[styles.personRow, { borderBottomColor: theme.border }]}>
-        <Avatar name={person.name} avatarUrl={person.avatar_url} size={44} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`About ${person.name}`}
+          onPress={peek}
+        >
+          <Avatar name={person.name} avatarUrl={person.avatar_url} size={44} />
+        </Pressable>
         <View style={styles.personInfo}>
-          <Text style={[styles.personName, { color: theme.text }]} numberOfLines={1} ellipsizeMode="tail">
+          <Text
+            style={[styles.personName, { color: theme.text }]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            onPress={peek}
+            suppressHighlighting
+          >
             {person.name}
           </Text>
           <Text style={[styles.personSub, { color: theme.textSecondary }]} numberOfLines={1}>
@@ -432,6 +458,7 @@ export default function AddFriendScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <FriendPeek person={peekPerson} onClose={() => setPeekPerson(null)} />
       {/* Header */}
       <View style={styles.headerRow}>
         <Pressable

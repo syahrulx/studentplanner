@@ -1548,14 +1548,38 @@ export type ExtractedCalendarData = {
   }>;
 };
 
-export type BroadcastAudience = 'all' | 'user_ids' | 'university';
+export type BroadcastAudience = 'all' | 'user_ids' | 'university' | 'campus';
 export type BroadcastCategory = 'reaction' | 'shared_task' | 'circle' | 'friend';
 
 export type BroadcastPreviewArgs = {
   audience: BroadcastAudience;
   userIds?: string[];
   universityId?: string;
+  /** audience 'campus': exact campus names as saved on profiles (from listBroadcastCampuses). */
+  campuses?: string[];
 };
+
+export type BroadcastCampus = { campus: string; count: number };
+
+/**
+ * Campuses at a university with how many students saved each one. Names come
+ * from profiles.campus exactly as saved, so a broadcast matches them exactly.
+ * Official campuses (campuses table) with no students yet are listed with 0.
+ */
+export async function listBroadcastCampuses(universityId: string): Promise<BroadcastCampus[]> {
+  const headers = await adminInvokeHeaders();
+  const [{ data, error }, official] = await Promise.all([
+    invokeEdgeFunction('admin_community_push', { action: 'campuses', universityId }, headers),
+    supabase.from('campuses').select('name').eq('university_id', universityId),
+  ]);
+  const saved = unwrapFunctionData<{ campuses: BroadcastCampus[] }>(data, error).campuses ?? [];
+  const seen = new Set(saved.map((c) => c.campus.trim().toLowerCase()));
+  const empty = (official.data ?? [])
+    .map((row: { name: string }) => row.name)
+    .filter((name) => name && !seen.has(name.trim().toLowerCase()))
+    .map((campus) => ({ campus, count: 0 }));
+  return [...saved, ...empty];
+}
 
 export async function previewBroadcast(opts: BroadcastPreviewArgs): Promise<{ count: number }> {
   const headers = await adminInvokeHeaders();
@@ -1586,6 +1610,10 @@ export type SendBroadcastResult = {
   in_app_recipients?: number;
   // Number of users eligible for a remote Expo push (subset of in_app_recipients).
   push_recipients?: number;
+  // The server now replies straight away and sends in the background; the
+  // final numbers land in admin_logs row `log_id` (meta.phase 'done' / 'failed').
+  queued?: boolean;
+  log_id?: string | null;
 };
 
 export async function sendBroadcast(opts: SendBroadcastArgs): Promise<SendBroadcastResult> {
@@ -2818,6 +2846,8 @@ export type AdminConfessionComment = {
   status: 'active' | 'flagged' | 'removed';
   suspect_terms: string[];
   created_at: string;
+  /** "OP" / "Anon 3" — the per-thread label the app shows as a nickname. */
+  alias: string | null;
 };
 
 /** Replies under one confession — fetched only when a post is opened. */
@@ -2978,4 +3008,11 @@ export async function getFeedbackSurveyResults(id: string) {
     stats: FeedbackSurveyStats;
     responses: FeedbackResponseRow[];
   }>(data, error);
+}
+
+/** UiTM's public HEA calendar page, read through an admin-only edge function (the browser can't fetch it directly). */
+export async function getUitmHeaPage(refresh = false): Promise<{ html: string; fetched_at: string; from_cache: boolean; stale?: boolean }> {
+  const headers = await adminInvokeHeaders();
+  const { data, error } = await invokeEdgeFunction('admin_uitm_hea', { refresh }, headers);
+  return unwrapFunctionData<{ html: string; fetched_at: string; from_cache: boolean; stale?: boolean }>(data, error);
 }

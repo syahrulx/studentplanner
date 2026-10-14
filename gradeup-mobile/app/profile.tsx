@@ -10,7 +10,6 @@ import {
   Alert,
   Modal,
   TextInput,
-  KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -20,8 +19,11 @@ import { useCommunity } from '@/src/context/CommunityContext';
 import { uploadAvatar, getCircleLocationVisibility, setCircleLocationVisibility } from '@/src/lib/communityApi';
 import type { LocationVisibility } from '@/src/lib/communityApi';
 import { useTheme } from '@/hooks/useTheme';
+import { useProfileCard } from '@/hooks/useProfileCard';
+import { ProfileBannerView } from '@/components/ProfileBannerView';
+import { AttendanceStatsSection } from '@/components/AttendanceStatsSection';
+import { resolveProfileBanner } from '@/src/lib/profileBanners';
 import Feather from '@expo/vector-icons/Feather';
-import { DEEP_SEA_PALETTE } from '@/constants/Themes';
 import { useTranslations } from '@/src/i18n';
 import { featherForLegacyCircleEmoji } from '@/src/lib/featherGlyphUi';
 import {
@@ -40,19 +42,26 @@ import { pickAvatarImage } from '@/src/lib/pickAvatarImage';
 import { fetchCampuses, type Campus } from '@/src/lib/eventsApi';
 import { fetchCampusFaculties, addCampusFaculty } from '@/src/lib/campusRoomsApi';
 import { COUNTRIES, getCountryByCode } from '@/src/lib/countries';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
+
+/** The banner strip above the name. */
+const HERO_BANNER_H = 104;
+const AVATAR_SIZE = 88;
+/** The white ring that separates the photo from the banner behind it. */
+const AVATAR_RING = 4;
 
 export default function Profile() {
   const {
     user,
     language,
-    theme: themeId,
     setUser,
     updateProfile,
     academicCalendar,
   } = useApp();
   const { locationVisibility, setLocationVisibility, circles, userId } = useCommunity();
   const theme = useTheme();
-  const profileHeroBg = themeId === 'light' ? DEEP_SEA_PALETTE.primary : theme.primary;
+  const myCard = useProfileCard(user.id);
+  const myBanner = resolveProfileBanner(myCard?.banner, user.subscriptionPlan, user.id);
   const T = useTranslations(language);
   const totalWeeks = academicCalendar?.totalWeeks ?? 14;
   const semesterPhase = user.semesterPhase ?? 'teaching';
@@ -469,13 +478,29 @@ export default function Profile() {
         </Pressable>
       </View>
 
-      <View style={[styles.heroWrap, { backgroundColor: profileHeroBg }]}>
-        <Image
-          source={require('../assets/images/wave-texture.png')}
-          style={[StyleSheet.absoluteFillObject, styles.heroTexture]}
-          resizeMode="cover"
+      {/* The header is the student's own banner. The name and student id sit
+          below it on the card, in theme text, rather than in white on top of
+          it — white only works while every banner is dark, and Sakura and
+          Arcade are pale. Scrimming them dark enough to carry white text would
+          throw away the design they paid for. */}
+      <View style={[styles.heroWrap, { backgroundColor: theme.card }]}>
+        <ProfileBannerView
+          banner={myBanner}
+          // The theme's own accent, with no special case.
+          //
+          // This used to force a deep navy whenever themeId was 'light', which
+          // made sense when the hero was a solid block carrying white text —
+          // the light theme's primary was too pale to read white on. The name
+          // and student id moved below the banner, so nothing sits on it any
+          // more and that reason is gone.
+          //
+          // It had also started lying. themePack overrides the palette
+          // completely while themeId stays underneath it, so a student on the
+          // Spider pack over a light base saw a red app with a navy banner, and
+          // "Theme colour" named a colour that appeared nowhere else on screen.
+          themeColor={theme.primary}
+          height={HERO_BANNER_H}
         />
-        <View style={[StyleSheet.absoluteFillObject, styles.heroOverlay]} />
         <View style={styles.heroContent}>
           <View style={styles.avatarWrap}>
             <View style={styles.avatar}>
@@ -494,12 +519,14 @@ export default function Profile() {
             </Pressable>
           </View>
           <Pressable style={styles.nameRow} onPress={handleEditName}>
-            <Text style={styles.heroName}>{user.name}</Text>
-            <Feather name="edit-2" size={16} color="rgba(255,255,255,0.7)" style={{ marginLeft: 8 }} />
+            <Text style={[styles.heroName, { color: theme.text }]}>{user.name}</Text>
+            <Feather name="edit-2" size={16} color={theme.textSecondary} style={{ marginLeft: 8 }} />
           </Pressable>
           <Pressable style={styles.nameRow} onPress={handleEditStudentId}>
-            <Text style={styles.heroId}>{displayProfileText(user.studentId)}</Text>
-            <Feather name="edit-2" size={12} color="rgba(255,255,255,0.7)" style={{ marginLeft: 6 }} />
+            <Text style={[styles.heroId, { color: theme.textSecondary }]}>
+              {displayProfileText(user.studentId)}
+            </Text>
+            <Feather name="edit-2" size={12} color={theme.textSecondary} style={{ marginLeft: 6 }} />
           </Pressable>
         </View>
       </View>
@@ -637,6 +664,28 @@ export default function Profile() {
         </View>
       </View>
 
+      <AttendanceStatsSection sectionTitleStyle={styles.sectionTitle} cardStyle={styles.cardGroup} />
+
+      <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>PROFILE CARD</Text>
+      <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
+        <Pressable
+          style={({ pressed }) => [styles.privacyRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+          onPress={() => router.push('/profile-card' as any)}
+          accessibilityRole="button"
+        >
+          <View style={{ width: 28, alignItems: 'center', marginRight: 12 }}>
+            <Feather name="credit-card" size={22} color={theme.primary} />
+          </View>
+          <View style={styles.privacyBody}>
+            <Text style={[styles.privacyLabel, { color: theme.text }]}>Your profile card</Text>
+            <Text style={[styles.privacyDesc, { color: theme.textSecondary }]}>
+              Pick a banner, and choose what other students see.
+            </Text>
+          </View>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </Pressable>
+      </View>
+
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>LOCATION PRIVACY</Text>
       <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
         {privacyOptions.map((opt, i) => (
@@ -731,7 +780,7 @@ export default function Profile() {
         animationType="fade"
         onRequestClose={() => setEditModalVisible(false)}
       >
-        <KeyboardAvoidingView
+        <KeyboardAvoidingScreen
           style={styles.modalBackdrop}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
@@ -770,7 +819,7 @@ export default function Profile() {
               </Pressable>
             </View>
           </View>
-        </KeyboardAvoidingView>
+        </KeyboardAvoidingScreen>
       </Modal>
 
       {/* Campus List Modal */}
@@ -780,7 +829,7 @@ export default function Profile() {
         animationType="fade"
         onRequestClose={() => setCampusListModalVisible(false)}
       >
-        <KeyboardAvoidingView
+        <KeyboardAvoidingScreen
           style={styles.modalBackdrop}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
@@ -841,7 +890,7 @@ export default function Profile() {
               </Pressable>
             </View>
           </View>
-        </KeyboardAvoidingView>
+        </KeyboardAvoidingScreen>
       </Modal>
 
       {/* Country Modal */}
@@ -899,7 +948,7 @@ export default function Profile() {
         animationType="fade"
         onRequestClose={() => setFacultyListModalVisible(false)}
       >
-        <KeyboardAvoidingView
+        <KeyboardAvoidingScreen
           style={styles.modalBackdrop}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
@@ -975,7 +1024,7 @@ export default function Profile() {
               <Text style={[styles.facCancelText, { color: theme.textSecondary }]}>{T('cancel')}</Text>
             </Pressable>
           </View>
-        </KeyboardAvoidingView>
+        </KeyboardAvoidingScreen>
       </Modal>
     </ScrollView>
   );
@@ -1018,30 +1067,28 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS,
     marginBottom: SECTION,
     overflow: 'hidden',
-    paddingVertical: 32,
-    paddingHorizontal: 24,
-    minHeight: 200,
     position: 'relative',
     marginHorizontal: PAD,
   },
-  heroTexture: {
-    opacity: 0.35,
-    borderRadius: RADIUS,
-  },
-  heroOverlay: {
-    backgroundColor: 'rgba(0, 51, 102, 0.35)',
-    borderRadius: RADIUS,
-  },
+  // Left-aligned, following the profile card. The card is the reference for
+  // all three surfaces that show a banner, so they cannot drift apart.
   heroContent: {
-    position: 'relative',
-    zIndex: 1,
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    paddingHorizontal: 20,
+    paddingBottom: 20,
   },
-  avatarWrap: { position: 'relative', marginBottom: 14 },
+  // Straddles the banner's bottom edge, the same as the profile card.
+  avatarWrap: {
+    position: 'relative',
+    marginTop: -(AVATAR_SIZE / 2 + AVATAR_RING),
+    marginBottom: 10,
+  },
   avatar: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    borderRadius: AVATAR_SIZE / 2,
+    borderWidth: AVATAR_RING,
+    borderColor: '#ffffff',
     backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1062,8 +1109,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#003366',
   },
-  heroName: { fontSize: 24, fontWeight: '800', color: '#fff', marginBottom: 4, letterSpacing: -0.3 },
-  heroId: { fontSize: 14, color: 'rgba(255,255,255,0.9)' },
+  heroName: { fontSize: 24, fontWeight: '800', marginBottom: 4, letterSpacing: -0.3 },
+  heroId: { fontSize: 14 },
   nameRow: { flexDirection: 'row', alignItems: 'center' },
   sectionTitle: {
     fontSize: 13,
