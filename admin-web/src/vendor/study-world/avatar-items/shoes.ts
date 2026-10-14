@@ -24,7 +24,7 @@ export const SHOES: CategoryItems = {
     { id: "loafers", name: "Loafers", tier: "free" },
     { id: "sandals", name: "Sandals", tier: "free" },
     { id: "hightops", name: "High-tops", tier: "free" },
-    { id: "rainboots", name: "Rain boots", tier: "coins", price: 40 },
+    { id: "rainboots", name: "Rain boots", tier: "coins", price: 50 },
     { id: "platform", name: "Platforms", tier: "coins", price: 60 },
     { id: "hoversneakers", name: "Hoverboard Sneakers", tier: "coins", price: 220 },
     { id: "mechaboots", name: "Mecha Boots", tier: "coins", price: 300 },

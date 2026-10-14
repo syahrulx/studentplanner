@@ -88,7 +88,7 @@ export const CATALOG: Record<ItemCategory, CatalogItem[]> = {
     { id: "long", name: "Long", tier: "free" },
     { id: "curly", name: "Curly", tier: "free" },
     { id: "bun", name: "Bun", tier: "free" },
-    { id: "ponytail", name: "Ponytail", tier: "coins", price: 40 },
+    { id: "ponytail", name: "Ponytail", tier: "coins", price: 50 },
     { id: "twintails", name: "Twin tails", tier: "coins", price: 60 },
     { id: "mohawk", name: "Mohawk", tier: "coins", price: 60 },
   ],
@@ -96,7 +96,7 @@ export const CATALOG: Record<ItemCategory, CatalogItem[]> = {
     { id: "round", name: "Round", tier: "free" },
     { id: "happy", name: "Happy", tier: "free" },
     { id: "sleepy", name: "Sleepy", tier: "free" },
-    { id: "wink", name: "Wink", tier: "coins", price: 30 },
+    { id: "wink", name: "Wink", tier: "coins", price: 50 },
     { id: "sparkle", name: "Star eyes", tier: "plus" },
     { id: "cat", name: "Cat eyes", tier: "plus" },
   ],
@@ -120,7 +120,7 @@ export const CATALOG: Record<ItemCategory, CatalogItem[]> = {
   shoes: [
     { id: "sneakers", name: "Sneakers", tier: "free" },
     { id: "boots", name: "Boots", tier: "free" },
-    { id: "slippers", name: "Slippers", tier: "coins", price: 30 },
+    { id: "slippers", name: "Slippers", tier: "coins", price: 50 },
     { id: "rocket", name: "Rocket boots", tier: "pro" },
   ],
   head: [
@@ -137,7 +137,7 @@ export const CATALOG: Record<ItemCategory, CatalogItem[]> = {
   face: [
     { id: "none", name: "None", tier: "free" },
     { id: "glasses", name: "Glasses", tier: "free" },
-    { id: "shades", name: "Shades", tier: "coins", price: 40 },
+    { id: "shades", name: "Shades", tier: "coins", price: 50 },
     { id: "hearts", name: "Heart specs", tier: "plus" },
     { id: "visor", name: "Cyber visor", tier: "pro" },
   ],

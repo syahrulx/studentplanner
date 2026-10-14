@@ -497,7 +497,7 @@ export const EFFECT: CategoryItems = {
     { id: "lanterns", name: "Lantern Spirits", tier: "coins", price: 450 },
     { id: "sakurastorm", name: "Sakura Storm", tier: "coins", price: 480 },
     { id: "trophyaura", name: "Trophy Aura", tier: "coins", price: 400 },
-    { id: "blackhole", name: "Black Hole", tier: "coins", price: 800 },
+    { id: "blackhole", name: "Black Hole", tier: "coins", price: 1000 },
   ],
   draw: {
     bubbles: {

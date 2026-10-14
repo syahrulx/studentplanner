@@ -128,7 +128,7 @@ export const HAIR: CategoryItems = {
     { id: "bob", name: "Bob", tier: "free" },
     { id: "braids", name: "Braids", tier: "free" },
     { id: "afro", name: "Afro", tier: "free" },
-    { id: "sidepart", name: "Side part", tier: "coins", price: 40 },
+    { id: "sidepart", name: "Side part", tier: "coins", price: 50 },
     { id: "wolfcut", name: "Wolf cut", tier: "coins", price: 60 },
     { id: "wavy", name: "Wavy long", tier: "plus" },
     { id: "spacebuns", name: "Space buns", tier: "plus" },
