@@ -114,6 +114,7 @@ import { clearLockScreenImages } from '../lib/lockScreen/lockScreenStore';
 import { getTodayISO, isTaskPastDueNow } from '../utils/date';
 import { getCalendarProvider } from '../lib/calendarProviders';
 import { UITM_HEA_PERIOD_COUNT_MIN } from '../lib/calendarProviders/uitm';
+import { isPendingPlaceholderCalendar } from '../lib/pendingCalendar';
 import { resolveUniversityIdForCalendar } from '../lib/universities';
 import { fetchLatestCalendarForUniversity, offerToCalendarPatch } from '../lib/universityCalendarOffersDb';
 import { syncHomeScreenWidget } from '../homeWidgetSync';
@@ -658,7 +659,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // An explicit semester/break choice must outrank background provider
       // refreshes. Users can still choose a different official calendar from
       // Academic Calendar settings whenever they want.
-      if (!calExpired && (cal?.selectionSource === 'user' || cal?.selectionSource === 'manual')) return;
+      if (
+        !calExpired &&
+        !isPendingPlaceholderCalendar(cal) &&
+        (cal?.selectionSource === 'user' || cal?.selectionSource === 'manual')
+      ) return;
       const periodsN = Array.isArray(cal?.periods) ? cal.periods.length : 0;
       if (!calExpired && periodsN >= UITM_HEA_PERIOD_COUNT_MIN) return;
 
@@ -1337,6 +1342,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           // outranks the provider while it is still about the current term.
           const hasExplicitCalendarChoice =
             !isCalendarExpired(calendar) &&
+            !isPendingPlaceholderCalendar(calendar) &&
             (calendar?.selectionSource === 'user' ||
               calendar?.selectionSource === 'manual');
           if (provider && profile && !hasExplicitCalendarChoice) {

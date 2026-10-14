@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { PENDING_CALENDAR_LABEL } from '@/src/lib/pendingCalendar';
 import {
   View, Text, TextInput, Pressable, ScrollView, FlatList,
   StyleSheet, Platform, Alert, ActivityIndicator, } from 'react-native';
@@ -267,7 +268,7 @@ export default function UniversityConnectScreen() {
         end.setDate(end.getDate() + tw * 7 - 1);
         const endStr = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
         await updateAcademicCalendar({
-          semesterLabel: `Pending auto-sync`,
+          semesterLabel: PENDING_CALENDAR_LABEL,
           startDate: today,
           endDate: endStr,
           totalWeeks: tw,

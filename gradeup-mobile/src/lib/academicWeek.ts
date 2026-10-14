@@ -204,7 +204,11 @@ export function teachingWeekNumberForDate(
     const start = dow === 0 ? raw : new Date(raw.getFullYear(), raw.getMonth(), raw.getDate() - dow);
     const current = new Date(`${trimmed}T00:00:00`);
     const diffDays = Math.floor((current.getTime() - start.getTime()) / 864e5);
-    const rawWeek = Math.floor(diffDays / 7) + 1;
+    // The student's own "move my week" correction. The periods branch above
+    // applies it (dueDateToTeachingWeekRaw), but a calendar with dates and no
+    // lecture rows skipped it, so a +2 set in settings did nothing on Home.
+    const offset = Math.trunc(Number(calendar?.teachingWeekOffset) || 0);
+    const rawWeek = Math.floor(diffDays / 7) + 1 + (diffDays >= 0 ? offset : 0);
     return Math.min(Math.max(rawWeek, 1), Math.max(1, totalWeeksCap));
   }
 
