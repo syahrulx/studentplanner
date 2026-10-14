@@ -24,10 +24,13 @@ export const SHOES: CategoryItems = {
     { id: "loafers", name: "Loafers", tier: "free" },
     { id: "sandals", name: "Sandals", tier: "free" },
     { id: "hightops", name: "High-tops", tier: "free" },
-    { id: "rainboots", name: "Rain boots", tier: "coins", price: 40 },
+    { id: "rainboots", name: "Rain boots", tier: "coins", price: 50 },
     { id: "platform", name: "Platforms", tier: "coins", price: 60 },
     { id: "hoversneakers", name: "Hoverboard Sneakers", tier: "coins", price: 220 },
     { id: "mechaboots", name: "Mecha Boots", tier: "coins", price: 300 },
+    { id: "forgeboots", name: "Forge Boots", tier: "coins", price: 200 },
+    { id: "voltrunners", name: "Volt Runners", tier: "coins", price: 220 },
+    { id: "troopboots", name: "Trooper Boots", tier: "coins", price: 180 },
     { id: "lightup", name: "Light-up sneakers", tier: "plus" },
     { id: "skates", name: "Roller skates", tier: "plus" },
     { id: "ballet", name: "Ballet flats", tier: "plus" },
@@ -214,6 +217,108 @@ export const SHOES: CategoryItems = {
           }
         });
         c.globalAlpha = 1;
+      },
+    },
+    forgeboots: {
+      animated: true,
+      shoe: (p, x, y) => {
+        const cu = "#b8693a";
+        const cuL = "#e3a06a";
+        const cuS = "#8c4a29";
+        const te = "#2aa79b";
+        const teL = "#8ff0e4";
+        const teS = "#1b746d";
+        const at = (i: number) => (isLeft(x) ? x + i : x + 3 - i);
+        const up = lifted(p, x);
+        const pulse = (Math.sin(p.t / 320) + 1) / 2;
+        // Teal knee band, copper shin plate with a teal stripe.
+        p.R(x, y - 3, 4, 1, te);
+        p.px(at(1), y - 3, teL);
+        p.px(at(3), y - 3, teS);
+        p.R(x, y - 2, 4, 2, cu);
+        p.px(at(1), y - 2, cuL);
+        p.R(at(3), y - 2, 1, 2, cuS);
+        p.px(at(2), y - 1, te);
+        // Armoured foot, one pixel wider on the outside.
+        p.R(x, y, 4, 1, cu);
+        p.px(at(-1), y, cuS);
+        p.px(at(1), y, cuL);
+        p.px(at(3), y, cuS);
+        // Dark sole with a thruster port that glows softly.
+        p.R(x, y + 1, 4, 1, "#2b2522");
+        p.px(at(-1), y + 1, "#2b2522");
+        p.R(x + 1, y + 1, 2, 1, p.hsl(174, 80, 34 + pulse * 22 + (up ? 20 : 0)));
+        // The lifted foot fires a tiny thruster flame.
+        if (up) {
+          const flick = Math.floor(p.t / 80) % 2;
+          p.R(x + 1, y + 2, 2, 1, flick ? teL : "#ffffff");
+          p.px(flick ? x + 1 : x + 2, y + 3, te);
+        }
+      },
+    },
+    voltrunners: {
+      animated: true,
+      shoe: (p, x, y) => {
+        const yel = "#ffd23f";
+        const yelS = "#d9a91c";
+        const blu = "#2f7bff";
+        const bluL = "#8fd8ff";
+        const at = (i: number) => (isLeft(x) ? x + i : x + 3 - i);
+        // Yellow upper with an electric-blue bolt along the side.
+        p.R(x, y - 1, 4, 2, yel);
+        p.R(at(3), y - 1, 1, 2, yelS);
+        p.px(at(2), y - 1, WHITE);
+        // The bolt flashes white for a moment every couple of seconds.
+        const flash = (p.t + (isLeft(x) ? 0 : 900)) % 2200 < 120;
+        p.px(at(1), y - 1, flash ? "#ffffff" : blu);
+        p.px(at(2), y, flash ? bluL : blu);
+        // Blue sole with a light at the heel.
+        p.R(x, y + 1, 4, 1, blu);
+        p.px(at(3), y + 1, "#1d4fb0");
+        p.px(at(0), y + 1, bluL);
+        // Sparks crackle round the foot that is lifted mid-step.
+        if (!lifted(p, x)) return;
+        const f = Math.floor(p.t / 70) % 3;
+        const sparks: [number, number][][] = [
+          [
+            [at(-1), y - 1],
+            [at(4), y + 1],
+          ],
+          [
+            [at(-1), y + 1],
+            [at(-2), y],
+          ],
+          [
+            [at(4), y - 1],
+            [at(-1), y],
+          ],
+        ];
+        sparks[f].forEach(([sx, sy], i) => p.px(sx, sy, i ? yel : bluL));
+        p.px(x + 1 + (f % 2), y + 2, f === 1 ? "#ffffff" : bluL);
+      },
+    },
+    troopboots: {
+      shoe: (p, x, y) => {
+        const W = "#eef1f4";
+        const WS = "#c5ccd6";
+        const WD = "#9aa4b2";
+        const sl = "#4b5668";
+        const slD = "#333b48";
+        const at = (i: number) => (isLeft(x) ? x + i : x + 3 - i);
+        // White shin plate with a gold trim pixel and a slate ankle joint.
+        p.R(x, y - 3, 4, 2, W);
+        p.px(at(1), y - 3, "#ffffff");
+        p.R(at(3), y - 3, 1, 2, WS);
+        p.px(at(0), y - 2, "#e2b23f");
+        p.R(x, y - 1, 4, 1, sl);
+        p.px(at(1), y - 1, WD);
+        // White foot plate and a slate tread.
+        p.R(x, y, 4, 1, W);
+        p.px(at(-1), y, WS);
+        p.px(at(3), y, WS);
+        p.R(x, y + 1, 4, 1, slD);
+        p.px(at(-1), y + 1, slD);
+        p.px(at(1), y + 1, sl);
       },
     },
     skates: {

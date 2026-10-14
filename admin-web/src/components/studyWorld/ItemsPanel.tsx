@@ -18,6 +18,7 @@ import {
 import { BTN_DARK, BTN_LIGHT, CARD, FIELD, when } from './format';
 import { ErrorBox, Field, Modal } from './ui';
 import { ItemPicture } from './WorldArt';
+import { FOOD_EFFECTS, FOOD_HOURS, describeFood } from '../../vendor/study-world/food';
 
 const EMPTY: WorldItemInput = {
   category: 'hair',
@@ -290,6 +291,12 @@ function ItemEditor({ id, initial, onClose, onSaved }: { id: string | null; init
         <div className="min-w-0 space-y-1">
           <div className="text-lg font-black text-slate-950 dark:text-white">{v.emoji && isCafe ? `${v.emoji} ` : ''}{v.name || 'New item'}</div>
           <div className="text-xs font-semibold text-slate-500">{CATEGORY_LABEL[v.category]} · {v.tier === 'coins' ? `${v.price_coins ?? 0} coins` : TIER_LABEL[v.tier]}</div>
+          {isCafe ? (
+            <div className="text-xs font-bold text-emerald-700 dark:text-emerald-300">
+              {FOOD_EFFECTS[v.item_key] ? `${describeFood(v.item_key)} · for ${FOOD_HOURS} hours` : 'No effect: the website has no effect for this key, so it is just a treat.'}
+              <span className="block text-[11px] font-semibold text-slate-400">The effect is set in the website code, not here. One drink and one snack at a time; a new one replaces the old.</span>
+            </div>
+          ) : null}
           <div className="text-[11px] font-semibold text-slate-400">{isCafe ? 'How it shows on the website café menu.' : isShowoff ? (v.category === 'furniture' || v.category === 'room_theme' ? 'How it looks in a dorm room — drawn by the website’s own code.' : 'How other players see it in the room — drawn by the website’s own code.') : 'Close-up, and worn by the default avatar — drawn by the website’s own code.'}</div>
         </div>
       </div>

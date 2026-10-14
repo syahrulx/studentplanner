@@ -96,26 +96,9 @@ export type AcademicLevel = 'Diploma' | 'Bachelor' | 'Master' | 'PhD' | 'Foundat
 /** Derived from semester start date + today vs teaching weeks / break */
 export type SemesterPhase = 'no_calendar' | 'before_start' | 'teaching' | 'break_after';
 
-export type AcademicPeriodType =
-  | 'lecture'
-  | 'orientation'
-  | 'registration'
-  | 'test'
-  | 'revision'
-  | 'exam'
-  | 'break'
-  | 'special_break'
-  | 'holiday'
-  | 'industrial_training'
-  | 'other';
-
-/** A dated range within a semester (inclusive). */
-export interface AcademicPeriod {
-  type: AcademicPeriodType;
-  label: string;
-  startDate: string; // YYYY-MM-DD
-  endDate: string;   // YYYY-MM-DD
-}
+// Defined beside the HEA parser so the Edge Function copy shares them.
+import type { AcademicPeriod, AcademicPeriodType } from './lib/uitmHeaTypes';
+export type { AcademicPeriod, AcademicPeriodType };
 
 /** Per-user academic calendar: semester dates and week count for SOW alignment */
 export interface AcademicCalendar {

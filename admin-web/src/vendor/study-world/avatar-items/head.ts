@@ -256,6 +256,194 @@ const plume = (p: Painter) => {
   p.px(11, -2, "#fff1b8");
 };
 
+/** Pick a colour from a list by v in 0–1 (for glows that pulse in steps). */
+const step = (list: string[], v: number) =>
+  list[Math.min(list.length - 1, Math.max(0, Math.floor(v * list.length)))];
+
+/**
+ * A little picture from strings: each character is a key in `pal`, "." is
+ * empty. (x0, y0) is the top-left; `flip` mirrors it to the other side of the
+ * body (x → 23 − x), for the second wing, horn or tuft.
+ */
+const art = (
+  p: Painter,
+  pic: string[],
+  x0: number,
+  y0: number,
+  pal: Record<string, string>,
+  flip = false,
+) =>
+  pic.forEach((row, j) =>
+    [...row].forEach((ch, i) => {
+      const c = pal[ch];
+      if (c) p.px(flip ? 23 - (x0 + i) : x0 + i, y0 + j, c);
+    }),
+  );
+
+/** Copper and teal plates for the forge visor; the slit glows in these steps. */
+const FORGE = {
+  cu: "#b8673a",
+  cuL: "#e3955c",
+  cuS: "#8a4a26",
+  cuD: "#5c2e16",
+  te: "#2a9d92",
+  teL: "#6adccf",
+  teD: "#1a6660",
+};
+const FORGE_GLOW = ["#2bb5a8", "#46d2c3", "#78eadd", "#b5fcf3"];
+/** 0–1 breathing pulse of the forge visor's glow. */
+const forgePulse = (t: number) => (Math.sin(t / 380) + 1) / 2;
+
+/** Round teal disc at the ear of the forge visor, its core pulsing. */
+const forgeDisc = (p: Painter, x: number, core: string) => {
+  p.R(x, 9, 2, 3, FORGE.te);
+  p.px(x, 9, FORGE.teL);
+  p.px(x + 1, 11, FORGE.teD);
+  p.px(x, 10, core);
+  p.px(x + 1, 10, core);
+};
+
+/** Silver for the winged helm, with a slate-blue brow band. */
+const SILVER = {
+  c: "#cdd5de",
+  l: "#f4f7fa",
+  s: "#97a2af",
+  d: "#69737f",
+  band: "#4f6f96",
+  bandL: "#7193bb",
+  bandD: "#36506f",
+};
+/** Left wing of the winged helm (x −2 to 4, y −5 to 2): layered feathers sweeping up and out. */
+const WING = [
+  "W......",
+  "WWW....",
+  "SMWWW..",
+  ".WSMWW.",
+  ".WWWSMW",
+  "..SMWWW",
+  "..WWWSW",
+  "...SMWW",
+];
+
+/** Owl cowl: dark plum feathers, a grey facial disc and amber eye rings. */
+const OWL = {
+  p: "#3e2747",
+  pL: "#5d3f6b",
+  pS: "#2a1731",
+  g: "#8f8a99",
+  gL: "#c2bdc9",
+  gS: "#615c6b",
+  am: "#e8962e",
+  amL: "#ffcf6e",
+  beak: "#4a4552",
+  beakL: "#7a7486",
+};
+/** Plum with rows of small feather scallops (a light tip over a dark edge). */
+const plumage: Fill = (x, y) => {
+  const band = Math.floor((y + 12) / 3);
+  const k = (x + (band % 2) * 2 + 40) % 4;
+  const r = (y + 12) % 3;
+  return r === 0 && k === 1 ? OWL.pL : OWL.p;
+};
+/** Left ear tuft: a rounded clump of feathers with grey tips (x 2–8, y −5 to −1). */
+const TUFT = [".gGg...", "gGLLg..", "gLppL..", ".Lpppp.", "..ppppp"];
+const TUFT_UP = ["gGg....", "gGLLg..", "gLppL..", ".Lpppp.", "..ppppp"];
+
+/** Moss-green ranger hood. */
+const MOSS = {
+  c: "#5e7d3a",
+  l: "#7f9e4e",
+  s: "#435c28",
+  d: "#2c3d1a",
+  line: "#3b3023",
+};
+/** Hood outline [y, firstX, lastX]: crown, sides, then a short shoulder mantle. */
+const HOOD_SHAPE = [
+  [-2, 9, 15],
+  [-1, 7, 17],
+  [0, 6, 18],
+  [1, 5, 19],
+  ...Array.from({ length: 15 }, (_, i) => [2 + i, 4, 19]),
+  [16, 3, 20],
+  [17, 4, 19],
+];
+/** Face opening of the hood, facing front / three-quarter. */
+const HOOD_FRONT = [
+  [4, 7, 16],
+  ...Array.from({ length: 9 }, (_, i) => [5 + i, 6, 17]),
+  [14, 7, 16],
+  [15, 8, 15],
+];
+const HOOD_SIDE = [
+  [4, 9, 17],
+  ...Array.from({ length: 9 }, (_, i) => [5 + i, 8, 18]),
+  [14, 9, 17],
+  [15, 10, 16],
+];
+
+/** Yellow hard hat. */
+const HAT = { c: "#f2c230", l: "#ffe383", s: "#cc9a1c", d: "#8f6a10" };
+/** The miner's lamp flickers between these (index from a cheap hash of time). */
+const LAMP = ["#fff6c8", "#ffffff", "#ffefa6", "#fff6c8", "#ffe28a", "#ffffff"];
+const lampLit = (t: number) => LAMP[(Math.floor(t / 90) * 7) % LAMP.length];
+/** True for a moment every couple of seconds: the lamp dips. */
+const lampDip = (t: number) => t % 2300 < 90;
+
+/** White and slate armour for the trooper helmet, with a gold visor. */
+const TROOP = {
+  w: "#eef1f4",
+  wL: "#ffffff",
+  wS: "#c4cbd3",
+  sl: "#56636f",
+  slL: "#7a8794",
+  slD: "#3a434d",
+  v: "#d6a239",
+  vL: "#f6d77a",
+  vS: "#a8781f",
+  vD: "#7a5512",
+};
+
+/** Teal cloth band and the brushed steel plate of the cloud headband. */
+const BAND = { c: "#2f7f86", l: "#4fa9ae", s: "#1f5a60" };
+const PLATE = { c: "#c9d1da", l: "#eef2f6", s: "#8e99a6", d: "#5f6a77" };
+
+/**
+ * One cloth tail running out from (x0, y0) in direction dir (−1 left, 1
+ * right): a wave travels down it and grows towards the tip.
+ */
+const clothTail = (
+  p: Painter,
+  x0: number,
+  y0: number,
+  dir: number,
+  len: number,
+  droop: number,
+  phase: number,
+) => {
+  let prev = y0;
+  for (let i = 0; i < len; i++) {
+    const a = p.t / 150 - i * 0.8 + phase;
+    const y = y0 + Math.round(i * droop + Math.sin(a) * 1.3 * (i / len));
+    const x = x0 + i * dir;
+    for (let yy = Math.min(prev, y) + 1; yy < Math.max(prev, y); yy++) p.px(x, yy, BAND.c);
+    p.px(x, y, Math.cos(a) > 0.3 ? BAND.l : BAND.c);
+    if (i < len - 1) p.px(x, y + 1, BAND.s);
+    prev = y;
+  }
+};
+
+/** White and violet for the horned pilot headset. */
+const PILOT = {
+  w: "#f5f4fa",
+  wS: "#d2cfe2",
+  wD: "#a6a1bf",
+  v: "#7b52d9",
+  vL: "#a98cff",
+  vD: "#54369e",
+};
+/** Left horn fin (x 3–7, y −4 to −1), swept up and out from the band. */
+const FIN = ["L.....", "VL....", "VWW...", ".VWWW.", "..VWWW"];
+
 /** New head items (see types.ts for how drawing works). */
 export const HEAD: CategoryItems = {
   items: [
@@ -276,6 +464,14 @@ export const HEAD: CategoryItems = {
     { id: "champband", name: "Champion Headband", tier: "coins", price: 160 },
     { id: "nekoheadset", name: "Neko Headset", tier: "coins", price: 250 },
     { id: "knighthelm", name: "Knight Helm", tier: "coins", price: 260 },
+    { id: "forgevisor", name: "Forge Visor", tier: "coins", price: 220 },
+    { id: "wingedhelm", name: "Winged Helm", tier: "coins", price: 220 },
+    { id: "owlcowl", name: "Owl Cowl", tier: "coins", price: 240 },
+    { id: "rangerhood", name: "Ranger Hood", tier: "coins", price: 150 },
+    { id: "minerhelmet", name: "Miner Lamp Helmet", tier: "coins", price: 150 },
+    { id: "troopvisor", name: "Trooper Helmet", tier: "coins", price: 260 },
+    { id: "cloudband", name: "Cloud Headband", tier: "coins", price: 150 },
+    { id: "pilothorns", name: "Horned Headset", tier: "coins", price: 200 },
   ],
   draw: {
     hijab: {
@@ -826,6 +1022,661 @@ export const HEAD: CategoryItems = {
           px(18, 13, d);
         }
         plume(p);
+      },
+    },
+    // Copper tech helmet with teal plates: a crest down the middle, one
+    // glowing teal slit across the eyes and glowing discs at the ears. The
+    // mouth and chin stay open. The glow breathes slowly and a bright spark
+    // runs along the slit.
+    forgevisor: {
+      hidesHair: true,
+      animated: true,
+      draw: (p) => {
+        const { R, px, t, fx } = p;
+        const F = FORGE;
+        const pulse = forgePulse(t);
+        const core = step(FORGE_GLOW, pulse);
+        rows(
+          p,
+          [
+            [-2, 8, 15],
+            [-1, 6, 17],
+            [0, 5, 18],
+            ...Array.from({ length: 8 }, (_, i) => [1 + i, 4, 19]),
+          ],
+          F.cu,
+        );
+        // Light on the crown, shade down the far side.
+        R(7, -1, 3, 1, F.cuL);
+        R(6, 0, 2, 1, F.cuL);
+        R(5, 1, 1, 3, F.cuL);
+        px(18, 0, F.cuS);
+        R(19, 1, 1, 8, F.cuS);
+        // Crest down the middle.
+        const cx = 11 + (fx ? 1 : 0);
+        R(cx, -3, 2, 1, F.cuL);
+        R(cx, -2, 1, 8, F.cuL);
+        R(cx + 1, -2, 1, 8, F.cuS);
+        if (p.back) {
+          // The shell covers the back of the head; a vent glows at the nape.
+          rows(
+            p,
+            Array.from({ length: 6 }, (_, i) => [9 + i, 4, 19]),
+            F.cu,
+          );
+          R(cx, 6, 1, 4, F.cuL);
+          R(cx + 1, 6, 1, 4, F.cuS);
+          R(4, 2, 2, 10, F.te);
+          R(18, 2, 2, 10, F.te);
+          R(4, 2, 2, 1, F.teL);
+          R(18, 2, 2, 1, F.teL);
+          R(19, 3, 1, 9, F.teD);
+          R(7, 11, 10, 2, F.cuD);
+          [8, 10, 13, 15].forEach((x) => px(x, 11, core));
+          R(4, 14, 16, 1, F.cuS);
+          R(6, 15, 12, 1, F.cuD);
+          forgeDisc(p, 3, core);
+          forgeDisc(p, 19, core);
+          return;
+        }
+        // Teal temple plates (one big plate on the near side in the 3/4 view).
+        if (fx) {
+          R(4, 2, 4, 6, F.te);
+          R(4, 2, 4, 1, F.teL);
+          R(7, 3, 1, 5, F.teD);
+        } else {
+          R(4, 2, 2, 5, F.te);
+          R(18, 2, 2, 5, F.te);
+          R(4, 2, 2, 1, F.teL);
+          R(18, 2, 2, 1, F.teL);
+          R(19, 3, 1, 4, F.teD);
+        }
+        // Brow ridge and the frame round the slit.
+        R(4, 7, 16, 1, F.cuS);
+        R(4, 8, 16, 1, F.cuD);
+        R(4, 11, 16, 1, F.cuD);
+        const left = 5 + fx;
+        const right = fx ? 19 : 18;
+        R(4, 9, left - 4, 2, F.cu);
+        if (!fx) R(19, 9, 1, 2, F.cuS);
+        // The slit: bright on top, a step dimmer underneath, a spark running along.
+        R(left, 9, right - left + 1, 1, core);
+        R(left, 10, right - left + 1, 1, step(FORGE_GLOW, pulse * 0.55));
+        const run = left + (Math.floor(t / 55) % 36);
+        if (run <= right) {
+          px(run, 9, "#effffc");
+          px(run, 10, FORGE_GLOW[3]);
+        }
+        // Cheek plates hugging the jaw.
+        if (fx) {
+          R(4, 12, 4, 2, F.cu);
+          R(6, 14, 2, 1, F.cuS);
+          R(7, 12, 1, 2, F.cuS);
+          px(5, 12, F.teL);
+          forgeDisc(p, 5, core);
+        } else {
+          R(4, 12, 2, 2, F.cu);
+          R(18, 12, 2, 2, F.cuS);
+          px(5, 14, F.cuS);
+          px(18, 14, F.cuD);
+          forgeDisc(p, 3, core);
+          forgeDisc(p, 19, core);
+        }
+      },
+      fxFront: (_c, k) => {
+        const a = 0.08 + 0.24 * forgePulse(k.t);
+        [4, 20].forEach((x) => k.glow(k.X(x), k.Y(10.5), 2.6 * k.s, "90,232,214", a));
+      },
+    },
+    // Silver helm with a slate-blue brow band and a little gold sun, a nose
+    // guard, cheek guards and mail at the back. Small feathered wings sweep
+    // up from the sides; they twitch now and then and their tips spark.
+    wingedhelm: {
+      hidesHair: true,
+      animated: true,
+      draw: (p) => {
+        const { R, px, t, fx } = p;
+        const S = SILVER;
+        rows(
+          p,
+          [[-2, 8, 15], [-1, 6, 17], ...Array.from({ length: 5 }, (_, i) => [i, 5, 18])],
+          S.c,
+        );
+        // Light on the dome, shade down the far side, a ridge down the middle.
+        R(8, -2, 3, 1, S.l);
+        R(6, -1, 2, 1, S.l);
+        R(5, 0, 1, 3, S.l);
+        R(18, 0, 1, 5, S.s);
+        px(17, -1, S.s);
+        const cx = 11 + (fx ? 1 : 0);
+        R(cx, -2, 1, 7, S.l);
+        R(cx + 1, -2, 1, 7, S.s);
+        // Brow band with rivets.
+        R(4, 5, 16, 2, S.band);
+        R(4, 5, 16, 1, S.bandL);
+        R(19, 5, 1, 2, S.bandD);
+        [6, 9, 15, 18].forEach((x) => px(x, 6, S.l));
+        if (p.back) {
+          // Mail hangs from the band over the back of the neck.
+          rows(
+            p,
+            Array.from({ length: 8 }, (_, i) => [7 + i, 4, 19]),
+            (x, y) => ((x + y) % 2 ? "#8e98a5" : "#b9c2cc"),
+          );
+          R(4, 14, 16, 1, S.d);
+          R(cx, -2, 1, 7, S.l);
+        } else {
+          // Gold sun on the band.
+          R(cx, 5, 2, 2, p.gold);
+          px(cx, 5, "#fff1b8");
+          px(cx + 1, 6, "#c99a1e");
+          // Nose guard.
+          R(cx, 7, 2, 2, S.c);
+          px(cx + 1, 7, S.s);
+          px(cx + 1, 8, S.s);
+          R(cx, 9, 1, 3, S.c);
+          px(cx, 11, S.s);
+          // Cheek guards.
+          if (fx) {
+            R(4, 7, 4, 7, S.c);
+            R(4, 7, 1, 7, S.s);
+            px(5, 8, S.l);
+            px(6, 8, S.l);
+            R(5, 13, 3, 1, S.s);
+            R(19, 7, 1, 5, S.d);
+          } else {
+            R(4, 7, 3, 6, S.c);
+            R(17, 7, 3, 6, S.c);
+            R(4, 7, 1, 6, S.s);
+            px(5, 8, S.l);
+            R(19, 7, 1, 6, S.d);
+            R(5, 13, 2, 1, S.s);
+            R(17, 13, 2, 1, S.d);
+          }
+        }
+        // Wings: they twitch down a pixel now and then; the tips spark.
+        const flap = t % 3100 < 220 ? 1 : 0;
+        const spark = t % 2700 < 170;
+        [false, true].forEach((flip) => {
+          art(p, WING, -2, -5 + flap, { W: "#ffffff", M: "#e1e7ef", S: "#b3becb" }, flip);
+          if (!spark) return;
+          const m = (x: number) => (flip ? 23 - x : x);
+          px(m(-2), -5 + flap, "#ffffff");
+          px(m(-1), -4 + flap, "#bff2ff");
+          px(m(0), -5 + flap, "#fff6a8");
+          px(m(-2), -3 + flap, "#fff6a8");
+        });
+      },
+      fxFront: (_c, k) => {
+        if (k.t % 2700 >= 170) return;
+        [-1, 25].forEach((x) => k.glow(k.X(x), k.Y(-4), 2.8 * k.s, "200,240,255", 0.55));
+      },
+    },
+    // Night cowl with owl feathers: dark plum scallops, rounded feather tufts
+    // on top, a grey facial disc with a V brow and a little beak, and amber
+    // rings round the eyes that glint now and then. Mouth and chin stay open.
+    owlcowl: {
+      hidesHair: true,
+      animated: true,
+      draw: (p) => {
+        const { R, px, t, fx } = p;
+        const O = OWL;
+        const eyes = [7 + fx, 15 + fx];
+        const open = p.back
+          ? []
+          : fx
+            ? [
+                [13, 9, 18],
+                [14, 9, 17],
+                [15, 10, 16],
+              ]
+            : [
+                [13, 7, 16],
+                [14, 7, 16],
+                [15, 8, 15],
+              ];
+        const hole = (x: number, y: number) =>
+          open.some(([yy, a, b]) => yy === y && x >= a && x <= b) ||
+          (!p.back && y >= 9 && y <= 11 && eyes.some((e) => x >= e && x <= e + 1));
+        [
+          [-1, 7, 16],
+          [0, 6, 17],
+          [1, 5, 18],
+          ...Array.from({ length: 14 }, (_, i) => [2 + i, 4, 19]),
+        ].forEach(([y, a, b]) => {
+          for (let x = a; x <= b; x++) if (!hole(x, y)) px(x, y, plumage);
+        });
+        R(4, 16, 16, 1, O.pS);
+        R(19, 2, 1, 14, O.pS);
+        // Tufts: rounded feather clumps; one ruffles up now and then.
+        const ruffle = t % 3000 < 220;
+        const pal = { g: O.g, G: O.gL, L: O.pL, p: O.p };
+        art(p, ruffle ? TUFT_UP : TUFT, 2, -5, pal);
+        art(p, t % 3000 > 1500 && t % 3000 < 1720 ? TUFT_UP : TUFT, 2, -5, pal, true);
+        if (p.back) {
+          // Grey chevrons down the back of the cowl.
+          for (let i = 0; i < 5; i++) {
+            px(11 - i, 4 + i, O.gS);
+            px(12 + i, 4 + i, O.gS);
+            px(11 - i, 8 + i, O.g);
+            px(12 + i, 8 + i, O.g);
+          }
+          return;
+        }
+        // Grey facial discs round each eye (corners trimmed).
+        eyes.forEach((e) => {
+          for (let y = 8; y <= 12; y++)
+            for (let x = e - 2; x <= Math.min(19, e + 3); x++) {
+              const corner = (y === 8 || y === 12) && (x === e - 2 || x === e + 3);
+              if (!corner && !hole(x, y)) px(x, y, y === 12 ? O.gS : O.g);
+            }
+          px(e - 1, 8, O.gL);
+        });
+        // V brow from the outer corners down to the beak.
+        const f = fx;
+        [
+          [5, 7],
+          [6, 7],
+          [7, 7],
+          [8, 7],
+          [9, 8],
+          [10, 8],
+          [11, 9],
+          [12, 9],
+          [13, 8],
+          [14, 8],
+          [15, 7],
+          [16, 7],
+          [17, 7],
+          [18, 7],
+        ].forEach(([x, y]) => {
+          if (x + f <= 19) px(x + f, y, O.pS);
+        });
+        R(11 + f, 10, 2, 1, O.p);
+        // Little hooked beak over the nose.
+        R(11 + f, 11, 2, 2, O.beak);
+        px(11 + f, 11, O.beakL);
+        // Amber rings round the eyes; they brighten in turn and glint.
+        eyes.forEach((e, i) => {
+          const ring = Math.sin(t / 520 + i * 1.6) > 0.3 ? O.amL : O.am;
+          R(e, 8, 2, 1, ring);
+          R(e, 12, 2, 1, O.am);
+          R(e - 1, 9, 1, 3, ring);
+          if (e + 2 <= 19) R(e + 2, 9, 1, 3, O.am);
+          if ((t + i * 900) % 2600 < 240) px(e + 1, 8, "#fff6d6");
+        });
+      },
+    },
+    // Moss-green hood with a short mantle over the shoulders. A bit of fringe
+    // (in the hair colour) shows at the forehead; the hood's point droops at
+    // the back. A leaf charm on the clasp sways and glints now and then.
+    rangerhood: {
+      hidesHair: true,
+      animated: true,
+      draw: (p) => {
+        const { R, px, t, fx } = p;
+        const M = MOSS;
+        const open = p.back ? [] : fx ? HOOD_SIDE : HOOD_FRONT;
+        const inside = (x: number, y: number) =>
+          open.some(([yy, a, b]) => yy === y && x >= a && x <= b);
+        HOOD_SHAPE.forEach(([y, a, b]) => {
+          for (let x = a; x <= b; x++) if (!inside(x, y)) px(x, y, M.c);
+        });
+        // Light on the crown, shade down the far side and along the hem.
+        R(10, -2, 3, 1, M.l);
+        R(8, -1, 2, 1, M.l);
+        px(7, 0, M.l);
+        px(6, 1, M.l);
+        R(19, 2, 1, 14, M.s);
+        R(4, 17, 16, 1, M.s);
+        px(3, 16, M.l);
+        // Folds falling to the shoulders.
+        [
+          [5, 14],
+          [5, 15],
+          [18, 14],
+          [18, 15],
+          [7, 16],
+          [16, 16],
+        ].forEach(([x, y]) => px(x, y, M.s));
+        if (p.back) {
+          // Seam down the middle and the hood's point drooping below the mantle.
+          R(11, -2, 1, 18, M.s);
+          R(11, 18, 2, 1, M.c);
+          px(12, 18, M.s);
+          px(11, 19, M.s);
+          return;
+        }
+        // The point of the hood, drooping behind.
+        if (fx) {
+          R(4, -1, 3, 1, M.c);
+          R(2, 0, 4, 1, M.c);
+          R(2, 1, 3, 1, M.s);
+          px(2, 2, M.s);
+        } else {
+          R(15, -2, 2, 1, M.s);
+          px(17, -1, M.s);
+        }
+        // Dark lining just outside the face opening.
+        for (let y = 3; y <= 16; y++)
+          for (let x = 3; x <= 20; x++)
+            if (
+              !inside(x, y) &&
+              (inside(x - 1, y) || inside(x + 1, y) || inside(x, y - 1) || inside(x, y + 1))
+            )
+              px(x, y, M.line);
+        // A little fringe peeking out under the hood.
+        const a = fx ? 9 : 7;
+        const b = fx ? 17 : 16;
+        R(a, 4, b - a + 1, 1, p.hc);
+        R(a - 1, 5, b - a + 3 - (fx ? 1 : 0), 1, p.hc);
+        [0, 1, 3, 4, 5, 8, 9, 11].forEach((i) => {
+          if (a - 1 + i <= 18) px(a - 1 + i, 6, p.hc);
+        });
+        px(a - 1, 7, p.hS);
+        px(a + 4, 7, p.hS);
+        R(a + 1, 4, 2, 1, p.hH);
+        // Brass clasp and the swaying leaf charm.
+        const c = 11 + fx;
+        R(c, 16, 2, 1, "#c99a3e");
+        px(c, 16, "#f2d27a");
+        const sway = Math.round(Math.sin(t / 420));
+        const lx = c + (sway > 0 ? 1 : 0);
+        px(lx, 17, "#a57a2a");
+        px(lx, 18, "#9ccc5a");
+        R(lx - 1, 19, 3, 1, "#7fb447");
+        px(lx + sway, 20, "#5d9a35");
+        px(lx, 19, "#4f8a2c");
+        if (t % 2600 < 200) px(lx, 18, "#eaffc8");
+      },
+    },
+    // Chunky yellow hard hat with a raised ridge and a wide brim. The lamp on
+    // the front flickers; from the side it throws a small cone of light.
+    minerhelmet: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t, fx } = p;
+        const H = HAT;
+        rows(
+          p,
+          [[-3, 8, 15], [-2, 6, 17], ...Array.from({ length: 6 }, (_, i) => [i - 1, 5, 18])],
+          H.c,
+        );
+        // Wide brim, a bit longer at the front in the 3/4 view.
+        R(3, 4, fx ? 20 : 18, 1, H.c);
+        R(3, 5, fx ? 20 : 18, 1, H.s);
+        px(3, 5, H.d);
+        px(fx ? 22 : 20, 5, H.d);
+        R(4, 4, 3, 1, H.l);
+        // Light on the dome, shade down the far side, a few scuffs.
+        R(8, -3, 2, 1, H.l);
+        R(6, -2, 2, 1, H.l);
+        R(5, -1, 1, 3, H.l);
+        R(18, -1, 1, 5, H.s);
+        px(17, -2, H.s);
+        px(7, 2, H.s);
+        px(16, 0, H.s);
+        // Raised ridge over the top.
+        const rx = mx(p, 10 + fx, 4);
+        R(rx, -4, 4, 1, H.c);
+        R(rx, -4, 2, 1, H.l);
+        R(rx, -3, 1, 6, H.l);
+        R(rx + 3, -3, 1, 6, H.s);
+        const lit = lampDip(t) ? "#cdb979" : lampLit(t);
+        if (p.back) {
+          // Battery pack on the back strap, its little light blinking.
+          R(5, 2, 14, 1, "#3b3f48");
+          R(10, 1, 4, 3, "#3b3f48");
+          R(10, 1, 4, 1, "#5b616d");
+          px(12, 2, t % 1600 < 500 ? "#62e07a" : "#2a5a33");
+          return;
+        }
+        if (fx) {
+          // Lamp on the front of the hat, the beam spreading forward.
+          R(15, -1, 4, 3, "#3b3f48");
+          R(15, -1, 4, 1, "#5b616d");
+          R(19, -1, 1, 2, lit);
+          px(17, 0, "#2a2d34");
+          if (!lampDip(t)) {
+            const shift = Math.floor(t / 120);
+            [
+              [20, -1, 0],
+              [21, -2, 1],
+              [22, -2, 1],
+              [23, -3, 2],
+              [24, -3, 2],
+              [25, -4, 3],
+            ].forEach(([x, y0, y1]) => {
+              for (let y = y0; y <= y1; y++)
+                px(
+                  x,
+                  y,
+                  y === Math.round((y0 + y1) / 2) && (x + shift) % 2 ? "#fffbe6" : "#fff0b3",
+                );
+            });
+          }
+          return;
+        }
+        // Lamp facing us: dark housing, bright lens, a bracket under it.
+        R(10, -1, 4, 3, "#3b3f48");
+        R(10, -1, 4, 1, "#5b616d");
+        R(11, -1, 2, 2, lit);
+        px(11, -1, lampDip(t) ? lit : "#ffffff");
+        R(11, 2, 2, 1, "#5b616d");
+      },
+      fxFront: (_c, k) => {
+        if (lampDip(k.t)) return;
+        const f = 0.85 + 0.15 * Math.sin(k.t / 70);
+        // Sit the glow on the lamp when we know which way the avatar faces
+        // (the side views' lamp is at the front edge; from behind it's hidden).
+        const x = k.dir === "r" ? 20 : k.dir === "l" ? 4 : 12;
+        const a = k.dir === "b" ? 0.18 : 0.42;
+        k.glow(k.X(x), k.Y(0.5), 4.5 * k.s, "255,236,160", a * f);
+      },
+    },
+    // Sealed space helmet: white shell, slate trim, a wide gold visor with a
+    // reflection sweeping across it, ear pods and a small antenna whose tip
+    // blinks. From behind: a slate band and a vented life-support box.
+    troopvisor: {
+      hidesHair: true,
+      animated: true,
+      draw: (p) => {
+        const { R, px, t, fx } = p;
+        const T = TROOP;
+        rows(
+          p,
+          [
+            [-2, 8, 15],
+            [-1, 6, 17],
+            [0, 5, 18],
+            ...Array.from({ length: 12 }, (_, i) => [1 + i, 4, 19]),
+            [13, 5, 18],
+            [14, 6, 17],
+          ],
+          T.w,
+        );
+        R(7, 15, 10, 1, T.slD);
+        // Light on the dome, shade down the far side and along the bottom.
+        R(8, -2, 3, 1, T.wL);
+        R(6, -1, 2, 1, T.wL);
+        R(5, 0, 1, 3, T.wL);
+        px(18, 0, T.wS);
+        R(19, 1, 1, 12, T.wS);
+        px(18, 13, T.wS);
+        R(6, 14, 12, 1, T.wS);
+        // Slate stripe over the crown and the brow band.
+        const cx = 11 + (fx ? 1 : 0);
+        R(cx, -2, 2, 7, T.sl);
+        px(cx, -2, T.slL);
+        R(4, 5, 16, 1, T.sl);
+        R(4, 6, 16, 1, T.slD);
+        // Antenna by the near ear (other side from behind); its tip blinks.
+        const ax = mx(p, 3);
+        R(ax, -3, 1, 9, T.slL);
+        px(ax, -4, t % 1400 < 380 ? "#ff6b6b" : "#7a2b33");
+        if (p.back) {
+          // Vented life-support box over the back of the neck.
+          R(8, 8, 8, 5, T.sl);
+          R(8, 8, 8, 1, T.slL);
+          R(9, 10, 6, 1, T.slD);
+          R(9, 12, 6, 1, T.slD);
+          px(15, 9, t % 1400 < 380 ? "#7dffb0" : "#2f6f4a");
+          R(3, 8, 2, 4, T.sl);
+          R(19, 8, 2, 4, T.sl);
+          return;
+        }
+        // Gold visor: rounded corners, a light top, a horizon line, a dark rim.
+        const left = 5 + fx;
+        const right = fx ? 19 : 18;
+        const pos = ((t / 28) % 60) - 10;
+        for (let y = 7; y <= 12; y++)
+          for (let x = left; x <= right; x++) {
+            if ((y === 7 || y === 12) && (x === left || x === right)) continue;
+            let c = y === 7 ? T.vL : y === 10 ? T.vS : y === 12 ? T.vD : T.v;
+            if (y === 8 && x < left + 4) c = T.vL;
+            const d = Math.abs(x - left + (y - 7) * 0.8 - pos);
+            if (d < 0.8) c = "#fff8dc";
+            else if (d < 1.6 && y !== 12) c = T.vL;
+            px(x, y, c);
+          }
+        // Breathing vent under the visor.
+        R(10 + fx, 13, 4, 2, T.sl);
+        px(10 + fx, 13, T.slD);
+        px(12 + fx, 13, T.slD);
+        px(11 + fx, 14, T.slD);
+        px(13 + fx, 14, T.slD);
+        // Ear pods (one big pod on the near side in the 3/4 view).
+        if (fx) {
+          R(4, 7, 3, 6, T.sl);
+          R(4, 7, 3, 1, T.slL);
+          px(5, 9, T.slL);
+          px(5, 10, T.wS);
+        } else {
+          R(3, 7, 2, 5, T.sl);
+          R(19, 7, 2, 5, T.sl);
+          px(3, 7, T.slL);
+          px(19, 7, T.slL);
+          px(20, 9, T.slD);
+        }
+      },
+    },
+    // Ninja-style forehead plate of brushed steel with an etched cloud, on a
+    // teal cloth band knotted at the back. The tails flutter in the wind and
+    // a glint slides across the plate now and then.
+    cloudband: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t, fx } = p;
+        const B = BAND;
+        R(5, 4, 14, 2, B.c);
+        R(5, 5, 14, 1, B.s);
+        R(18, 4, 1, 2, B.s);
+        if (p.back) {
+          // Knot in the middle, two tails blowing off to one side together.
+          R(10, 3, 3, 3, B.c);
+          R(10, 3, 3, 1, B.l);
+          px(12, 5, B.s);
+          [
+            [9, 6, 5],
+            [11, 6, 3],
+          ].forEach(([x0, y0, n], i) => {
+            for (let j = 0; j < n; j++) {
+              const sway = j >= 2 ? Math.round(Math.sin(t / 200 - j * 0.6 + i)) : 0;
+              const x = x0 - Math.floor(j / 2) + sway;
+              R(x, y0 + j, 2, 1, j === n - 1 ? B.s : B.c);
+              px(x + 1, y0 + j, B.s);
+            }
+          });
+          return;
+        }
+        // Steel plate with an etched cloud.
+        const x0 = 8 + fx;
+        R(x0, 3, 8, 4, PLATE.c);
+        R(x0, 3, 8, 1, PLATE.l);
+        R(x0, 6, 8, 1, PLATE.s);
+        R(x0 + 7, 3, 1, 4, PLATE.s);
+        px(x0 + 2, 4, PLATE.d);
+        R(x0 + 4, 4, 2, 1, PLATE.d);
+        R(x0 + 1, 5, 6, 1, PLATE.d);
+        px(x0 + 4, 4, PLATE.s);
+        // A glint slides across the plate now and then.
+        const g = Math.floor(t / 60) % 55;
+        if (g < 8) {
+          px(x0 + g, 3, "#ffffff");
+          if (g > 0) px(x0 + g - 1, 4, "#ffffff");
+        }
+        if (fx) {
+          // Knot at the back of the head, tails streaming behind.
+          R(3, 3, 2, 3, B.c);
+          px(3, 3, B.l);
+          clothTail(p, 2, 4, -1, 5, 0.35, 0);
+          clothTail(p, 2, 5, -1, 4, 0.8, 1.9);
+        } else {
+          // Tails peeking out from behind the head.
+          clothTail(p, 19, 4, 1, 4, 0.3, 0);
+          clothTail(p, 19, 5, 1, 3, 0.9, 1.9);
+        }
+      },
+    },
+    // Mecha-pilot headset in white and violet: a band over the head with two
+    // small horn fins swept back, ear pieces with a blinking light, and a mic
+    // reaching to the mouth.
+    pilothorns: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t, fx } = p;
+        const P = PILOT;
+        const led = t % 1300 < 420 ? "#7dffc8" : "#2f6f5a";
+        const finPal = { L: t % 2600 < 160 ? "#ffffff" : P.vL, V: P.v, W: P.w };
+        // Band over the head, down to the ear pieces.
+        R(8, -1, 8, 1, P.w);
+        R(9, -1, 3, 1, "#ffffff");
+        R(8, 0, 8, 1, P.v);
+        R(6, 0, 2, 1, P.w);
+        R(16, 0, 2, 1, P.wS);
+        px(5, 1, P.w);
+        px(18, 1, P.wS);
+        R(5, 2, 1, 5, P.v);
+        R(18, 2, 1, 5, P.vD);
+        art(p, FIN, 2, -5, finPal);
+        art(p, FIN, 2, -5, finPal, true);
+        if (fx && !p.back) {
+          // Near ear piece faces us with a violet ring; the far one peeks out.
+          R(4, 7, 4, 6, P.w);
+          R(4, 7, 4, 1, P.vL);
+          R(4, 12, 4, 1, P.vD);
+          R(4, 8, 1, 4, P.v);
+          R(7, 8, 1, 4, P.vD);
+          R(5, 9, 2, 2, P.wS);
+          px(5, 9, led);
+          R(19, 8, 2, 4, P.wS);
+          px(20, 9, P.v);
+          // Mic boom to the mouth.
+          px(8, 12, P.vD);
+          R(9, 13, 2, 1, P.vD);
+          px(11, 13, "#2a2a35");
+          return;
+        }
+        // Ear pieces: violet outer panel with a light, cushion against the head.
+        [false, true].forEach((right) => {
+          const e = (x: number) => (right ? 23 - x : x);
+          R(right ? 18 : 3, 7, 3, 6, P.w);
+          R(e(3), 8, 1, 4, P.v);
+          px(e(3), 7, P.vL);
+          px(e(3), 12, P.vD);
+          R(e(5), 8, 1, 4, right ? P.wD : P.wS);
+          px(e(3), 9, led);
+          if (right) R(20, 8, 1, 4, P.vD);
+        });
+        if (p.back) {
+          R(6, 12, 12, 1, P.v);
+          R(6, 12, 12, 1, (x) => (x % 3 ? P.v : P.vD));
+          return;
+        }
+        // Mic boom to the mouth.
+        px(6, 13, P.vD);
+        R(7, 13, 2, 1, P.vD);
+        px(9, 13, "#2a2a35");
       },
     },
   },

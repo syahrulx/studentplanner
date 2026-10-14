@@ -99,6 +99,11 @@ export type WorldMap = {
   bg: string;
   /** Water tiles you can fish from (tileKey). */
   water: Set<string>;
+  /**
+   * Windows in the back wall (tiles: left x, top y, width). The base canvas
+   * has a plain daytime view; WorldCanvas paints the live sky and curtains.
+   */
+  windows: { x: number; y: number; w: number }[];
   npcs: number;
 };
 
@@ -255,6 +260,78 @@ const ROUND_PIECES = new Set([
   "projector",
   "cattree",
 ]);
+
+type Rect = [number, number, number, number];
+/**
+ * Where a sleeper lies in a dorm bed, in map pixels from the piece's top-left
+ * (after turning). WorldCanvas draws the head on the pillow, then paints the
+ * cover rectangles again from the base canvas so the blanket (and a headboard
+ * nearest the viewer) sits over the body.
+ */
+export type SleepSpot = {
+  /** Centre of the sleeper's head. */
+  head: [number, number];
+  /** Quarter turns clockwise from upright: 0 head up, 1 head right, 2 head down, 3 head left. */
+  turn: 0 | 1 | 2 | 3;
+  /** Drawn again over the sleeper: [x, y, w, h]. */
+  cover: Rect[];
+  /** The body under the blanket (for a soft bump): [x, y, w, h]. */
+  body: Rect;
+};
+type SpotArt = { head: [number, number]; cover: Rect[]; body: Rect };
+/**
+ * Pillow and blanket of each bed's art: front (rot 0, headboard on the left),
+ * side with the headboard nearest the viewer (rot 1) and side with it at the
+ * top (rot 3 before it is mirrored). Rot 2 is the front mirrored.
+ */
+const SLEEP_ART: Record<string, { front: SpotArt; near: SpotArt; top: SpotArt }> = {
+  bed: {
+    front: { head: [14, 14], cover: [[20, 4, 25, 24]], body: [20, 7, 18, 15] },
+    near: {
+      head: [16, 29],
+      cover: [
+        [3, 4, 26, 22],
+        [0, 32, 32, 15],
+      ],
+      body: [9, 6, 14, 17],
+    },
+    top: { head: [16, 12], cover: [[3, 19, 26, 24]], body: [9, 20, 14, 17] },
+  },
+  studiobed: {
+    front: { head: [14, 14], cover: [[20, 4, 25, 24]], body: [24, 7, 15, 15] },
+    near: {
+      head: [16, 29],
+      cover: [
+        [3, 4, 26, 21],
+        [0, 32, 32, 15],
+      ],
+      body: [9, 12, 14, 11],
+    },
+    top: { head: [16, 12], cover: [[3, 18, 26, 16]], body: [9, 21, 14, 12] },
+  },
+  bunkbed: {
+    front: { head: [9, -6], cover: [[15, -13, 30, 17]], body: [16, -11, 18, 11] },
+    near: { head: [13, 15], cover: [[3, -15, 22, 25]], body: [6, -9, 14, 17] },
+    top: { head: [13, -8], cover: [[3, -3, 22, 26]], body: [6, -1, 14, 17] },
+  },
+};
+/** Sleep spot of a bed turned to facing rot, or null if the piece isn't a bed. */
+export function sleepSpot(item: string, rot: number, w: number, h: number): SleepSpot | null {
+  const art = SLEEP_ART[item];
+  if (!art) return null;
+  const W = w * TILE;
+  const flip = (a: SpotArt): SpotArt => ({
+    head: [W - a.head[0], a.head[1]],
+    cover: a.cover.map(([x, y, cw, ch]): Rect => [W - x - cw, y, cw, ch]),
+    body: [W - a.body[0] - a.body[2], a.body[1], a.body[2], a.body[3]],
+  });
+  // The footprint is already turned: sideways pieces are taller than wide.
+  const side = h > w;
+  if (rot === 1 && side) return { ...art.near, turn: 2 };
+  if (rot === 3 && side) return { ...flip(art.top), turn: 0 };
+  if (rot === 2) return { ...flip(art.front), turn: 1 };
+  return { ...art.front, turn: 3 };
+}
 
 export function createKit(W: number, H: number, seed: number) {
   const rnd = () => {
@@ -458,7 +535,9 @@ export function createKit(W: number, H: number, seed: number) {
   const afterGround: (() => void)[] = [];
   const afterThings: (() => void)[] = [];
   const decor = (fn: () => void) => afterGround.push(fn);
-  const window_ = (x: number, y: number, w: number) =>
+  const windows: WorldMap["windows"] = [];
+  const window_ = (x: number, y: number, w: number) => {
+    windows.push({ x, y, w });
     decor(() => {
       const X = x * TILE + 2;
       const Y = y * TILE + 2;
@@ -487,6 +566,7 @@ export function createKit(W: number, H: number, seed: number) {
       P(bx, "#f6f1e7", X, Y + 11, width, 2);
       P(bx, "#d9cbb0", X - 2, Y + 23, width + 4, 3);
     });
+  };
   /** A wooden plaque with a name on it. */
   const sign = (x: number, y: number, w: number, text: string) => {
     decor(() => {
@@ -3904,6 +3984,7 @@ export function createKit(W: number, H: number, seed: number) {
       labels,
       sparkles,
       water,
+      windows,
     };
   };
 
@@ -3949,6 +4030,6 @@ export function createKit(W: number, H: number, seed: number) {
 
 type Painted = Pick<
   WorldMap,
-  "base" | "over" | "solid" | "seats" | "things" | "crops" | "labels" | "sparkles"
+  "base" | "over" | "solid" | "seats" | "things" | "crops" | "labels" | "sparkles" | "windows"
 >;
 export type Kit = ReturnType<typeof createKit>;
