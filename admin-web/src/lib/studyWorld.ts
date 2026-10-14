@@ -302,6 +302,84 @@ export async function deleteCoinPack(id: string): Promise<void> {
   if (err) throw err;
 }
 
+// ─── Coin purchases (website migration 202610130010_rencity_coin_purchases.sql) ───
+
+/** The coin conversion rate and switches (one row). */
+export type CoinConfig = {
+  /** Coins per RM1. Null: each pack's own `coins` is used. */
+  coins_per_myr: number | null;
+  purchases_enabled: boolean;
+  /** Most one player may spend on coins per month (Malaysia time). Null: no limit. */
+  monthly_limit_myr: number | null;
+  updated_at: string | null;
+};
+
+export type CoinOrderStatus = 'created' | 'paid' | 'partially_refunded' | 'refunded';
+
+export type CoinOrder = {
+  id: string;
+  user_id: string;
+  pack_name: string;
+  price_myr: number;
+  coins_per_myr: number | null;
+  coins: number;
+  status: CoinOrderStatus;
+  razorpay_order_id: string | null;
+  razorpay_payment_id: string | null;
+  refunded_sen: number;
+  coins_reclaimed: number;
+  coins_unrecovered: number;
+  created_at: string;
+  paid_at: string | null;
+};
+
+const COIN_MIGRATION_MISSING =
+  'Coin purchases are not in the database yet. Run the website migration 202610130010_rencity_coin_purchases.sql in the Supabase SQL Editor.';
+const isMissing = (error: { code?: string; message?: string }) =>
+  error.code === '42P01' || error.code === 'PGRST205' || /does not exist|could not find the table/i.test(error.message ?? '');
+
+/** Coins a player gets for a pack (before any order is made). Mirrors study_world_coin_pack_base. */
+export function packCoins(pack: Pick<CoinPack, 'coins' | 'bonus_coins' | 'price_myr'>, rate: number | null) {
+  const base = rate == null ? Math.max(0, pack.coins) : Math.floor(Number(pack.price_myr) * rate);
+  return { base, total: base + Math.max(0, pack.bonus_coins ?? 0) };
+}
+
+export async function getCoinConfig(): Promise<CoinConfig | null> {
+  const { data, error } = await supabase.from('study_world_coin_config').select('*').eq('id', true).maybeSingle();
+  if (error) throw isMissing(error) ? new Error(COIN_MIGRATION_MISSING) : new Error(error.message);
+  if (!data) return null;
+  return {
+    coins_per_myr: data.coins_per_myr == null ? null : Number(data.coins_per_myr),
+    purchases_enabled: data.purchases_enabled !== false,
+    monthly_limit_myr: data.monthly_limit_myr == null ? null : Number(data.monthly_limit_myr),
+    updated_at: data.updated_at ?? null,
+  };
+}
+
+export async function saveCoinConfig(patch: Omit<CoinConfig, 'updated_at'>): Promise<void> {
+  const { data: auth } = await supabase.auth.getUser();
+  const { error } = await supabase
+    .from('study_world_coin_config')
+    .upsert(
+      { id: true, ...patch, updated_at: new Date().toISOString(), updated_by: auth.user?.id ?? null },
+      { onConflict: 'id' },
+    );
+  if (error) throw isMissing(error) ? new Error(COIN_MIGRATION_MISSING) : new Error(error.message);
+}
+
+/** Newest coin orders first (admins can read all of them). */
+export async function listCoinOrders(limit = 50): Promise<CoinOrder[]> {
+  const { data, error } = await supabase
+    .from('study_world_coin_orders')
+    .select(
+      'id,user_id,pack_name,price_myr,coins_per_myr,coins,status,razorpay_order_id,razorpay_payment_id,refunded_sen,coins_reclaimed,coins_unrecovered,created_at,paid_at',
+    )
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw isMissing(error) ? new Error(COIN_MIGRATION_MISSING) : new Error(error.message);
+  return (data ?? []) as CoinOrder[];
+}
+
 export async function getWorldSettings(): Promise<WorldSettings | null> {
   const { data, error } = await supabase.from('study_world_settings').select('*').eq('id', true).maybeSingle();
   const err = explain(error);
