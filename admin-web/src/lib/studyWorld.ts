@@ -108,6 +108,11 @@ export type CoinPack = {
   status: ItemStatus;
   best_value: boolean;
   sort_order: number;
+  /**
+   * Website migration 202610140006: false hides FPX in checkout for this pack
+   * (Curlec's FPX fee is at least RM1). Missing before that migration runs.
+   */
+  fpx_allowed?: boolean;
   updated_at: string;
 };
 
@@ -318,7 +323,8 @@ export type CoinOrderStatus = 'created' | 'paid' | 'partially_refunded' | 'refun
 
 export type CoinOrder = {
   id: string;
-  user_id: string;
+  /** Null once the player's account is deleted (the record is kept). */
+  user_id: string | null;
   pack_name: string;
   price_myr: number;
   coins_per_myr: number | null;
@@ -331,6 +337,10 @@ export type CoinOrder = {
   coins_unrecovered: number;
   created_at: string;
   paid_at: string | null;
+  /** From 202610140006: how it was paid ("card", "fpx", "wallet", ...). */
+  payment_method?: string | null;
+  /** From 202610140006: false if the pack hid FPX at checkout. */
+  fpx_allowed?: boolean;
 };
 
 const COIN_MIGRATION_MISSING =
@@ -338,9 +348,17 @@ const COIN_MIGRATION_MISSING =
 const isMissing = (error: { code?: string; message?: string }) =>
   error.code === '42P01' || error.code === 'PGRST205' || /does not exist|could not find the table/i.test(error.message ?? '');
 
-/** Coins a player gets for a pack (before any order is made). Mirrors study_world_coin_pack_base. */
+/**
+ * Coins a player gets for a pack (before any order is made). Mirrors
+ * study_world_coin_pack_base, which uses exact decimals: work in sen and
+ * hundredths of a coin, because 19.9 * 50 in floating point is 994.999…
+ * (floor 994) while the server gives 995.
+ */
 export function packCoins(pack: Pick<CoinPack, 'coins' | 'bonus_coins' | 'price_myr'>, rate: number | null) {
-  const base = rate == null ? Math.max(0, pack.coins) : Math.floor(Number(pack.price_myr) * rate);
+  const base =
+    rate == null
+      ? Math.max(0, pack.coins)
+      : Math.floor((Math.round(Number(pack.price_myr) * 100) * Math.round(rate * 100)) / 10000);
   return { base, total: base + Math.max(0, pack.bonus_coins ?? 0) };
 }
 
@@ -371,9 +389,8 @@ export async function saveCoinConfig(patch: Omit<CoinConfig, 'updated_at'>): Pro
 export async function listCoinOrders(limit = 50): Promise<CoinOrder[]> {
   const { data, error } = await supabase
     .from('study_world_coin_orders')
-    .select(
-      'id,user_id,pack_name,price_myr,coins_per_myr,coins,status,razorpay_order_id,razorpay_payment_id,refunded_sen,coins_reclaimed,coins_unrecovered,created_at,paid_at',
-    )
+    // '*': newer columns (payment_method, fpx_allowed) show up once their migration has run.
+    .select('*')
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error) throw isMissing(error) ? new Error(COIN_MIGRATION_MISSING) : new Error(error.message);
