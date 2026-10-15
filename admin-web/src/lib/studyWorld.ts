@@ -307,6 +307,98 @@ export async function deleteCoinPack(id: string): Promise<void> {
   if (err) throw err;
 }
 
+// ─── Bundles and outfit presets (website 202610140004 + 202610140008) ───
+// Admin access comes from 20261015000001_admin_study_world_bundles.sql.
+
+export type BundlePiece = { category: string; item_key: string };
+export type BundleStatus = 'available' | 'hidden';
+export type WorldBundle = {
+  id: string;
+  name: string;
+  emoji: string;
+  bundle_price: number;
+  items: BundlePiece[];
+  status: BundleStatus;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+};
+export type WorldBundleInput = Omit<WorldBundle, 'created_at' | 'updated_at'>;
+
+/** Ids starting with "p_" are shown on the website as "Outfit presets". */
+export const isPreset = (bundle: Pick<WorldBundle, 'id'>) => bundle.id.startsWith('p_');
+export const BUNDLE_ID_RE = /^[a-z0-9_-]{1,40}$/;
+export const BUNDLE_MAX_PIECES = 12;
+
+const BUNDLE_SQL_HINT = 'Run SQL 20261015000001_admin_study_world_bundles.sql first, so admins can change bundles.';
+
+export async function listWorldBundles(): Promise<WorldBundle[]> {
+  const { data, error } = await supabase.from('study_world_bundles').select('*').order('sort_order').order('id');
+  const err = explain(error);
+  if (err) throw err;
+  return (data ?? []) as WorldBundle[];
+}
+
+export async function saveWorldBundle(isNew: boolean, bundle: WorldBundleInput): Promise<void> {
+  // Only the editable columns (the editor may carry created_at/updated_at along).
+  const row = {
+    id: bundle.id,
+    name: bundle.name.trim(),
+    emoji: bundle.emoji.trim() || '🎁',
+    bundle_price: bundle.bundle_price,
+    items: bundle.items.map((p) => ({ category: p.category, item_key: p.item_key })),
+    status: bundle.status,
+    sort_order: bundle.sort_order,
+  };
+  const { data, error } = isNew
+    ? await supabase.from('study_world_bundles').insert(row).select('id')
+    : await supabase.from('study_world_bundles').update(row).eq('id', bundle.id).select('id');
+  const err = explain(error);
+  if (err) throw /duplicate key/i.test(err.message) ? new Error(`A bundle with the id "${bundle.id}" already exists.`) : err;
+  // Without admin rights the row is silently skipped, so check it was saved.
+  if (!data?.length) throw new Error(`Not saved. ${BUNDLE_SQL_HINT}`);
+}
+
+export async function setWorldBundleStatus(id: string, status: BundleStatus): Promise<void> {
+  const { data, error } = await supabase.from('study_world_bundles').update({ status }).eq('id', id).select('id');
+  const err = explain(error);
+  if (err) throw err;
+  if (!data?.length) throw new Error(`Not saved. ${BUNDLE_SQL_HINT}`);
+}
+
+export async function deleteWorldBundle(id: string): Promise<void> {
+  const { data, error } = await supabase.from('study_world_bundles').delete().eq('id', id).select('id');
+  const err = explain(error);
+  if (err) throw err;
+  if (!data?.length) throw new Error(`Not deleted. ${BUNDLE_SQL_HINT}`);
+}
+
+/**
+ * The same price check as the website's study_world_bundle_price: every piece
+ * must be a coin item that is on sale, or players can't buy the bundle.
+ */
+export function bundlePricing(bundle: Pick<WorldBundle, 'items' | 'bundle_price'>, items: WorldItem[]) {
+  const byKey = new Map(items.map((i) => [`${i.category}:${i.item_key}`, i]));
+  const seen = new Set<string>();
+  const problems: string[] = [];
+  let full = 0;
+  for (const piece of bundle.items) {
+    const key = `${piece.category}:${piece.item_key}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const item = byKey.get(key);
+    if (!item) problems.push(`${piece.item_key} is not in the shop`);
+    else if (item.tier !== 'coins' || item.price_coins == null) problems.push(`${item.name} is not a coin item`);
+    else if (item.status !== 'available') problems.push(`${item.name} is ${item.status === 'hidden' ? 'hidden' : 'coming soon'}`);
+    else full += item.price_coins;
+  }
+  const forSale = problems.length === 0 && full > 0;
+  const savePct = forSale && full > 0 ? Math.round((1 - bundle.bundle_price / full) * 100) : null;
+  // Same rule as the starting bundles: about 20% off, rounded to 10 coins.
+  const suggested = full > 0 ? Math.round((full * 0.8) / 10) * 10 : 0;
+  return { full, forSale, problems, savePct, suggested };
+}
+
 // ─── Coin purchases (website migration 202610130010_rencity_coin_purchases.sql) ───
 
 /** The coin conversion rate and switches (one row). */

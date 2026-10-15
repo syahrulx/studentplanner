@@ -12,6 +12,7 @@ import {
   type AvatarLook,
 } from '../../vendor/study-world/avatar';
 import { createWorldMap, isMapId } from '../../vendor/study-world/maps';
+import { LOOK_FIELD } from './look';
 import { TILE } from '../../vendor/study-world/maps/kit';
 import { createDormMap, dormFloor, furnitureOf } from '../../vendor/study-world/maps/dorm';
 import { ENTRANCE_MS, EMOTE_PACKS, drawBubble, drawEntrance, drawNameFrame } from '../../vendor/study-world/showoff';
@@ -103,10 +104,6 @@ export function MapPreview({ mapKey, className }: { mapKey: string; className?: 
   );
 }
 
-const LOOK_FIELD: Record<string, keyof AvatarLook> = {
-  hair: 'hair', eyes: 'eyes', top: 'top', bottom: 'bottom', shoes: 'shoes',
-  head: 'head', face: 'face', back: 'back', pet: 'pet', effect: 'effect', hair_dye: 'hairColor',
-};
 
 /**
  * The part of the avatar each kind of item sits on, in avatar grid pixels
