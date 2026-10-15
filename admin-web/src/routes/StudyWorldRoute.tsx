@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ItemsPanel } from '../components/studyWorld/ItemsPanel';
+import { BundlesPanel } from '../components/studyWorld/BundlesPanel';
 import { PaymentsPanel } from '../components/studyWorld/PaymentsPanel';
 import { BansPanel, PlayersPanel } from '../components/studyWorld/PlayersPanel';
 import { ReportsPanel } from '../components/studyWorld/ReportsPanel';
@@ -82,9 +83,10 @@ export function StudyWorldRoute() {
     {
       id: 'shop',
       label: 'Shop',
-      hint: 'Items and prices, coin packs and payments, players’ coins and fish, leaderboards',
+      hint: 'Items and prices, bundles and presets, coin packs and payments, players’ coins and fish, leaderboards',
       views: [
         { id: 'items', label: 'Items', content: <ItemsPanel /> },
+        { id: 'bundles', label: 'Bundles & presets', content: <BundlesPanel /> },
         { id: 'wallets', label: 'Wallets & bags', content: <WalletsPanel /> },
         { id: 'leaderboards', label: 'Leaderboards', content: <LeaderboardsPanel /> },
         { id: 'payments', label: 'Coin packs & payments', content: <PaymentsPanel /> },
