@@ -45,7 +45,7 @@ export function AvatarArt({ look, scale = 4, animate = true }: { look: AvatarLoo
       drawEffectsFront(ctx, look, 0, scale, scale, t);
       if (petRoom) {
         // Same list as the website's AvatarCanvas: these pets hover above the ground.
-        const floaty = ['dragon', 'ghost', 'drone', 'phoenix', 'robobuddy'].includes(look.pet);
+        const floaty = ['dragon', 'ghost', 'drone', 'phoenix', 'robobuddy', 'parrot'].includes(look.pet);
         const bob = floaty ? Math.round(Math.sin(t / 300) * 2) - 3 : 0;
         paintGrid(buildPet(look.pet, t), pet);
         ctx.drawImage(pet, 0, 0, 14, 14, (GRID_W - 3) * scale, (OY + 20 + bob) * scale, 14 * scale, 14 * scale);

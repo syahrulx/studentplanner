@@ -1,4 +1,4 @@
-import type { CategoryItems, Fill, Painter } from "./types";
+import type { CategoryItems, Fill, FxKit, Painter } from "./types";
 
 /** The colour of a fill at one pixel (hair fills can be functions for dyes). */
 const at = (f: Fill, x: number, y: number): string =>
@@ -444,6 +444,451 @@ const PILOT = {
 /** Left horn fin (x 3–7, y −4 to −1), swept up and out from the band. */
 const FIN = ["L.....", "VL....", "VWW...", ".VWWW.", "..VWWW"];
 
+/** Blend two #hex colours: k = 0 gives a, k = 1 gives b. */
+const mix = (a: string, b: string, k: number) => {
+  if (a[0] !== "#" || b[0] !== "#") return b;
+  const A = parseInt(a.slice(1), 16);
+  const B = parseInt(b.slice(1), 16);
+  const ch = (s: number) => Math.round(((A >> s) & 255) * (1 - k) + ((B >> s) & 255) * k);
+  return `#${((1 << 24) + (ch(16) << 16) + (ch(8) << 8) + ch(0)).toString(16).slice(1)}`;
+};
+
+/** Top edge, per column, of a list of [y, firstX, lastX] rows (99 where nothing is). */
+const topOf = (list: number[][]) => (x: number) =>
+  list.reduce((top, [y, a, b]) => (x >= a && x <= b && y < top ? y : top), 99);
+
+/** Top edge, per column, of an art() picture drawn at (x0, y0). */
+const artTop =
+  (pic: string[], x0: number, y0: number, flip = false) =>
+  (x: number) => {
+    const i = (flip ? 23 - x : x) - x0;
+    const j = pic.findIndex((row) => i >= 0 && i < row.length && row[i] !== ".");
+    return j < 0 ? 99 : y0 + j;
+  };
+
+/**
+ * Clears whatever pokes out above a hat over the head (spiky tops, buns, a
+ * mohawk): in each column from x 4 to 19, everything above the hat's top
+ * edge. Draw the hat afterwards.
+ */
+const trimAbove = (p: Painter, top: (x: number) => number) => {
+  for (let x = 4; x <= 19; x++) {
+    const y = top(x);
+    if (y < 99 && y > -5) p.R(x, -5, 1, y + 5, null);
+  }
+};
+
+/** Screen x for a glow at grid column u (u in the side view), following the way the avatar faces. */
+const faceX = (k: FxKit, u: number, side: number) =>
+  k.dir === "r" ? k.X(side) : k.dir === "l" ? k.X(24 - side) : k.X(u);
+
+/** Deep indigo pointed hat with a silver band. */
+const ACADEMY = {
+  l: "#5a4ab2",
+  c: "#3a3186",
+  s: "#282062",
+  d: "#1a1442",
+  u: "#1e1848",
+  bandL: "#d3dae7",
+  band: "#9ba6bd",
+  bandS: "#6c7791",
+  star: "#e9eef8",
+};
+/**
+ * The pointed hat, x 2–21, y −5 to 5: the cone leans over and its tip flops
+ * down to the right; silver band (b, B, k) and a wide brim (u underneath).
+ */
+const ACADEMY_HAT = [
+  "............llcc....",
+  "..........lcccscc...",
+  ".........lcccs..cs..",
+  "........lcccs....d..",
+  ".......lcccccs......",
+  "......lcccccccs.....",
+  ".....lccccccccs.....",
+  "....bbbbbbbbbbbk....",
+  "...BBBBBBBBBBBBBk...",
+  "llccccccccccccccccss",
+  ".uuuuuuuuuuuuuuuuuu.",
+];
+/** The band's star flashes for a moment every few seconds. */
+const academyTwinkle = (t: number) => t % 2900 < 260;
+
+/** Black felt tricorn with gold braid and a white feather. */
+const TRICORN = {
+  c: "#26242d",
+  l: "#3e3b49",
+  s: "#16151b",
+  g: "#e0b03c",
+  gL: "#ffe08a",
+  gS: "#a87b1e",
+  w: "#f7f5ef",
+  wS: "#cfcac0",
+};
+/** Brim top and bottom rows by distance (in whole pixels) from the front corner. */
+const tricornTop = (d: number) => (d <= 3 ? 0 : d <= 6 ? -1 : d <= 8 ? -2 : -3);
+const TRICORN_BOTTOM = [5, 5, 4, 4, 3, 3, 2, 2, 1, 0, -1];
+/** Our emblem: a compass star with long east–west points (G gold, d dark gold, W centre). */
+const COMPASS = ["...G...", "..dGd..", "GGGWGGG", "..dGd..", "...G..."];
+/** White plume curling over the crown (W white, S shaded barbs), x 7–17, y −5 to −3. */
+const PLUME = ["...WWSWWS..", ".WWSSSSSSWW", "W.........S"];
+
+/** White paper and red ribbon for the shrine bow. */
+const SHRINE = {
+  L: "#ffffff",
+  w: "#f3f0e8",
+  S: "#d0c9ba",
+  r: "#d23a40",
+  rL: "#f26c70",
+  rS: "#9e2329",
+};
+/**
+ * Left loop of the bow seen from behind (x 2–10, y 7–13), tied low at the
+ * nape: pleated paper drooping outwards, a red band through it into the knot.
+ */
+const BOW_LOOP = [
+  "..LLL....",
+  ".WWWWLL..",
+  "WSWSWWWW.",
+  "rrrrrrrrr",
+  "WSWSWWWS.",
+  "WWWSSS...",
+  "SS.......",
+];
+/** The bow from the side (x −2 to 4, y 7–13): one loop sticking out behind the head. */
+const BOW_SIDE = ["..LL...", ".WWWLL.", "WSWSWW.", "rrrrrrr", "WSWSWWS", "WWSS...", "SS....."];
+
+/**
+ * One tail of the shrine bow hanging from (x0, y0), two pixels wide with a
+ * red outer edge, drifting outwards (dir −1 left, 1 right) and swaying more
+ * towards the end, which is cut into a notch.
+ */
+const bowTail = (p: Painter, x0: number, y0: number, len: number, dir: number, phase: number) => {
+  const S = SHRINE;
+  for (let i = 0; i < len; i++) {
+    const sway = Math.round(Math.sin(p.t / 320 - i * 0.6 + phase) * 1.3 * (i / len));
+    const x = x0 + dir * Math.floor(i / 3) + sway;
+    const y = y0 + i;
+    const tip = i === len - 1;
+    p.px(dir < 0 ? x : x + 1, y, tip ? S.rS : S.r);
+    if (!tip) p.px(dir < 0 ? x + 1 : x, y, i % 3 === 2 ? S.S : S.w);
+  }
+};
+
+/** Red knot in the middle of the shrine bow. */
+const bowKnot = (p: Painter, x: number, y: number) => {
+  p.R(x, y, 2, 3, SHRINE.r);
+  p.px(x, y, SHRINE.rL);
+  p.px(x + 1, y + 2, SHRINE.rS);
+};
+
+/** White pilot helmet with orange stripes and a smoked visor. */
+const FLIGHT = {
+  w: "#f2f3f5",
+  wL: "#ffffff",
+  wS: "#c8ccd3",
+  o: "#f07a22",
+  oL: "#ffa35a",
+  oS: "#b8541a",
+  v: "#262b3a",
+  vL: "#4b5570",
+  trim: "#5a6270",
+  mic: "#2a2d36",
+};
+const FLIGHT_SHAPE = [
+  [-2, 8, 15],
+  [-1, 6, 17],
+  [0, 5, 18],
+  ...Array.from({ length: 13 }, (_, i) => [1 + i, 4, 19]),
+  [14, 5, 18],
+];
+/** Face opening of the flight helmet, facing front / three-quarter. */
+const FLIGHT_FRONT = [...Array.from({ length: 8 }, (_, i) => [6 + i, 6, 17]), [14, 7, 16]];
+const FLIGHT_SIDE = [...Array.from({ length: 8 }, (_, i) => [6 + i, 8, 18]), [14, 9, 17]];
+
+/** Glossy red and white kart helmet with a navy number and a smoky visor. */
+const KART = {
+  r: "#e2322f",
+  rL: "#ff7a6a",
+  rS: "#a8201f",
+  w: "#f7f7f5",
+  wS: "#cfd3d9",
+  n: "#1f2747",
+  tint: "#24305a",
+  vent: "#3a2a2e",
+};
+const KART_SHAPE = [
+  [-2, 8, 15],
+  [-1, 6, 17],
+  [0, 5, 18],
+  ...Array.from({ length: 13 }, (_, i) => [1 + i, 4, 19]),
+  [14, 5, 18],
+];
+/** White number disc (x 9–14, y 0–5) and the "7" on it. */
+const ROUNDEL = [
+  [0, 10, 13],
+  [1, 9, 14],
+  [2, 9, 14],
+  [3, 9, 14],
+  [4, 9, 14],
+  [5, 10, 13],
+];
+const SEVEN = ["nnnn", "...n", "..n.", "..n."];
+/** How far (x, y) is from the shine that sweeps across the kart helmet. */
+const kartShine = (t: number, x: number, y: number) =>
+  Math.abs(x + y * 0.6 - (((t / 26) % 70) - 15));
+
+/** Olive tactical helmet, its chin straps and the goggles on top. */
+const TAC = {
+  c: "#5f6b3a",
+  l: "#7b874d",
+  s: "#47512b",
+  d: "#333a1e",
+  tan: "#878256",
+  strap: "#2f2b23",
+  metal: "#8c9198",
+  gf: "#26282c",
+  lens: "#d6902e",
+  lensL: "#ffd58a",
+  lensS: "#9a5d17",
+};
+const TAC_SHAPE = [
+  [-3, 8, 15],
+  [-2, 6, 17],
+  [-1, 5, 18],
+  ...Array.from({ length: 5 }, (_, i) => [i, 4, 19]),
+];
+/** Olive with soft dark and tan camouflage blobs. */
+const tacCamo: Fill = (x, y) => {
+  const bx = x >> 1;
+  const by = y >> 1;
+  if ((bx * 5 + by * 3 + 40) % 7 === 0) return TAC.s;
+  if ((bx * 3 + by * 5 + 41) % 11 === 0) return TAC.tan;
+  return TAC.c;
+};
+/** One goggle lens (4 wide, 3 tall) pushed up on the helmet. */
+const GOGGLE = [".ff.", "fLlf", "flSf"];
+
+/** Teal and white trainer cap with a yellow star. */
+const TRAIN = {
+  t: "#1f9e99",
+  tL: "#4cc8bf",
+  tS: "#167873",
+  tD: "#0e4f4c",
+  w: "#f8f8f3",
+  wS: "#d6d9d2",
+  y: "#ffd23f",
+  yL: "#fff3a6",
+  yS: "#e0a417",
+};
+const CAP_SHAPE = [
+  [-1, 11, 12],
+  [0, 7, 16],
+  [1, 6, 17],
+  [2, 5, 18],
+  [3, 5, 18],
+  [4, 5, 18],
+];
+/** Five-point star (Y), bright centre (K), shaded feet (S). */
+const STAR5 = ["..Y..", "YYKYY", ".YYY.", ".S.S."];
+
+/** Dark netrunner hood with glowing circuit lines. */
+const CYBER = {
+  c: "#1e1c2a",
+  l: "#2f2c42",
+  s: "#131119",
+  line: "#08070c",
+  m: "#ff3fb4",
+  mD: "#6e2357",
+  cy: "#2ee6ff",
+  cyD: "#1a5f6e",
+  chrome: "#c4ccd8",
+};
+type Trace = { pts: number[][]; on: string; dim: string };
+/** Circuit lines from the chip on the crown, facing front (the right one mirrors the left). */
+const CYBER_LEFT = [
+  [10, -1],
+  [9, -1],
+  [8, 0],
+  [7, 1],
+  [6, 2],
+  [5, 3],
+  [4, 4],
+  [4, 5],
+  [4, 6],
+  [4, 7],
+  [4, 8],
+  [4, 9],
+  [4, 10],
+];
+const CYBER_FRONT: Trace[] = [
+  { pts: CYBER_LEFT, on: CYBER.m, dim: CYBER.mD },
+  { pts: CYBER_LEFT.map(([x, y]) => [23 - x, y]), on: CYBER.cy, dim: CYBER.cyD },
+];
+/** Three-quarter view: two lines down the near side of the hood. */
+const CYBER_SIDE: Trace[] = [
+  {
+    pts: [
+      [11, -1],
+      [10, -1],
+      [9, -1],
+      [8, 0],
+      [7, 1],
+      [6, 2],
+      [6, 3],
+      [6, 4],
+      [6, 5],
+      [6, 6],
+      [6, 7],
+      [5, 8],
+      [5, 9],
+      [5, 10],
+      [5, 11],
+    ],
+    on: CYBER.m,
+    dim: CYBER.mD,
+  },
+  {
+    pts: [
+      [4, 3],
+      [4, 4],
+      [4, 5],
+      [4, 6],
+      [4, 7],
+      [4, 8],
+      [4, 9],
+      [4, 10],
+      [4, 11],
+      [4, 12],
+      [5, 13],
+      [6, 14],
+      [7, 15],
+    ],
+    on: CYBER.cy,
+    dim: CYBER.cyD,
+  },
+];
+/** From behind: two lines down the back from a chip near the crown. */
+const CYBER_BACK: Trace[] = [
+  {
+    pts: [
+      [11, 3],
+      [11, 4],
+      [11, 5],
+      [11, 6],
+      [11, 7],
+      [11, 8],
+      [11, 9],
+      [10, 10],
+      [9, 11],
+      [9, 12],
+      [9, 13],
+      [9, 14],
+    ],
+    on: CYBER.m,
+    dim: CYBER.mD,
+  },
+  {
+    pts: [
+      [12, 3],
+      [12, 4],
+      [12, 5],
+      [12, 6],
+      [13, 7],
+      [14, 8],
+      [15, 9],
+      [15, 10],
+      [15, 11],
+      [15, 12],
+    ],
+    on: CYBER.cy,
+    dim: CYBER.cyD,
+  },
+  {
+    pts: [
+      [10, 1],
+      [9, 0],
+      [8, -1],
+    ],
+    on: CYBER.cy,
+    dim: CYBER.cyD,
+  },
+  {
+    pts: [
+      [13, 1],
+      [14, 0],
+      [15, -1],
+    ],
+    on: CYBER.m,
+    dim: CYBER.mD,
+  },
+];
+/** A circuit line: dim, with a bright pulse running out from the chip and a lit end node. */
+const trace = (p: Painter, tr: Trace, phase: number) => {
+  const n = tr.pts.length;
+  const k = Math.floor(p.t / 60 + phase) % (n + 14);
+  tr.pts.forEach(([x, y], i) => p.px(x, y, i === k ? "#ffffff" : i === k - 1 ? tr.on : tr.dim));
+  const [ex, ey] = tr.pts[n - 1];
+  p.px(ex, ey, Math.sin(p.t / 300 + phase) > 0 ? tr.on : tr.dim);
+};
+/** The ear implant light switches between magenta and cyan. */
+const implantOn = (t: number) => Math.floor(t / 700) % 2 === 0;
+
+/** Idol headset: white-lilac shell, pink star, thin boom. */
+const IDOL = {
+  shell: "#f7f3fc",
+  shellS: "#cfc5e3",
+  pink: "#ff5fae",
+  pinkL: "#ffb8dc",
+  boom: "#b9aed6",
+  foam: "#ff7cc0",
+  clipA: "#7fe0d0",
+  clipB: "#ffd84d",
+};
+const idolSparkle = (t: number) => t % 2300 < 260;
+/** Ear piece with the pink star (x0 to x0+3, rows 8–12). */
+const idolPiece = (p: Painter, x0: number) => {
+  const I = IDOL;
+  p.R(x0 + 1, 8, 2, 1, I.shell);
+  p.R(x0, 9, 4, 3, I.shell);
+  p.R(x0 + 1, 12, 2, 1, I.shellS);
+  // A plus-shaped star; its centre sparkles.
+  const lit = idolSparkle(p.t);
+  p.R(x0 + 1, 9, 2, 3, I.pink);
+  p.R(x0, 10, 4, 1, I.pink);
+  p.px(x0 + 1, 10, lit ? "#ffffff" : I.pinkL);
+  p.px(x0 + 2, 10, lit ? "#ffffff" : I.pink);
+  p.px(x0 + 1, 8, "#ffffff");
+  if (lit) {
+    p.px(x0 + 1, 9, I.pinkL);
+    p.px(x0 + 3, 10, I.pinkL);
+  }
+};
+
+/** Conical straw kasa. */
+const KASA = {
+  c: "#d7b46a",
+  l: "#efd18e",
+  s: "#b38c46",
+  d: "#86672f",
+  knob: "#5c4024",
+  cord: "#2f3560",
+  cordL: "#4f5890",
+};
+/** The cone: one pixel wider each side per row, from the top (y −4) to the rim (y 7). */
+const KASA_SHAPE = Array.from({ length: 12 }, (_, i) => [i - 4, 10 - i, 13 + i]);
+/** Woven straw: light on the left, shade on the right, rings every third row. */
+const kasaWeave: Fill = (x, y) => {
+  const half = (y + 4) * 0.45;
+  if (y === 7) return (x + 30) % 3 === 0 ? KASA.s : KASA.d;
+  const right = x > 11.5 + half;
+  if ((y + 6) % 3 === 0) return right ? KASA.d : KASA.s;
+  // Ribs running down from the top.
+  const r = (x - 11.5) / (y + 5);
+  if (Math.abs(r * 3 - Math.round(r * 3)) < 0.09 && y > -2) return KASA.s;
+  return x < 11.5 - half ? KASA.l : right ? KASA.s : KASA.c;
+};
+
 /** New head items (see types.ts for how drawing works). */
 export const HEAD: CategoryItems = {
   items: [
@@ -472,6 +917,16 @@ export const HEAD: CategoryItems = {
     { id: "troopvisor", name: "Trooper Helmet", tier: "coins", price: 260 },
     { id: "cloudband", name: "Cloud Headband", tier: "coins", price: 150 },
     { id: "pilothorns", name: "Horned Headset", tier: "coins", price: 200 },
+    { id: "academyhat", name: "Pointed Hat", tier: "coins", price: 180 },
+    { id: "captainhat", name: "Captain Hat", tier: "coins", price: 200 },
+    { id: "shrineribbon", name: "Shrine Ribbon", tier: "coins", price: 120 },
+    { id: "flighthelmet", name: "Flight Helmet", tier: "coins", price: 220 },
+    { id: "racinghelmet", name: "Racing Helmet", tier: "coins", price: 200 },
+    { id: "tacticalhelmet", name: "Tactical Helmet", tier: "coins", price: 180 },
+    { id: "trainercap", name: "Trainer Cap", tier: "coins", price: 120 },
+    { id: "cyberhood", name: "Cyber Hood", tier: "coins", price: 220 },
+    { id: "idolheadset", name: "Idol Headset", tier: "coins", price: 180 },
+    { id: "strawhat", name: "Straw Hat", tier: "coins", price: 150 },
   ],
   draw: {
     hijab: {
@@ -1677,6 +2132,601 @@ export const HEAD: CategoryItems = {
         px(6, 13, P.vD);
         R(7, 13, 2, 1, P.vD);
         px(9, 13, "#2a2a35");
+      },
+    },
+    // Tall pointed hat in deep indigo with a wide brim. The top leans over
+    // and the tip flops down (it trails behind in the side view). A silver
+    // band with a star that flashes now and then; the tip glints too.
+    academyhat: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t, fx } = p;
+        const A = ACADEMY;
+        const flip = p.back || fx > 0;
+        trimAbove(p, artTop(ACADEMY_HAT, 2, -5, flip));
+        art(
+          p,
+          ACADEMY_HAT,
+          2,
+          -5,
+          { l: A.l, c: A.c, s: A.s, d: A.d, u: A.u, b: A.bandL, B: A.band, k: A.bandS },
+          flip,
+        );
+        if ((t + 1450) % 2900 < 200) px(flip ? 4 : 19, -2, "#fff6c8");
+        // Little stars dotted along the band.
+        const cx = 11 + (p.back ? 0 : fx);
+        px(cx - 4, 3, A.bandL);
+        px(cx + 5, 3, A.bandL);
+        if (p.back) return;
+        // Silver star on the front of the band.
+        const lit = academyTwinkle(t);
+        R(cx, 1, 2, 3, lit ? "#ffffff" : A.star);
+        R(cx - 1, 2, 4, 1, lit ? "#ffffff" : A.star);
+        px(cx, 2, "#ffffff");
+        px(cx + 1, 3, lit ? "#ffffff" : A.bandS);
+        if (lit) {
+          R(cx, 0, 2, 1, "#ffffff");
+          px(cx - 2, 2, "#ffffff");
+          px(cx + 3, 2, "#ffffff");
+        }
+      },
+      fxFront: (_c, k) => {
+        if (!academyTwinkle(k.t) || k.dir === "b") return;
+        k.glow(faceX(k, 12, 14), k.Y(2.5), 3 * k.s, "235,240,255", 0.5);
+      },
+    },
+    // Black tricorn: the brim turned up into three corners with gold braid
+    // along the edge, a small white feather that sways, and our own emblem
+    // on the front corner: a gold compass rose whose centre glints.
+    captainhat: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t, fx } = p;
+        const T = TRICORN;
+        const side = p.back ? 0 : fx;
+        const cx = 11.5 + side;
+        const s = side / 2;
+        const dist = (x: number) => Math.floor(Math.abs(x - cx));
+        const crown = [
+          [-3, 9 + s, 14 + s],
+          [-2, 8 + s, 15 + s],
+          [-1, 8 + s, 15 + s],
+        ];
+        const plumeTop = artTop(PLUME, 7 + s, -5, p.back);
+        trimAbove(p, (x) =>
+          Math.min(plumeTop(x), dist(x) <= 10 ? tricornTop(dist(x)) : 99, topOf(crown)(x)),
+        );
+        rows(p, crown, T.c);
+        R(9 + s, -3, 2, 1, T.l);
+        R(8 + s, -2, 1, 2, T.l);
+        R(15 + s, -2, 1, 2, T.s);
+        // White plume curling over the crown; its loose tip sways.
+        art(p, PLUME, 7 + s, -5, { W: T.w, S: T.wS }, p.back);
+        const sw = Math.sin(t / 380) > 0.3 ? 1 : 0;
+        px(mx(p, 7 + s - sw), -3, T.w);
+        px(mx(p, 7 + s - sw), -2, T.wS);
+        // Brim in three corners, gold braid along the top edge.
+        for (let x = -2; x <= 25; x++) {
+          const d = dist(x);
+          if (d > 10) continue;
+          const top = tricornTop(d);
+          const bot = TRICORN_BOTTOM[d];
+          for (let y = top; y <= bot; y++) {
+            let c = T.c;
+            if (y === top) c = x < cx ? (d >= 4 && d <= 8 ? T.gL : T.g) : d >= 8 ? T.gS : T.g;
+            else if (y === bot) c = T.s;
+            else if (y === top + 1 && x < cx) c = T.l;
+            px(x, y, c);
+          }
+        }
+        if (p.back) return;
+        const glint = t % 3300 < 220;
+        art(p, COMPASS, Math.floor(cx) - 3, 1, {
+          G: p.gold,
+          d: T.gS,
+          W: glint ? "#ffffff" : T.gL,
+        });
+      },
+    },
+    // Big white paper bow with a red band at the back of the head, knotted
+    // in red, with two long notched tails that sway. From the front only the
+    // ends of the loops show past the head.
+    shrineribbon: {
+      animated: true,
+      draw: (p) => {
+        const S = SHRINE;
+        const pal = { L: S.L, W: S.w, S: S.S, r: S.r };
+        if (p.back) {
+          bowTail(p, 10, 12, 9, -1, 0);
+          bowTail(p, 12, 12, 8, 1, 1.7);
+          art(p, BOW_LOOP, 2, 7, pal);
+          art(p, BOW_LOOP, 2, 7, pal, true);
+          bowKnot(p, 11, 9);
+          return;
+        }
+        if (p.fx) {
+          bowTail(p, 3, 12, 8, -1, 0);
+          art(p, BOW_SIDE, -2, 7, pal);
+          bowKnot(p, 5, 9);
+          return;
+        }
+        // Facing front the bow is behind the head: only what pokes out shows.
+        const peek: Painter = {
+          ...p,
+          px: (x, y, c) => {
+            if (x < 4 || x > 19) p.px(x, y, c);
+          },
+        };
+        art(peek, BOW_LOOP, 2, 7, pal);
+        art(peek, BOW_LOOP, 2, 7, pal, true);
+      },
+    },
+    // White pilot helmet with an orange stripe over the dome and orange ear
+    // cups. The smoked visor is flipped up on the brow (a glint slides
+    // across it); a mic boom reaches the mouth and a light blinks on the cup.
+    flighthelmet: {
+      hidesHair: true,
+      animated: true,
+      draw: (p) => {
+        const { R, px, t, fx } = p;
+        const F = FLIGHT;
+        const open = p.back ? [] : fx ? FLIGHT_SIDE : FLIGHT_FRONT;
+        const inside = (x: number, y: number) =>
+          open.some(([yy, a, b]) => yy === y && x >= a && x <= b);
+        const put = (x: number, y: number, c: string) => {
+          if (!inside(x, y)) px(x, y, c);
+        };
+        FLIGHT_SHAPE.forEach(([y, a, b]) => {
+          for (let x = a; x <= b; x++) put(x, y, F.w);
+        });
+        // Light on the dome, shade down the far side and along the bottom.
+        R(8, -2, 3, 1, F.wL);
+        R(6, -1, 2, 1, F.wL);
+        R(5, 0, 1, 3, F.wL);
+        px(17, -1, F.wS);
+        px(18, 0, F.wS);
+        R(19, 1, 1, 13, F.wS);
+        for (let x = 5; x <= 18; x++) put(x, 14, F.wS);
+        // Orange stripe over the dome.
+        const sx = p.back ? 11 : 11 + (fx ? 1 : 0);
+        R(sx, -2, 2, p.back ? 8 : 3, F.o);
+        px(sx, -2, F.oL);
+        const led = t % 1500 < 420 ? "#7dffb0" : "#2f6f4a";
+        if (p.back) {
+          // Our chevron, an adjuster band and both ear cups.
+          [
+            [11, 7],
+            [12, 7],
+            [10, 8],
+            [13, 8],
+            [9, 9],
+            [14, 9],
+          ].forEach(([x, y]) => px(x, y, F.o));
+          R(4, 12, 16, 1, F.trim);
+          [2, 19].forEach((x) => {
+            R(x, 8, 3, 4, F.w);
+            R(x === 2 ? 2 : 21, 9, 1, 2, F.o);
+          });
+          R(20, 8, 1, 4, F.wS);
+          return;
+        }
+        // Brow edge under the visor, then the visor flipped up.
+        for (let x = 5; x <= 18; x++) put(x, 5, F.wS);
+        const vl = 5 + fx;
+        const vr = fx ? 19 : 18;
+        R(vl + 1, 1, vr - vl - 1, 1, F.vL);
+        R(vl, 2, vr - vl + 1, 2, F.v);
+        R(vl + 1, 4, vr - vl - 1, 1, F.v);
+        const g = Math.floor(t / 60) % 45;
+        if (g <= vr - vl) {
+          px(vl + g, 2, "#a9b6d6");
+          if (g > 0) px(vl + g - 1, 3, "#6d7ba3");
+        }
+        px(4, 3, F.trim);
+        if (!fx) px(19, 3, F.trim);
+        if (fx) {
+          // Near ear cup faces us with an orange disc; the far one peeks out.
+          R(4, 7, 4, 6, F.w);
+          R(5, 8, 2, 4, F.o);
+          px(5, 8, F.oL);
+          px(6, 11, F.oS);
+          R(4, 12, 4, 1, F.wS);
+          px(7, 7, led);
+          R(20, 8, 1, 4, F.wS);
+          // Mic boom to the corner of the mouth.
+          R(8, 13, 2, 1, F.trim);
+          px(10, 13, F.mic);
+          px(11, 13, F.oS);
+          return;
+        }
+        // Ear cups with an orange stripe; a light blinks on one.
+        [2, 19].forEach((x) => {
+          R(x, 8, 3, 4, F.w);
+          R(x === 2 ? 2 : 21, 9, 1, 2, F.o);
+        });
+        R(20, 8, 1, 4, F.wS);
+        px(3, 8, led);
+        // Mic boom to the corner of the mouth.
+        R(5, 13, 3, 1, F.trim);
+        px(8, 13, F.mic);
+        px(9, 13, F.oS);
+      },
+    },
+    // Glossy rounded kart helmet in red with a white number disc ("7" from
+    // the front and back, speed chevrons from the side, where the drawing is
+    // mirrored). A smoky see-through visor shows the eyes; a shine sweeps
+    // over the shell and the visor.
+    racinghelmet: {
+      hidesHair: true,
+      animated: true,
+      draw: (p) => {
+        const { R, px, t, fx } = p;
+        const K = KART;
+        const shine =
+          (c: string): Fill =>
+          (x, y) => {
+            const d = kartShine(t, x, y);
+            return d < 0.8 ? p.shade(c, 0.45) : d < 1.8 ? p.shade(c, 0.18) : c;
+          };
+        rows(p, KART_SHAPE, shine(K.r));
+        // Glare on the dome, shade down the far side and along the bottom.
+        R(8, -2, 2, 1, "#ffc2b8");
+        R(6, -1, 2, 1, K.rL);
+        R(5, 0, 1, 2, K.rL);
+        px(17, -1, K.rS);
+        px(18, 0, K.rS);
+        R(19, 1, 1, 13, K.rS);
+        R(6, 14, 12, 1, K.rS);
+        if (p.back) {
+          R(11, -2, 2, 6, shine(K.w));
+          rows(
+            p,
+            ROUNDEL.map(([y, a, b]) => [y + 4, a, b]),
+            K.w,
+          );
+          art(p, SEVEN, 10, 5, { n: K.n });
+          R(4, 12, 16, 1, K.w);
+          R(19, 12, 1, 1, K.wS);
+          return;
+        }
+        const o = fx;
+        R(11 + o, -2, 2, 2, shine(K.w));
+        rows(
+          p,
+          ROUNDEL.map(([y, a, b]) => [y, a + o, b + o]),
+          K.w,
+        );
+        px(14 + o, 4, K.wS);
+        px(13 + o, 5, K.wS);
+        if (fx)
+          [
+            [13, 1],
+            [14, 2],
+            [15, 3],
+            [14, 4],
+            [13, 5],
+          ].forEach(([x, y]) => px(x, y, K.n));
+        else art(p, SEVEN, 10, 1, { n: K.n });
+        // White seal round the visor.
+        const left = fx ? 7 : 5;
+        const right = fx ? 19 : 18;
+        R(left, 6, right - left + 1, 1, K.w);
+        R(left - 1, 7, 1, 6, K.w);
+        if (!fx) R(19, 7, 1, 6, K.wS);
+        // Smoky visor: skin and eyes show through the tint.
+        const a = 7 + fx;
+        const b = 15 + fx;
+        const glass = mix(p.sk, K.tint, 0.72);
+        for (let y = 7; y <= 12; y++)
+          for (let x = left; x <= right; x++) {
+            if ((y === 7 || y === 12) && (x === left || x === right)) continue;
+            let c = glass;
+            for (const e of [a, b]) {
+              if (x >= e && x <= e + 1 && y >= 9 && y <= 11)
+                c = mix(y === 9 ? p.ink : p.ec, K.tint, 0.45);
+              if (x === e && y === 10) c = mix("#ffffff", K.tint, 0.5);
+            }
+            if (y === 7) c = mix(c, "#9fb4e8", 0.35);
+            const d = kartShine(t, x, y);
+            if (d < 0.8) c = mix(c, "#ffffff", 0.6);
+            else if (d < 1.8) c = mix(c, "#ffffff", 0.25);
+            px(x, y, c);
+          }
+        // Chin bar vents.
+        px(10 + o, 13, K.vent);
+        px(13 + o, 13, K.vent);
+        R(11 + o, 14, 2, 1, K.vent);
+      },
+    },
+    // Olive tactical helmet with soft camouflage, a lip round the rim and a
+    // small mount on top. Goggles are pushed up on the front (their amber
+    // lenses glint now and then); chin straps hang loose with buckles.
+    tacticalhelmet: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t, fx } = p;
+        const T = TAC;
+        trimAbove(p, topOf(TAC_SHAPE));
+        rows(p, TAC_SHAPE, tacCamo);
+        // Light on the dome, shade down the far side.
+        R(9, -3, 2, 1, T.l);
+        R(7, -2, 2, 1, T.l);
+        px(6, -1, T.l);
+        px(5, 0, T.l);
+        px(17, -2, T.s);
+        px(18, -1, T.s);
+        R(19, 0, 1, 5, T.s);
+        // Lip round the rim; the sides come down over the temples.
+        R(3, 5, 18, 1, T.s);
+        px(3, 5, T.d);
+        px(20, 5, T.d);
+        R(4, 6, 2, 2, T.c);
+        R(18, 6, 2, 2, T.s);
+        px(4, 7, T.d);
+        px(19, 7, T.d);
+        const o = p.back ? 0 : fx ? 1 : 0;
+        R(11 + o, -3, 2, 1, T.metal);
+        if (p.back) {
+          // Goggle strap with its buckle, and a patch.
+          R(4, -1, 16, 1, T.strap);
+          px(4, -1, T.gf);
+          R(11, -1, 2, 1, T.metal);
+          R(10, 1, 4, 3, T.d);
+          R(10, 1, 4, 1, T.s);
+          return;
+        }
+        // Goggles pushed up on the helmet; the strap goes round.
+        R(4, -1, 16, 1, T.strap);
+        const glint = t % 2600 < 180;
+        const pal = { f: T.gf, L: glint ? "#ffffff" : T.lensL, l: T.lens, S: T.lensS };
+        const ga = 7 + fx;
+        const gb = 13 + fx;
+        art(p, GOGGLE, ga, -2, pal);
+        art(
+          p,
+          fx ? GOGGLE.map((r) => r.slice(0, 3)) : GOGGLE,
+          gb,
+          -2,
+          fx ? { ...pal, l: T.lens } : pal,
+        );
+        R(ga + 4, -1, gb - ga - 4, 1, T.gf);
+        // Chin straps hanging loose, a buckle on each.
+        const strap = (pts: number[][], buckle: number) =>
+          pts.forEach(([x, y], i) => px(x, y, i === buckle ? T.metal : T.strap));
+        if (fx) {
+          strap(
+            [
+              [6, 8],
+              [6, 9],
+              [6, 10],
+              [6, 11],
+              [7, 12],
+              [8, 13],
+              [9, 14],
+            ],
+            2,
+          );
+          return;
+        }
+        [false, true].forEach((right) => {
+          const e = (x: number) => (right ? 23 - x : x);
+          strap(
+            [
+              [e(5), 8],
+              [e(5), 9],
+              [e(5), 10],
+              [e(5), 11],
+              [e(6), 12],
+              [e(6), 13],
+            ],
+            2,
+          );
+        });
+      },
+    },
+    // Sporty cap with teal sides and a white front, a yellow star on it,
+    // worn turned a little to one side so the brim points off that way.
+    // From behind: the snapback strap with a bit of hair showing.
+    trainercap: {
+      draw: (p) => {
+        const { R, px, fx } = p;
+        const C = TRAIN;
+        trimAbove(p, topOf(CAP_SHAPE));
+        rows(p, CAP_SHAPE, C.t);
+        R(mx(p, 7, 2), 0, 2, 1, C.tL);
+        px(mx(p, 6), 1, C.tL);
+        R(mx(p, 5), 2, 1, 2, C.tL);
+        R(mx(p, 18), 2, 1, 3, C.tS);
+        px(mx(p, 17), 1, C.tS);
+        px(11, -1, C.tL);
+        if (p.back) {
+          // Snapback: an arch showing the hair and the strap across it.
+          R(11, 2, 2, 1, p.hc);
+          R(10, 3, 4, 1, p.hc);
+          R(9, 4, 6, 1, C.w);
+          px(10, 4, C.wS);
+          px(13, 4, C.wS);
+          R(11, 0, 2, 1, C.tS);
+          // The brim peeks out on one side.
+          R(mx(p, 19, 3), 5, 3, 1, C.t);
+          R(mx(p, 19, 3), 6, 3, 1, C.tD);
+          return;
+        }
+        const o = fx ? 1 : 0;
+        // White front panel with a seam beside it, and the star.
+        R(10 + o, 0, 7 - o, 5, C.w);
+        R(16, 1, 1, 4, C.wS);
+        R(10 + o, 4, 7 - o, 1, C.wS);
+        R(9 + o, 1, 1, 4, C.tS);
+        px(7, 2, C.tD);
+        art(p, STAR5, 11 + o, 1, { Y: C.y, K: C.yL, S: C.yS });
+        // Brim pointing off to one side.
+        const end = fx ? 22 : 21;
+        R(8 + o, 5, end - 7 - o, 1, C.t);
+        R(8 + o, 5, 3, 1, C.tL);
+        px(end, 5, C.tS);
+        R(10 + o, 6, end - 9 - o, 1, C.tS);
+        px(end, 6, C.tD);
+        px(end - 1, 6, C.tD);
+      },
+    },
+    // Dark hood with glowing circuit lines in magenta and cyan: a pulse runs
+    // out from a chip on the crown and the end nodes blink. The hood's edge
+    // shades the forehead; a small implant by the ear blinks in turn.
+    cyberhood: {
+      hidesHair: true,
+      animated: true,
+      draw: (p) => {
+        const { R, px, t, fx } = p;
+        const C = CYBER;
+        const open = p.back ? [] : fx ? HOOD_SIDE : HOOD_FRONT;
+        const inside = (x: number, y: number) =>
+          open.some(([yy, a, b]) => yy === y && x >= a && x <= b);
+        HOOD_SHAPE.forEach(([y, a, b]) => {
+          for (let x = a; x <= b; x++) if (!inside(x, y)) px(x, y, C.c);
+        });
+        R(11, -3, 2, 1, C.c);
+        // Light on the crown, shade down the far side and along the hem.
+        px(11, -3, C.l);
+        R(9, -2, 2, 1, C.l);
+        px(8, -1, C.l);
+        px(7, 0, C.l);
+        R(19, 2, 1, 14, C.s);
+        R(4, 17, 16, 1, C.s);
+        if (p.back) {
+          R(10, 1, 4, 2, C.line);
+          px(11, 1, t % 1200 < 600 ? C.m : C.cy);
+          CYBER_BACK.forEach((tr, i) => trace(p, tr, i * 7));
+          return;
+        }
+        // Dark lining just outside the face opening.
+        for (let y = 3; y <= 16; y++)
+          for (let x = 3; x <= 20; x++)
+            if (
+              !inside(x, y) &&
+              (inside(x - 1, y) || inside(x + 1, y) || inside(x, y - 1) || inside(x, y + 1))
+            )
+              px(x, y, C.line);
+        // The hood's edge throws a shadow over the forehead.
+        open.forEach(([y, a, b]) => {
+          if (y === 4) R(a, y, b - a + 1, 1, C.s);
+          if (y === 5) R(a, y, b - a + 1, 1, p.shade(p.sk, -0.4));
+        });
+        // Chip on the crown and the circuit lines.
+        const c = 11 + (fx ? 1 : 0);
+        R(c, -1, 2, 2, C.line);
+        px(c, -1, t % 1200 < 600 ? C.m : C.cy);
+        (fx ? CYBER_SIDE : CYBER_FRONT).forEach((tr, i) => trace(p, tr, i * 7));
+        // Ear implant.
+        const ix = fx ? 7 : 5;
+        px(ix, 11, implantOn(t) ? C.m : C.cy);
+        px(ix, 12, C.chrome);
+      },
+      fxFront: (_c, k) => {
+        if (k.dir === "b") return;
+        const rgb = implantOn(k.t) ? "255,63,180" : "46,230,255";
+        k.glow(faceX(k, 5.5, 7.5), k.Y(11.5), 1.8 * k.s, rgb, 0.45);
+      },
+    },
+    // Thin idol headset that wraps behind the head: an ear piece with a
+    // sparkly pink star, a slim boom to a pink mic by the mouth, a small pad
+    // on the other ear, and two little hair clips on the fringe.
+    idolheadset: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, fx } = p;
+        const I = IDOL;
+        if (p.back) {
+          R(5, 9, 14, 1, I.shell);
+          idolPiece(p, 2);
+          R(18, 9, 2, 3, I.shell);
+          px(19, 11, I.shellS);
+          return;
+        }
+        // Hair clips on the fringe.
+        const o = fx ? 1 : 0;
+        px(8 + o, 5, I.clipA);
+        px(9 + o, 4, I.clipA);
+        px(10 + o, 5, I.clipB);
+        px(11 + o, 4, I.clipB);
+        if (fx) {
+          idolPiece(p, 4);
+          R(19, 9, 1, 3, I.shellS);
+          px(8, 12, I.boom);
+          R(9, 13, 2, 1, I.boom);
+          px(11, 13, I.foam);
+          return;
+        }
+        idolPiece(p, 18);
+        R(4, 9, 2, 3, I.shell);
+        px(4, 11, I.shellS);
+        px(17, 12, I.boom);
+        R(15, 13, 2, 1, I.boom);
+        px(14, 13, I.foam);
+      },
+      fxFront: (_c, k) => {
+        if (!idolSparkle(k.t)) return;
+        const u = k.dir === "b" ? 4 : k.dir === "r" ? 6 : k.dir === "l" ? 18 : 20;
+        k.glow(k.X(u), k.Y(10.5), 2.6 * k.s, "255,150,210", 0.5);
+      },
+    },
+    // Wide conical straw kasa with woven rings and ribs and a small wooden
+    // knob on top. It sits low, shading the eyes a little, tied on with a
+    // dark indigo chin cord.
+    strawhat: {
+      draw: (p) => {
+        const { R, px, fx } = p;
+        const K = KASA;
+        trimAbove(p, topOf(KASA_SHAPE));
+        rows(p, KASA_SHAPE, kasaWeave);
+        R(11, -5, 2, 1, K.knob);
+        px(11, -4, K.d);
+        if (p.back) return;
+        // Shadow of the brim over the brow.
+        R(fx ? 8 : 6, 8, fx ? 11 : 12, 1, p.shade(p.sk, -0.18));
+        // Chin cord, knotted under the chin.
+        const cord = fx
+          ? [
+              [7, 8],
+              [7, 9],
+              [7, 10],
+              [7, 11],
+              [8, 12],
+              [9, 13],
+              [10, 14],
+              [11, 15],
+              [12, 16],
+              [17, 13],
+              [16, 14],
+              [15, 15],
+              [14, 16],
+            ]
+          : [
+              [5, 8],
+              [5, 9],
+              [5, 10],
+              [5, 11],
+              [6, 12],
+              [6, 13],
+              [7, 14],
+              [8, 15],
+              [9, 16],
+              [10, 16],
+              [18, 8],
+              [18, 9],
+              [18, 10],
+              [18, 11],
+              [17, 12],
+              [17, 13],
+              [16, 14],
+              [15, 15],
+              [14, 16],
+              [13, 16],
+            ];
+        cord.forEach(([x, y]) => px(x, y, K.cord));
+        const kx = fx ? 13 : 11;
+        R(kx, 16, fx ? 1 : 2, 1, K.cordL);
+        px(kx, 17, K.cord);
       },
     },
   },

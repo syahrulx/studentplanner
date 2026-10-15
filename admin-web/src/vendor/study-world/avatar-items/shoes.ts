@@ -31,6 +31,7 @@ export const SHOES: CategoryItems = {
     { id: "forgeboots", name: "Forge Boots", tier: "coins", price: 200 },
     { id: "voltrunners", name: "Volt Runners", tier: "coins", price: 220 },
     { id: "troopboots", name: "Trooper Boots", tier: "coins", price: 180 },
+    { id: "racingboots", name: "Racing Boots", tier: "coins", price: 150 },
     { id: "lightup", name: "Light-up sneakers", tier: "plus" },
     { id: "skates", name: "Roller skates", tier: "plus" },
     { id: "ballet", name: "Ballet flats", tier: "plus" },
@@ -319,6 +320,28 @@ export const SHOES: CategoryItems = {
         p.R(x, y + 1, 4, 1, slD);
         p.px(at(-1), y + 1, slD);
         p.px(at(1), y + 1, sl);
+      },
+    },
+    racingboots: {
+      shoe: (p, x, y) => {
+        const rd = "#d8262e";
+        const rdS = "#a51b22";
+        const rdL = "#f2555a";
+        const W = "#f6f6f2";
+        const at = (i: number) => (isLeft(x) ? x + i : x + 3 - i);
+        // Slim red ankle boot with a white collar at the top.
+        p.R(x, y - 2, 4, 3, rd);
+        p.R(at(3), y - 2, 1, 3, rdS);
+        p.R(x, y - 2, 4, 1, W);
+        p.px(at(3), y - 2, "#cfcfca");
+        // A white stripe sweeping down the outer side to the toe.
+        p.px(at(0), y - 1, W);
+        p.px(at(1), y, W);
+        p.px(at(2), y, W);
+        p.px(at(1), y - 1, rdL);
+        // Thin dark sole with a red heel tab.
+        p.R(x, y + 1, 4, 1, "#26262c");
+        p.px(at(0), y + 1, rdS);
       },
     },
     skates: {

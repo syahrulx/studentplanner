@@ -59,6 +59,8 @@ export const PET: CategoryItems = {
     { id: "slime", name: "Pixel Slime", tier: "coins", price: 350 },
     { id: "robobuddy", name: "Robo Buddy", tier: "coins", price: 380 },
     { id: "blockbuddy", name: "Block Buddy", tier: "coins", price: 300 },
+    { id: "parrot", name: "Parrot", tier: "coins", price: 320 },
+    { id: "voltpup", name: "Volt Pup", tier: "coins", price: 380 },
   ],
   draw: {
     puppy: {
@@ -570,6 +572,109 @@ export const PET: CategoryItems = {
         Q(e1 + 1, ey + 2, 1, 1, "#5a2f1f");
         Q(e1 - 1, ey + 2, 1, 1, BLUSH);
         Q(e2 + 1, ey + 2, 1, 1, BLUSH);
+      },
+    },
+    parrot: {
+      animated: true,
+      // Red, yellow and blue parrot that flaps beside you and squawks "!" now and then.
+      pet: (Q, t) => {
+        const red = "#e2343c";
+        const redD = "#b8222c";
+        const yellow = "#ffd23f";
+        const blue = "#2f6fe0";
+        const blueD = "#1f4fb0";
+        const sq = t % 4200;
+        const squawk = sq > 3300 && sq < 3800;
+        // Long tail feathers trailing down behind.
+        Q(4, 10, 2, 1, red);
+        Q(3, 11, 2, 1, blue);
+        Q(2, 12, 2, 1, blue);
+        Q(1, 13, 2, 1, blueD);
+        Q(5, 11, 1, 1, yellow);
+        // Body and head.
+        Q(5, 6, 6, 4, red);
+        Q(6, 10, 4, 1, red);
+        Q(8, 9, 3, 1, redD);
+        Q(8, 3, 3, 1, red);
+        Q(7, 4, 5, 3, red);
+        Q(10, 4, 2, 2, "#fff6ea");
+        Q(10, 4, 1, 1, now(t, 3100, 140, 600) ? "#e8d8c8" : EYE);
+        // Hooked beak; it opens wide on a squawk.
+        Q(12, 4, 1, 2, "#efe3c8");
+        Q(13, 5, 1, 2, "#d9ccb0");
+        if (squawk) {
+          Q(12, 6, 1, 1, "#ff6f91");
+          Q(12, 7, 1, 1, "#3a3a3a");
+          Q(13, 0, 1, 2, "#ffffff");
+          Q(13, 3, 1, 1, "#ffffff");
+        } else Q(12, 6, 1, 1, "#3a3a3a");
+        // Tucked grey feet.
+        Q(8, 11, 1, 1, "#8a94a0");
+        Q(10, 11, 1, 1, "#8a94a0");
+        // Wing: up, level, down, level.
+        const w = Math.floor(t / 110) % 4;
+        if (w === 0) {
+          Q(5, 4, 3, 2, yellow);
+          Q(4, 2, 2, 2, blue);
+          Q(3, 1, 2, 1, blueD);
+        } else if (w === 2) {
+          Q(5, 7, 3, 2, yellow);
+          Q(4, 9, 3, 1, blue);
+          Q(3, 10, 2, 1, blueD);
+        } else {
+          Q(4, 6, 3, 2, yellow);
+          Q(1, 6, 3, 1, blue);
+          Q(0, 7, 4, 1, blueD);
+        }
+      },
+    },
+    voltpup: {
+      animated: true,
+      // Cream pup with floppy bolt-tipped ears and a zig-zag tail that sparks.
+      pet: (Q, t) => {
+        const cream = "#fff1d0";
+        const creamD = "#ecd6a8";
+        const yellow = "#ffcf33";
+        const yellowD = "#e0a91f";
+        const wag = Math.floor(t / 160) % 2;
+        const step = Math.floor(t / 260) % 2;
+        const perk = now(t, 2400, 300, 1200) ? -1 : 0;
+        // Zig-zag lightning tail.
+        Q(2, 6, 2, 1, yellow);
+        Q(1 - wag, 5, 2, 1, yellow);
+        Q(2 - wag, 4, 2, 1, yellow);
+        Q(1 - wag, 3, 2, 1, yellowD);
+        // Body with a yellow saddle and paws.
+        Q(3, 6, 7, 4, cream);
+        Q(4, 6, 5, 1, yellow);
+        Q(4, 9, 5, 1, creamD);
+        Q(3, 10 - step, 2, 2, cream);
+        Q(8, 10 - (1 - step), 2, 2, cream);
+        Q(3, 11 - step, 2, 1, "#f0c05a");
+        Q(8, 10 + step, 2, 1, "#f0c05a");
+        // Head and snout.
+        Q(8, 2, 5, 5, cream);
+        Q(12, 4, 2, 2, cream);
+        Q(12, 6, 1, 1, creamD);
+        Q(13, 4, 1, 1, "#3a2a25");
+        Q(11, 3, 1, 1, now(t, 3300, 140, 400) ? creamD : EYE);
+        if (now(t, 1900, 500, 900)) Q(12, 6, 1, 1, "#ff8fa8");
+        // Floppy ears with bolt-shaped tips (they perk up now and then).
+        Q(11, 1, 2, 1, yellowD);
+        Q(8, 2 + perk, 2, 3, yellow);
+        Q(9, 5 + perk, 1, 1, yellowD);
+        Q(8, 6 + perk, 1, 1, yellowD);
+        // Blue collar with a bolt tag.
+        Q(9, 7, 3, 1, "#3d7fd6");
+        Q(10, 8, 1, 1, yellow);
+        // Sparks crackle off the tail now and then.
+        const sp = t % 2600;
+        if (sp < 320) {
+          const f = Math.floor(sp / 80) % 2;
+          Q(f ? 0 : 3, 1 + f, 1, 1, "#ffffff");
+          Q(f ? 4 : 0, 3 + f, 1, 1, "#9ff4ff");
+          Q(1, f ? 0 : 7, 1, 1, "#fff3a0");
+        }
       },
     },
   },
