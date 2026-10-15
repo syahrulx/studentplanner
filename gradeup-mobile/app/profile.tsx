@@ -686,6 +686,25 @@ export default function Profile() {
         </Pressable>
       </View>
 
+      <View style={[styles.cardGroup, { backgroundColor: theme.card, marginTop: 10 }]}>
+        <Pressable
+          style={({ pressed }) => [styles.privacyRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+          onPress={() => router.push('/snap-memories' as any)}
+          accessibilityRole="button"
+        >
+          <View style={{ width: 28, alignItems: 'center', marginRight: 12 }}>
+            <Feather name="clock" size={22} color={theme.primary} />
+          </View>
+          <View style={styles.privacyBody}>
+            <Text style={[styles.privacyLabel, { color: theme.text }]}>Snap memories</Text>
+            <Text style={[styles.privacyDesc, { color: theme.textSecondary }]}>
+              Your past snaps by month, and a photo dump to share.
+            </Text>
+          </View>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </Pressable>
+      </View>
+
       <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>LOCATION PRIVACY</Text>
       <View style={[styles.cardGroup, { backgroundColor: theme.card }]}>
         {privacyOptions.map((opt, i) => (
