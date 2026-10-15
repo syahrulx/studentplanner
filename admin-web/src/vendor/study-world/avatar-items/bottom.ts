@@ -60,6 +60,7 @@ export const BOTTOM: CategoryItems = {
     { id: "plaid", name: "Plaid skirt", tier: "coins", price: 50 },
     { id: "ripped", name: "Ripped jeans", tier: "coins", price: 60 },
     { id: "techcargo", name: "Techwear Cargo", tier: "coins", price: 160 },
+    { id: "redhakama", name: "Red Hakama", tier: "coins", price: 160 },
     { id: "pleated", name: "Pleated skirt", tier: "plus" },
     { id: "hakama", name: "Hakama", tier: "plus" },
     { id: "neonpants", name: "Neon stripes", tier: "plus" },
@@ -217,6 +218,55 @@ export const BOTTOM: CategoryItems = {
         px(10, 25, strap);
         px(13, 25, strap);
         R(11 + sw, 26, 2, 1, strap);
+      },
+    },
+    redhakama: {
+      draw: (p) => {
+        const { R, px, lUp, rUp } = p;
+        const red = "#d9262c";
+        const redS = "#a81b22";
+        const redL = "#f25a4e";
+        const redD = "#7f1419";
+        // High waist and hips, then wide legs that flare out to the ankles.
+        R(7, 23, 10, 3, red);
+        R(6, 25, 12, 1, red);
+        R(6, 26 - lUp, 6, 3, red);
+        R(12, 26 - rUp, 6, 3, red);
+        R(5, 27 - lUp, 1, 2, red);
+        R(18, 27 - rUp, 1, 2, redS);
+        R(16, 23, 1, 3, redS);
+        R(17, 25, 1, 1, redS);
+        R(17, 26 - rUp, 1, 3, redS);
+        // Crisp pleats from the hips down: a lit fold, then a shadow fold.
+        (
+          [
+            [7, redL, lUp],
+            [9, redS, lUp],
+            [13, redL, rUp],
+            [15, redS, rUp],
+          ] as const
+        ).forEach(([x, c, up]) => {
+          px(x, 25, c);
+          R(x, 26 - up, 1, 3, c);
+        });
+        // The fold between the legs, and a darker hem.
+        R(11, 26 - lUp, 1, 3, redD);
+        R(5, 28 - lUp, 7, 1, redD);
+        R(12, 28 - rUp, 7, 1, redD);
+        // Ties wrapped round the waist.
+        R(7, 24, 10, 1, redS);
+        if (p.back) {
+          // Stiff back board with a light edge.
+          R(9, 23, 6, 2, red);
+          R(9, 23, 6, 1, redL);
+          R(14, 23, 1, 2, redS);
+          return;
+        }
+        // The ties knot in a flat bow at the front, with two short ends.
+        R(10, 24, 4, 1, redL);
+        R(11, 24, 2, 1, red);
+        px(11, 25, redS);
+        px(12, 26, redS);
       },
     },
     pleated: {

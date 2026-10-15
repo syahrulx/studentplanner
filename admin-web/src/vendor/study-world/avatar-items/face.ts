@@ -95,6 +95,7 @@ export const FACE: CategoryItems = {
     { id: "ninjascarf", name: "Ninja Scarf", tier: "coins", price: 220 },
     { id: "holomask", name: "Holo Mask", tier: "coins", price: 280 },
     { id: "cloudscarf", name: "Shinobi Scarf", tier: "coins", price: 180 },
+    { id: "eyepatch", name: "Eyepatch", tier: "coins", price: 120 },
   ],
   draw: {
     // Round tortoiseshell frames with a little bridge.
@@ -518,6 +519,40 @@ export const FACE: CategoryItems = {
         }
         // Tassel of grey thread at the end.
         if (!f) p.px(endX, 16 + len, st);
+      },
+    },
+
+    // Black eyepatch over one eye (the near eye in the three-quarter view).
+    // It covers x a−1 to a+2, rows 8–12, where every eye style draws (only
+    // the widest emote hearts and a lash tip can peek past its edge). The
+    // strap runs up across the brow, under a hat brim, to the far side, and
+    // back towards the ear.
+    eyepatch: {
+      draw: (p) => {
+        const a = 7 + p.fx;
+        const K = "#1f1c24";
+        const L = "#3b3644";
+        const S = "#110f14";
+        const strap = "#2b2730";
+        [
+          [2, 7],
+          [3, 7],
+          [4, 6],
+          [5, 6],
+          [6, 6],
+          [7, 6],
+          [8, 6],
+          [9, 5],
+          [10, 5],
+          [11, 5],
+        ].forEach(([dx, y]) => dot(p, a + dx, y, strap));
+        for (let x = 5; x <= a - 2; x++) dot(p, x, 9, strap);
+        p.R(a - 1, 8, 4, 4, K);
+        p.R(a, 12, 2, 1, S);
+        // A soft sheen top-left, a darker rim along the bottom and far edge.
+        p.px(a, 8, L);
+        p.px(a - 1, 9, L);
+        p.R(a + 2, 10, 1, 2, S);
       },
     },
   },

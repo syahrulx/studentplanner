@@ -45,6 +45,7 @@ const patternTorso = (p: Painter, fill: (x: number, y: number) => string) => {
 const DIGITS: Record<string, string[]> = {
   "1": [".#.", "##.", ".#.", ".#.", "###"],
   "0": ["###", "#.#", "#.#", "#.#", "###"],
+  "7": ["###", "..#", "..#", ".#.", ".#."],
 };
 const digit = (p: Painter, d: string, x: number, y: number, c: string) =>
   DIGITS[d].forEach((row, j) =>
@@ -73,6 +74,16 @@ export const TOP: CategoryItems = {
     { id: "trooparmor", name: "Trooper Armor", tier: "coins", price: 260 },
     { id: "moonhaori", name: "Wave Haori", tier: "coins", price: 260 },
     { id: "pilotsuit", name: "Pilot Suit", tier: "coins", price: 240 },
+    { id: "academyrobe", name: "Academy Robe", tier: "coins", price: 220 },
+    { id: "captaincoat", name: "Captain Coat", tier: "coins", price: 250 },
+    { id: "shrinerobe", name: "Shrine Robe", tier: "coins", price: 220 },
+    { id: "flightsuit", name: "Flight Suit", tier: "coins", price: 220 },
+    { id: "racesuit", name: "Race Suit", tier: "coins", price: 220 },
+    { id: "tacticalvest", name: "Tactical Vest", tier: "coins", price: 220 },
+    { id: "trainerjacket", name: "Trainer Jacket", tier: "coins", price: 180 },
+    { id: "neontrench", name: "Neon Trench", tier: "coins", price: 300 },
+    { id: "stagedress", name: "Stage Dress", tier: "coins", price: 250 },
+    { id: "roninkimono", name: "Ronin Kimono", tier: "coins", price: 220 },
     { id: "labcoat", name: "Lab coat", tier: "plus" },
     { id: "leather", name: "Leather jacket", tier: "plus" },
     { id: "sailor", name: "Sailor top", tier: "plus" },
@@ -981,6 +992,646 @@ export const TOP: CategoryItems = {
         R(11, 18, 2, 1, vi);
         px(11 + m, 18, seam(18));
         px(9, 17, WS);
+      },
+    },
+    academyrobe: {
+      draw: (p) => {
+        const { R, px } = p;
+        const robe = "#27262f";
+        const robeS = "#18171e";
+        const robeL = "#403f4d";
+        const te = "#1fa09b";
+        const teS = "#15716d";
+        const sil = "#cfd6df";
+        const silS = "#97a2b0";
+        const shirt = "#f4f1ea";
+        const shirtS = "#d6d0c4";
+        // Scarf stripes: teal and silver in blocks of two.
+        const stripe = (n: number) => (Math.floor(n / 2) % 2 ? sil : te);
+        p.torso(robe);
+        p.armsLong(robe);
+        R(16, 16, 1, 8, robeS);
+        R(18, 16, 1, 7, robeS);
+        px(5, 17, robeL);
+        px(5, 18, robeL);
+        // Bell sleeves that open wide at the wrist, lined in teal.
+        R(4, 20, 1, 2, robe);
+        R(19, 20, 1, 2, robeS);
+        R(4, 22, 3, 1, te);
+        R(17, 22, 3, 1, teS);
+        if (p.back) {
+          // One long panel down past the hips, with the hood lying on it.
+          R(7, 24, 10, 3, robe);
+          R(6, 25, 1, 2, robe);
+          R(17, 25, 1, 2, robeS);
+          R(16, 24, 1, 3, robeS);
+          R(6, 26, 12, 1, robeS);
+          R(8, 17, 8, 2, robeL);
+          R(9, 19, 6, 1, robeL);
+          R(10, 20, 4, 1, robeL);
+          R(11, 21, 2, 1, robeL);
+          R(9, 17, 6, 1, teS);
+          R(8, 16, 8, 1, stripe);
+          return;
+        }
+        const m = mid(p);
+        // Open front: long robe panels either side, legs show in the middle.
+        R(6, 24, 4, 3, robe);
+        R(14, 24, 4, 3, robe);
+        R(17, 24, 1, 3, robeS);
+        R(6, 26, 4, 1, robeS);
+        R(14, 26, 4, 1, robeS);
+        R(9, 17, 1, 10, robeL);
+        R(14, 17, 1, 10, robeL);
+        // White shirt underneath.
+        R(10, 16, 4, 8, shirt);
+        R(13, 16, 1, 8, shirtS);
+        R(10, 23, 4, 1, shirtS);
+        // Scarf round the neck, one striped end hanging down with a fringe.
+        R(9, 16, 6, 1, stripe);
+        R(11 + m, 17, 2, 6, (_x, y) => stripe(y - 1));
+        px(11 + m, 23, silS);
+        px(12 + m, 23, sil);
+        // Our crest on the chest: a little owl (ears, gold eyes) over a gold star.
+        R(14, 18, 3, 3, teS);
+        px(14, 18, sil);
+        px(16, 18, sil);
+        px(14, 19, "#ffd25a");
+        px(15, 19, sil);
+        px(16, 19, "#ffd25a");
+        px(15, 20, p.gold);
+      },
+    },
+    captaincoat: {
+      draw: (p) => {
+        const { R, px } = p;
+        const bu = "#7c1f30";
+        const buS = "#5a1522";
+        const buL = "#a3354a";
+        const buD = "#3e0d17";
+        const gold = "#e8b93f";
+        const goldS = "#b8892a";
+        const W = "#f8f4ec";
+        const WS = "#ddd4c4";
+        const sash = "#2f5f9a";
+        const sashS = "#1f416d";
+        p.torso(bu);
+        p.armsLong(bu);
+        R(16, 16, 1, 8, buS);
+        R(18, 16, 1, 7, buS);
+        px(5, 17, buL);
+        // Gold shoulder boards with a little fringe.
+        R(4, 15, 3, 1, gold);
+        R(17, 15, 3, 1, goldS);
+        px(4, 16, goldS);
+        px(19, 16, goldS);
+        // Wide turned-back cuffs: gold braid, a button and a lace ruffle.
+        R(4, 20, 3, 2, buD);
+        R(17, 20, 3, 2, buD);
+        R(4, 20, 3, 1, gold);
+        R(17, 20, 3, 1, goldS);
+        px(5, 21, gold);
+        px(18, 21, goldS);
+        R(5, 22, 2, 1, W);
+        R(17, 22, 2, 1, WS);
+        // Sash round the waist.
+        R(7, 21, 10, 2, sash);
+        R(7, 21, 10, 1, p.shade(sash, 0.18));
+        R(16, 21, 1, 2, sashS);
+        if (p.back) {
+          // Long tails with a centre vent and two gold buttons.
+          R(7, 24, 10, 3, bu);
+          R(6, 25, 1, 2, bu);
+          R(17, 25, 1, 2, buS);
+          R(16, 24, 1, 3, buS);
+          R(11, 23, 2, 4, buS);
+          R(6, 26, 12, 1, goldS);
+          R(8, 16, 8, 1, buD);
+          px(10, 23, gold);
+          px(13, 23, gold);
+          return;
+        }
+        // Coat tails either side of the open front, gold-edged.
+        R(6, 24, 4, 3, bu);
+        R(14, 24, 4, 3, bu);
+        R(17, 24, 1, 3, buS);
+        R(6, 26, 4, 1, goldS);
+        R(14, 26, 4, 1, goldS);
+        // White shirt with a ruffled front: frills that stick out every other row.
+        R(10, 16, 4, 8, WS);
+        R(11, 16, 2, 1, p.skS);
+        R(11, 17, 2, 4, W);
+        R(10, 18, 4, 1, "#ffffff");
+        R(10, 20, 4, 1, "#ffffff");
+        // Gold piping down both front edges and a dark collar.
+        R(9, 16, 1, 11, gold);
+        R(14, 16, 1, 11, goldS);
+        R(7, 16, 2, 1, buD);
+        R(15, 16, 2, 1, buD);
+        px(8, 17, buL);
+        // Two rows of gold buttons.
+        [18, 20].forEach((y) => {
+          px(8, y, gold);
+          px(15, y, goldS);
+        });
+        // The sash crosses the shirt and knots at the hip; its ends hang down.
+        R(10, 21, 4, 2, sash);
+        R(10, 21, 4, 1, p.shade(sash, 0.18));
+        R(7, 22, 2, 2, sashS);
+        px(7, 22, sash);
+        R(7, 24, 1, 2, sash);
+        px(8, 24, sashS);
+      },
+    },
+    shrinerobe: {
+      draw: (p) => {
+        const { R, px } = p;
+        const W = "#f8f6f1";
+        const WS = "#dcd5c8";
+        const WD = "#b9b0a0";
+        const red = "#d8262e";
+        const redS = "#a31c22";
+        p.torso(W);
+        R(16, 16, 1, 8, WS);
+        R(7, 23, 10, 1, WS);
+        // Wide square sleeves, edged with a thin red cord.
+        R(4, 16, 3, 7, W);
+        R(17, 16, 3, 7, W);
+        R(19, 16, 1, 7, WS);
+        R(18, 18, 1, 4, WS);
+        px(4, 19, WS);
+        px(4, 20, WS);
+        R(4, 22, 3, 1, red);
+        R(17, 22, 3, 1, redS);
+        R(5, 23, 2, 1, p.sk);
+        R(17, 23, 2, 1, p.sk);
+        // The cords' ends hang off the outer corners.
+        px(4, 23, red);
+        px(19, 23, redS);
+        if (p.back) {
+          R(9, 16, 6, 1, WS);
+          R(11, 17, 2, 6, WS);
+          return;
+        }
+        const m = mid(p);
+        // Crossed collar (left over right) with a thin red under-collar.
+        R(10, 16, 4, 1, p.skS);
+        px(11, 17, p.skS);
+        px(9, 16, WD);
+        px(14, 16, WD);
+        px(10, 17, red);
+        px(13, 16, red);
+        px(12, 17, red);
+        px(12, 18, WD);
+        px(13, 19, WD);
+        R(13 + m, 20, 1, 4, WD);
+        // Thin red ties tied in a small bow on the chest.
+        px(10 + m, 20, red);
+        px(11 + m, 20, redS);
+        px(12 + m, 20, red);
+        px(10 + m, 21, redS);
+        px(12 + m, 21, redS);
+      },
+    },
+    flightsuit: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t } = p;
+        const O = "#e8772c";
+        const OS = "#b85a1e";
+        const OL = "#ffa25e";
+        const W = "#f2f2ee";
+        const WS = "#c9cdd3";
+        const gr = "#5d6573";
+        const grL = "#9aa3b1";
+        const grD = "#3a404b";
+        const blu = "#2f5fc4";
+        const star = "#ffd23f";
+        p.torso(O);
+        p.armsLong(O, grD);
+        R(16, 16, 1, 8, OS);
+        R(18, 16, 1, 7, OS);
+        px(6, 20, OL);
+        // Ribbed cuffs.
+        R(5, 22, 2, 1, gr);
+        R(17, 22, 2, 1, grD);
+        // Blue shoulder patch with our yellow star; a pen pocket on the other arm.
+        R(5, 17, 2, 2, blu);
+        px(5, 17, star);
+        px(17, 18, W);
+        px(17, 19, OS);
+        // White harness: shoulder straps, a chest strap and a waist strap,
+        // with leg straps going on down over the hips.
+        R(7, 23, 10, 1, W);
+        R(16, 23, 1, 1, WS);
+        if (p.back) {
+          R(9, 16, 6, 1, grD);
+          R(9, 17, 1, 6, W);
+          R(14, 17, 1, 6, WS);
+          R(10, 19, 4, 1, W);
+          R(11, 18, 2, 3, WS);
+          px(9, 24, W);
+          px(14, 24, WS);
+          return;
+        }
+        const m = mid(p);
+        R(10, 16, 4, 1, p.skS);
+        px(9, 16, OS);
+        px(14, 16, OS);
+        R(9, 17, 1, 6, W);
+        R(14, 17, 1, 6, WS);
+        R(9, 19, 6, 1, W);
+        R(14, 19, 1, 1, WS);
+        px(9, 24, W);
+        px(14, 24, WS);
+        // Buckle with a status light that blinks green now and then.
+        R(11 + m, 19, 2, 1, grL);
+        px(12 + m, 19, t % 1800 < 220 ? "#8dff9a" : "#2f9a4a");
+        // Name tag above the strap.
+        R(10 + m, 17, 2, 1, W);
+        px(11 + m, 17, WS);
+        // Ribbed hoses: one from the buckle into the waist, one down the side.
+        px(11 + m, 20, gr);
+        px(11 + m, 21, grL);
+        px(12 + m, 22, gr);
+        px(8, 20, gr);
+        px(8, 21, grL);
+        px(8, 22, gr);
+      },
+    },
+    racesuit: {
+      draw: (p) => {
+        const { R, px } = p;
+        const rd = "#d8262e";
+        const rdS = "#a51b22";
+        const W = "#f6f6f2";
+        const WS = "#d2d2ce";
+        const blk = "#26262c";
+        const yel = "#ffd23f";
+        const blu = "#2f6fd6";
+        // Red body, white sleeves with a red stripe, black gloves.
+        p.torso(rd);
+        p.armsLong(W, blk);
+        R(16, 16, 1, 8, rdS);
+        R(5, 16, 2, 1, rd);
+        R(17, 16, 2, 1, rdS);
+        R(5, 17, 1, 5, rd);
+        R(18, 17, 1, 5, rdS);
+        R(5, 22, 2, 1, blk);
+        R(17, 22, 2, 1, blk);
+        // White waistband over a dark belt line.
+        R(7, 22, 10, 1, W);
+        R(16, 22, 1, 1, WS);
+        R(7, 23, 10, 1, blk);
+        if (p.back) {
+          R(9, 16, 6, 1, blk);
+          digit(p, "7", 10, 17, W);
+          R(14, 17, 2, 1, yel);
+          return;
+        }
+        const m = mid(p);
+        // High racing collar and a short zip.
+        R(9, 16, 6, 1, blk);
+        px(11 + m, 17, WS);
+        // Sponsor-style blocks (just shapes) and the number on the chest.
+        R(8 + m, 18, 3, 1, yel);
+        px(10 + m, 18, blk);
+        R(8 + m, 20, 3, 1, W);
+        px(9 + m, 20, blu);
+        digit(p, "7", 13, 17, W);
+      },
+    },
+    tacticalvest: {
+      draw: (p) => {
+        const { R, px } = p;
+        const sh = "#737882";
+        const shS = "#585d66";
+        const ol = "#5f6d3a";
+        const olS = "#47522b";
+        const olL = "#7d8c4f";
+        const olD = "#333b1f";
+        // Grey long-sleeve shirt with dark gloves and olive elbow pads.
+        p.torso(sh);
+        p.armsLong(sh, "#3b3d34");
+        R(5, 22, 2, 1, shS);
+        R(17, 22, 2, 1, shS);
+        R(5, 19, 2, 2, olS);
+        R(17, 19, 2, 2, olD);
+        // The plate carrier: shoulder straps, plate and side cummerbund.
+        R(8, 16, 2, 1, ol);
+        R(14, 16, 2, 1, ol);
+        R(7, 17, 10, 7, ol);
+        R(16, 17, 1, 7, olS);
+        R(7, 23, 10, 1, olS);
+        // Webbing rows.
+        for (let x = 8; x < 16; x++) if (x % 2) px(x, 18, olS);
+        if (p.back) {
+          // Drag handle, webbing and a flat hydration pouch.
+          R(10, 16, 4, 1, olD);
+          R(9, 19, 6, 4, olS);
+          R(9, 19, 6, 1, olL);
+          R(11, 20, 2, 1, olD);
+          return;
+        }
+        const m = mid(p);
+        R(10, 16, 4, 1, shS);
+        R(11, 16, 2, 1, p.skS);
+        // A small patch with our yellow star.
+        R(10 + m, 17, 3, 1, olD);
+        px(11 + m, 17, "#ffd23f");
+        // Three magazine pouches with flaps and snaps.
+        [8, 11, 14].forEach((x) => {
+          R(x, 20, 2, 3, ol);
+          R(x, 20, 2, 1, olL);
+          px(x, 21, olL);
+          px(x + 1, 22, olS);
+        });
+        R(10, 20, 1, 3, olD);
+        R(13, 20, 1, 3, olD);
+        px(9, 20, olD);
+        px(12, 20, olD);
+        px(15, 20, olD);
+      },
+    },
+    trainerjacket: {
+      draw: (p) => {
+        const { R, px } = p;
+        const te = "#1fa39f";
+        const teS = "#167975";
+        const teL = "#5fd0c8";
+        const W = "#f4f6f2";
+        const WS = "#cfd6d4";
+        const blk = "#25262c";
+        const star = "#ffd23f";
+        const starS = "#d9a91c";
+        // Black tee with short sleeves, teal wristbands.
+        p.torso(blk);
+        p.armsShort(blk);
+        R(5, 22, 2, 1, te);
+        R(17, 22, 2, 1, teS);
+        // The sleeveless jacket: white yoke over the shoulders, teal body.
+        R(7, 16, 10, 8, te);
+        R(7, 16, 10, 3, W);
+        R(16, 16, 1, 3, WS);
+        R(16, 19, 1, 5, teS);
+        R(7, 19, 10, 1, teS);
+        R(7, 23, 10, 1, W);
+        R(16, 23, 1, 1, WS);
+        px(8, 20, teL);
+        if (p.back) {
+          R(9, 16, 6, 1, WS);
+          R(11, 20, 2, 3, teS);
+          return;
+        }
+        const m = mid(p);
+        // Open front showing the tee, with a white collar.
+        R(11 + m, 16, 2, 8, blk);
+        R(11, 16, 2, 1, p.skS);
+        R(9, 16, 2, 1, WS);
+        R(13, 16, 2, 1, WS);
+        px(10 + m, 17, WS);
+        px(13 + m, 17, WS);
+        // Pocket slit, and our yellow star badge on the chest.
+        R(14, 21, 2, 1, teS);
+        px(8, 20, star);
+        px(7, 21, star);
+        px(8, 21, "#fff1a6");
+        px(9, 21, star);
+        px(7, 22, starS);
+        px(9, 22, starS);
+      },
+    },
+    neontrench: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t } = p;
+        const B = "#18181f";
+        const BS = "#0e0e13";
+        const BL = "#2c2c37";
+        // The edge lines breathe slowly: magenta brightens as cyan dims.
+        const k = (Math.sin(t / 650) + 1) / 2;
+        const mag = p.hsl(312, 100, 42 + k * 26);
+        const cy = p.hsl(186, 100, 66 - k * 22);
+        // A bright spark runs down the front edges every few seconds.
+        const run = Math.floor(t / 80) % 40;
+        const edge = (y: number) => (run === y - 16 ? "#ffffff" : cy);
+        p.torso(B);
+        p.armsLong(B, "#24242c");
+        R(16, 16, 1, 8, BS);
+        R(18, 16, 1, 7, BS);
+        px(5, 17, BL);
+        px(5, 18, BL);
+        // Glowing cuffs and shoulder seams.
+        R(5, 22, 2, 1, cy);
+        R(17, 22, 2, 1, cy);
+        px(5, 16, mag);
+        px(18, 16, mag);
+        // Belt.
+        R(7, 22, 10, 1, BS);
+        if (p.back) {
+          R(7, 24, 10, 4, B);
+          R(6, 25, 1, 3, B);
+          R(17, 25, 1, 3, BS);
+          R(16, 24, 1, 4, BS);
+          R(11, 23, 2, 4, BS);
+          R(11, 23, 1, 4, edge(20));
+          R(6, 27, 12, 1, mag);
+          R(8, 16, 8, 1, BL);
+          R(8, 17, 8, 1, mag);
+          return;
+        }
+        const m = mid(p);
+        // Long tails either side of the open front.
+        R(6, 24, 4, 4, B);
+        R(14, 24, 4, 4, B);
+        R(17, 24, 1, 4, BS);
+        R(6, 27, 4, 1, mag);
+        R(14, 27, 4, 1, mag);
+        // Dark shirt inside with a little circuit line.
+        R(10, 16, 4, 7, "#23232d");
+        R(11, 16, 2, 1, p.skS);
+        px(11 + m, 18, cy);
+        px(11 + m, 19, "#1d6f7a");
+        px(12 + m, 20, cy);
+        // Lapels, then the glowing front edges all the way down.
+        R(7, 16, 3, 1, BL);
+        R(14, 16, 3, 1, BL);
+        px(9, 17, BL);
+        px(14, 17, BL);
+        for (let y = 16; y <= 27; y++) {
+          px(9, y, edge(y));
+          px(14, y, edge(y));
+        }
+        // Belt buckle.
+        px(8, 22, mag);
+      },
+    },
+    stagedress: {
+      animated: true,
+      draw: (p) => {
+        const { R, px, t } = p;
+        const pk = "#ff7eb6";
+        const pkS = "#e0569a";
+        const pkL = "#ffb3d6";
+        const W = "#fff7fb";
+        const WS = "#f0d6e6";
+        const rib = "#e8246e";
+        const ribS = "#b0174f";
+        // Sequins: a scatter of spots that twinkle white one at a time.
+        const sequin = (x: number, y: number, c: string) => {
+          if ((x * 3 + y * 5) % 11 !== 0) return c;
+          return Math.sin(t / 160 + x * 1.9 + y * 2.7) > 0.75 ? "#ffffff" : pkL;
+        };
+        // Bodice.
+        R(7, 16, 10, 6, (x, y) => sequin(x, y, x === 16 ? pkS : pk));
+        // Puffy white sleeves trimmed in pink, bare arms, frilly wrist cuffs.
+        R(4, 16, 3, 2, W);
+        R(17, 16, 3, 2, W);
+        R(19, 16, 1, 2, WS);
+        px(4, 16, "#ffffff");
+        R(4, 18, 3, 1, pk);
+        R(17, 18, 3, 1, pkS);
+        R(5, 19, 2, 3, p.sk);
+        R(17, 19, 2, 3, p.sk);
+        R(18, 19, 1, 3, p.skS);
+        R(5, 22, 2, 1, W);
+        R(17, 22, 2, 1, WS);
+        px(4, 22, WS);
+        px(19, 22, WS);
+        R(5, 23, 2, 1, p.sk);
+        R(17, 23, 2, 1, p.sk);
+        // White waistband, then a tiered skirt: pink, a white frill, pink, lace.
+        R(7, 21, 10, 1, W);
+        R(16, 21, 1, 1, WS);
+        R(7, 22, 10, 2, (x, y) => sequin(x, y, x === 16 ? pkS : pk));
+        R(6, 24, 12, 1, W);
+        R(17, 24, 1, 1, WS);
+        R(5, 25, 14, 1, pk);
+        R(18, 25, 1, 1, pkS);
+        [9, 12, 15].forEach((x) => {
+          px(x, 22, pkS);
+          px(x, 23, pkS);
+          px(x - 1, 25, pkS);
+        });
+        for (let x = 5; x < 19; x += 2) px(x, 26, x > 16 ? WS : W);
+        if (p.back) {
+          // Laced back and a rose bow at the waist with long tails.
+          [17, 19].forEach((y) => {
+            px(11, y, W);
+            px(12, y + 1, W);
+          });
+          [18, 20].forEach((y) => {
+            px(11, y, pkS);
+            px(12, y - 1, pkS);
+          });
+          R(9, 21, 2, 2, rib);
+          R(13, 21, 2, 2, ribS);
+          R(11, 21, 2, 1, ribS);
+          px(9, 21, p.shade(rib, 0.35));
+          px(11, 22, rib);
+          px(12, 23, ribS);
+          px(11, 24, rib);
+          R(8, 16, 8, 1, W);
+          return;
+        }
+        const m = mid(p);
+        // Sweetheart neckline with a white frill edge.
+        R(10, 16, 4, 1, p.skS);
+        R(8, 16, 2, 1, W);
+        R(14, 16, 2, 1, W);
+        // A small rose ribbon bow at the neck with short tails.
+        px(10 + m, 17, rib);
+        px(13 + m, 17, rib);
+        R(10 + m, 18, 4, 1, rib);
+        px(10 + m, 18, p.shade(rib, 0.35));
+        R(11 + m, 17, 2, 2, ribS);
+        px(11 + m, 19, rib);
+        px(12 + m, 20, ribS);
+        // A twinkling star gem on the waistband.
+        const shine = Math.floor(t / 100) % 20 < 2;
+        px(12 + m, 21, shine ? "#ffffff" : p.gold);
+      },
+      fxFront: (_c, k) => {
+        if (k.seated) return;
+        // Stage twinkles: little stars that pop in and out around the skirt.
+        [
+          [4.5, 21],
+          [19.5, 23],
+          [5, 26.5],
+        ].forEach(([gx, gy], i) => {
+          const a = Math.sin(k.t / 260 + i * 2.1);
+          if (a > 0.2) k.star(k.X(gx), k.Y(gy), k.s / 2, i === 1 ? "#ffd1ea" : "#ffffff", a);
+        });
+      },
+    },
+    roninkimono: {
+      draw: (p) => {
+        const { R, px } = p;
+        const ind = "#3b4775";
+        const indS = "#2b345a";
+        const indL = "#56649a";
+        const indD = "#1f2642";
+        const gy = "#9a9ea6";
+        const gyS = "#71757e";
+        const rope = "#c9a764";
+        const ropeS = "#957640";
+        const stitch = "#d8dce6";
+        // Faded, worn cloth: a few lighter spots scattered over the indigo.
+        const worn = (x: number, y: number) => {
+          const c = (x * 5 + y * 3) % 11 === 0 ? indL : ind;
+          return x === 16 || x === 19 ? p.shade(c, -0.18) : c;
+        };
+        R(7, 16, 10, 9, worn);
+        R(7, 24, 10, 1, indS);
+        // Loose sleeves with the grey under-layer showing at the opening.
+        R(4, 16, 3, 7, worn);
+        R(17, 16, 3, 7, worn);
+        R(4, 22, 3, 1, gy);
+        R(17, 22, 3, 1, gyS);
+        R(4, 23, 1, 1, indS);
+        R(19, 23, 1, 1, indD);
+        R(5, 23, 2, 1, p.sk);
+        R(17, 23, 2, 1, p.sk);
+        // A frayed hem over the hips.
+        for (let x = 7; x < 17; x++) if (x % 3 !== 1) px(x, 25, x === 16 ? indD : indS);
+        // A rope belt, twisted in two tones.
+        R(7, 21, 10, 2, (x, y) => ((x + y) % 2 ? rope : ropeS));
+        if (p.back) {
+          R(9, 16, 6, 1, gy);
+          // A mended patch with white stitches, and the rope's knot.
+          R(9, 17, 3, 3, indL);
+          px(9, 17, stitch);
+          px(11, 17, stitch);
+          px(9, 19, stitch);
+          px(11, 19, stitch);
+          R(11, 21, 2, 2, ropeS);
+          return;
+        }
+        const m = mid(p);
+        // Crossed collar: skin at the neck, the grey under-layer, then the overlap.
+        R(10, 16, 4, 1, p.skS);
+        px(11, 17, p.skS);
+        px(9, 16, gy);
+        px(14, 16, gy);
+        px(10, 17, gy);
+        px(12, 17, gy);
+        px(13, 16, gyS);
+        px(12, 18, indD);
+        px(13, 19, indD);
+        px(13 + m, 20, indD);
+        R(13 + m, 23, 1, 2, indD);
+        // A mended patch on the chest and a tear on the far sleeve.
+        R(8, 18, 2, 2, indL);
+        px(8, 18, stitch);
+        px(9, 19, stitch);
+        px(18, 19, indD);
+        px(18, 20, indS);
+        // Rope knot at the hip with the ends hanging down.
+        R(9, 21, 2, 2, rope);
+        px(10, 22, ropeS);
+        px(9, 23, rope);
+        px(10, 24, ropeS);
+        px(9, 25, rope);
       },
     },
     labcoat: {

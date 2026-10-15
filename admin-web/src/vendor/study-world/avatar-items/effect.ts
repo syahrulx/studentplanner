@@ -912,6 +912,452 @@ function surgeRing(c: C, k: FxKit, front: boolean) {
   }
 }
 
+/* ---------- Shared helpers for the preset effects ---------- */
+
+/** Fill whole grid cells at grid (gx, gy), rounded onto the grid so they stay crisp. */
+function cell(c: C, k: FxKit, gx: number, gy: number, col: string, a = 1, w = 1, h = 1) {
+  rect(c, k.X(Math.round(gx)), k.Y(Math.round(gy)), w * k.s, h * k.s, col, a);
+}
+
+/**
+ * True when the box (gx, gy, w, h) on the grid touches the face, with a cell
+ * of margin. The face sits 2 cells right in the three-quarter view, 2 left when
+ * mirrored. Front-layer bits that would land here are drawn behind instead.
+ */
+function overFace(k: FxKit, gx: number, gy: number, w = 1, h = 1) {
+  const shift = k.dir === "r" ? 2 : k.dir === "l" ? -2 : 0;
+  return gx <= 19 + shift && gx + w - 1 >= 4 + shift && gy <= 15 && gy + h - 1 >= 1;
+}
+
+/** Mirror a grid x (for something w cells wide) to the left side when side < 0. */
+const onSide = (side: number, gx: number, w = 1) => (side > 0 ? gx : 23 - gx - (w - 1));
+
+/* ---------- Spell sparks ---------- */
+
+const SPELL_GOLD = ["#fff3b0", "#ffc533", "#e0962a"];
+const SPELL_LILAC = ["#e6d4ff", "#b07cff", "#8a5cf0"];
+
+/** Casting hand: screen right head-on; side-on, the hand away from the face. */
+const spellSide = (k: FxKit) => (k.dir === "b" || k.dir === "r" ? -1 : 1);
+
+/** A point on the two-strand spiral rising from the hand (right side): x, y, near us. */
+function spellAt(ph: number, strand: number): [number, number, boolean] {
+  const a = ph * Math.PI * 5 + strand * Math.PI;
+  const r = 1.2 + ph * 1.6;
+  return [19 + ph * 3 + Math.cos(a) * r, 22 - ph * 25, Math.sin(a) >= 0];
+}
+
+/** Gold and lilac sparks spiralling up beside the hand, each with a short tail. */
+function spellSparks(c: C, k: FxKit, front: boolean) {
+  const side = spellSide(k);
+  for (let i = 0; i < 18; i++) {
+    const ph = (k.t / 2600 + i / 18) % 1;
+    const strand = i % 2;
+    const [x, y, near] = spellAt(ph, strand);
+    const gx = onSide(side, Math.round(x));
+    const gy = Math.round(y);
+    if ((near && !overFace(k, gx, gy)) !== front) continue;
+    const pal = strand ? SPELL_LILAC : SPELL_GOLD;
+    const a = fade(ph, 0.3) * (front ? 1 : 0.75);
+    const [tx, ty] = spellAt(Math.max(0, ph - 0.035), strand);
+    const tgx = onSide(side, Math.round(tx));
+    if (!(front && overFace(k, tgx, ty))) cell(c, k, tgx, ty, pal[2], a * 0.55);
+    cell(c, k, gx, gy, ph < 0.12 ? "#ffffff" : pal[i % 4 === 0 ? 0 : 1], a);
+  }
+}
+
+/** Tiny star runes (5×5), flicking between a diamond and a star as they turn. */
+const RUNE_DIAMOND = [
+  [2, 0],
+  [1, 1],
+  [3, 1],
+  [0, 2],
+  [4, 2],
+  [1, 3],
+  [3, 3],
+  [2, 4],
+];
+const RUNE_STAR = [
+  [2, 0],
+  [2, 1],
+  [0, 2],
+  [1, 2],
+  [3, 2],
+  [4, 2],
+  [2, 3],
+  [2, 4],
+];
+
+function spellRunes(c: C, k: FxKit, front: boolean) {
+  const side = spellSide(k);
+  k.particles(3, 4600, (i, ph) => {
+    const x = onSide(side, Math.round(19.5 + ph * 1.5 + Math.sin(ph * 5 + i * 2) * 0.8), 5);
+    const y = Math.round(18 - ph * 21);
+    if (overFace(k, x, y, 5, 5) === front) return;
+    const a = fade(ph, 0.3) * (front ? 0.9 : 0.7);
+    const shape = Math.floor(k.t / 260 + i) % 2 ? RUNE_STAR : RUNE_DIAMOND;
+    const col = i % 2 ? "#ffc533" : "#b07cff";
+    if (front) k.glow(k.X(x + 2.5), k.Y(y + 2.5), 4 * k.s, "210,170,255", 0.25 * a);
+    shape.forEach(([dx, dy]) => cell(c, k, x + dx, y + dy, col, a));
+    cell(c, k, x + 2, y + 2, "#ffffff", a);
+  });
+}
+
+/** The charged-up hand: a pulsing glow and a twinkle now and then. */
+function spellHand(c: C, k: FxKit) {
+  const side = spellSide(k);
+  const gx = onSide(side, 19);
+  const pulse = 0.75 + 0.25 * Math.sin(k.t / 220);
+  k.glow(k.X(gx + 0.5), k.Y(22.5), 4 * k.s, "230,190,255", 0.4 * pulse);
+  const tw = (k.t % 1300) / 1300;
+  if (tw < 0.25) k.star(k.X(gx), k.Y(22), k.s, "#fff6c8", Math.sin((tw / 0.25) * Math.PI));
+  else cell(c, k, gx, 22, "#ffffff", 0.8 * pulse);
+}
+
+/* ---------- Nitro boost ---------- */
+
+/** Exhaust colours from the nozzle out: white-hot, nitro blue, then orange tips. */
+const NITRO = ["#ffffff", "#c4f0ff", "#5cc8ff", "#2a8bff", "#ff9d2e", "#ff6a1f", "#d9401a"];
+
+/**
+ * One exhaust jet from grid (x0, y0) along (dx, dy) (one of them 0), `len` cells:
+ * a blue core three cells thick at the root, orange at the edges and the tip.
+ */
+function nitroJet(
+  c: C,
+  k: FxKit,
+  x0: number,
+  y0: number,
+  dx: number,
+  dy: number,
+  len: number,
+  seed: number,
+) {
+  const px = dy ? 1 : 0;
+  const py = dx ? 1 : 0;
+  for (let d = 0; d < len; d++) {
+    const q = d / len;
+    const i = Math.min(NITRO.length - 1, Math.floor(q * NITRO.length));
+    const x = x0 + dx * d;
+    const y = y0 + dy * d;
+    if (q < 0.6) {
+      const edge = NITRO[Math.min(NITRO.length - 1, i + 3)];
+      cell(c, k, x + px, y + py, edge, 0.85);
+      cell(c, k, x - px, y - py, edge, 0.85);
+    }
+    cell(c, k, x, y, NITRO[i], 1 - q * 0.3);
+  }
+  // A loose ember flicking off past the tip.
+  if (rnd(seed) < 0.5) {
+    const o = rnd(seed * 3) < 0.5 ? -1 : 1;
+    cell(c, k, x0 + dx * (len + 1) + px * o, y0 + dy * (len + 1) + py * o, "#ffb13d", 0.7);
+  }
+}
+
+/**
+ * Speed lines streaming away from the body. `along` is the way they fly
+ * (-1 / 1) and `horizontal` whether they fly sideways or up / down.
+ */
+function speedLines(c: C, k: FxKit, horizontal: boolean, along: number) {
+  k.particles(6, 420, (i, ph) => {
+    const cycle = Math.floor(k.t / 420 + i / 6);
+    const len = 3 + Math.floor(rnd(cycle * 5 + i) * 3);
+    const col = i % 3 === 0 ? "#ffb066" : "#8fd3ff";
+    const a = 0.8 * (1 - ph);
+    if (horizontal) {
+      const gy = 2 + Math.floor(rnd(cycle * 7 + i) * 27);
+      // Born behind the body, they shoot out past the edge.
+      const head = along < 0 ? 8 - ph * 13 : 15 + ph * 13;
+      const left = along < 0 ? head : head - len + 1;
+      cell(c, k, left, gy, col, a, len);
+    } else {
+      const lanes = [-2, 0, 2, 21, 23, 25];
+      const gx = lanes[Math.floor(rnd(cycle * 7 + i) * lanes.length)];
+      const head = along < 0 ? 26 - ph * 30 : 12 + ph * 22;
+      const top = along < 0 ? head : head - len + 1;
+      cell(c, k, gx, top, col, a, 1, len);
+    }
+  });
+}
+
+/** Little exhaust puffs drifting off the nozzles at (gx, gy) towards `side`. */
+function nitroPuffs(c: C, k: FxKit, spots: [number, number, number][]) {
+  const n = spots.length * 2;
+  k.particles(n, 1700, (i, ph) => {
+    const [gx, gy, side] = spots[i % spots.length];
+    const x = Math.round(gx + side * ph * 4 + Math.sin(ph * 5 + i) * 0.5);
+    const y = Math.round(gy - ph * 5);
+    const a = fade(ph, 0.5) * 0.75;
+    const body = "#a9b6cc";
+    const lit = "#e3ebf8";
+    if (ph < 0.25) cell(c, k, x, y, lit, a);
+    else if (ph < 0.55) {
+      // A small round puff.
+      cell(c, k, x - 1, y, body, a, 3);
+      cell(c, k, x, y - 1, body, a, 1, 3);
+      cell(c, k, x, y - 1, lit, a);
+    } else {
+      // A bigger, thinning cloud.
+      cell(c, k, x, y - 1, body, a * 0.8, 2);
+      cell(c, k, x - 1, y, body, a * 0.8, 4);
+      cell(c, k, x, y + 1, body, a * 0.8, 2);
+      cell(c, k, x, y - 1, lit, a * 0.8);
+    }
+  });
+  // A short backfire pop out of each nozzle now and then.
+  const p = k.t % 1900;
+  if (p < 170) {
+    const seed = Math.floor(k.t / 1900);
+    spots.forEach(([gx, gy, side], j) => {
+      k.glow(k.X(gx + 0.5), k.Y(gy + 0.5), 4 * k.s, "90,170,255", 0.35);
+      nitroJet(c, k, gx, gy, side, 0, p < 80 ? 2 : 3, seed * 5 + j);
+    });
+  }
+}
+
+/** Flames and speed lines behind the racer while walking; idle puffs when standing. */
+function nitro(c: C, k: FxKit, front: boolean) {
+  const s = k.s;
+  const tick = Math.floor(k.t / 60);
+  const flick = (j: number, n: number) => n - Math.floor(rnd(tick * 7 + j) * 2);
+  if (k.seated) {
+    if (!front)
+      nitroPuffs(c, k, [
+        [3, 20, -1],
+        [20, 20, 1],
+      ]);
+    return;
+  }
+  if (k.moving && (k.dir === "r" || k.dir === "l")) {
+    // Exhaust shoots out behind: to the left when facing right, and the other way.
+    if (front) return;
+    const side = k.dir === "r" ? -1 : 1;
+    const x0 = side < 0 ? 4 : 19;
+    k.glow(k.X(x0 + 0.5), k.Y(24), 8 * s, "90,170,255", 0.35);
+    speedLines(c, k, true, side);
+    [22, 26].forEach((gy, j) => nitroJet(c, k, x0, gy, side, 0, flick(j, 8 - j), tick * 13 + j));
+    return;
+  }
+  if (k.moving && (k.dir === "f" || k.dir === "b")) {
+    // Coming towards us the jets point up behind the hips; going away they
+    // fire down past the legs towards us (no face to cover from behind).
+    const up = k.dir === "f";
+    if (up === front) return;
+    k.glow(k.X(11.5), k.Y(up ? 24 : 28), 10 * s, "90,170,255", 0.25);
+    speedLines(c, k, false, up ? -1 : 1);
+    const jets = up
+      ? [
+          [3, 27],
+          [20, 27],
+        ]
+      : [
+          [6, 24],
+          [17, 24],
+        ];
+    jets.forEach(([gx, gy], j) =>
+      nitroJet(c, k, gx, gy, 0, up ? -1 : 1, flick(j, 6), tick * 13 + j),
+    );
+    return;
+  }
+  // Standing (or motion unknown): puffs from the exhaust.
+  if (front) return;
+  if (k.dir === "r" || k.dir === "l") {
+    const side = k.dir === "r" ? -1 : 1;
+    nitroPuffs(c, k, [[side < 0 ? 4 : 19, 24, side]]);
+  } else
+    nitroPuffs(c, k, [
+      [3, 25, -1],
+      [20, 25, 1],
+    ]);
+}
+
+/* ---------- Storm circle ---------- */
+
+const STORM_COLS = ["#cdb4ff", "#9a6bff", "#6f5cff", "#4f7dff"];
+
+/** Ground height of the ring: the feet, or the floor under the seat. */
+const stormY = (k: FxKit) => (k.seated ? 25 : 28.8);
+
+/**
+ * The storm wall: a shimmering curtain rising from a ring on the ground.
+ * Behind the body it stands 4–9 cells tall; in front it's a low, see-through rim.
+ */
+function stormWall(c: C, k: FxKit, front: boolean) {
+  const cy = stormY(k);
+  const seen = new Set<number>();
+  const cols: [number, number][] = [];
+  for (let j = 0; j < 72; j++) {
+    const b = (j / 72) * Math.PI * 2;
+    if (Math.sin(b) >= 0 !== front) continue;
+    const gx = Math.round(11.5 + Math.cos(b) * 12);
+    const gy = Math.round(cy + Math.sin(b) * 2.3);
+    if (seen.has(gx * 100 + gy)) continue;
+    seen.add(gx * 100 + gy);
+    if (!front) cols.push([gx, gy]);
+    const wave = Math.sin(b * 3 + k.t / 520) + 0.5 * Math.sin(b * 7 - k.t / 330);
+    const h = front ? (Math.abs(Math.cos(b)) > 0.6 ? 2 : 1) : 6 + Math.round(wave * 2);
+    for (let d = 0; d < h; d++) {
+      const sh = Math.sin(b * 5 - k.t / 240 + d * 0.7);
+      const col =
+        d === 0
+          ? sh > 0.6
+            ? "#ffffff"
+            : STORM_COLS[0]
+          : sh > 0.75
+            ? "#e6dcff"
+            : STORM_COLS[Math.min(3, d)];
+      const a = (d === 0 ? 0.95 : 0.9 * (1 - d / (h + 2))) * (front ? 0.55 : 1);
+      cell(c, k, gx, gy - d, col, a);
+    }
+  }
+  // A crackle running up the wall now and then.
+  if (!front && k.t % 900 < 90 && cols.length) {
+    const seed = Math.floor(k.t / 900);
+    const [gx, gy] = cols[Math.floor(rnd(seed) * cols.length)];
+    let off = 0;
+    for (let d = 3; d < 9; d++) {
+      if (rnd(seed * 7 + d) < 0.4) off = off ? 0 : rnd(seed + d) < 0.5 ? -1 : 1;
+      cell(c, k, gx + off, gy - d, d % 2 ? "#ffffff" : "#c9b8ff", 0.95);
+    }
+  }
+}
+
+/** Storm motes lifting off the wall and drifting in the wind. */
+function stormMotes(c: C, k: FxKit, front: boolean) {
+  const cy = stormY(k);
+  k.particles(10, 2600, (i, ph) => {
+    const cycle = Math.floor(k.t / 2600 + i / 10);
+    const b = rnd(cycle * 9 + i) * Math.PI * 2;
+    if (Math.sin(b) >= 0 !== front) return;
+    const x = Math.round(11.5 + Math.cos(b) * 12 + Math.sin(ph * 4 + i) + ph * 2);
+    const y = Math.round(cy + Math.sin(b) * 2.3 - 1 - ph * 10);
+    if (front && overFace(k, x, y)) return;
+    const col = ["#c9a6ff", "#8fb0ff", "#ffffff"][i % 3];
+    cell(c, k, x, y, col, fade(ph, 0.35) * (front ? 0.9 : 0.75));
+  });
+}
+
+/* ---------- Data stream ---------- */
+
+/** Code glyphs: 2 wide, 3 tall, as rows of bits (not real letters). */
+const GLYPHS = [
+  [3, 1, 1],
+  [2, 3, 2],
+  [3, 2, 3],
+  [1, 3, 1],
+  [3, 0, 3],
+  [2, 2, 3],
+  [3, 1, 2],
+  [1, 2, 3],
+];
+
+/** The rain's columns (grid x), each with its own speed. */
+const STREAM_X = [-2, 1, 3, 19, 21, 24];
+
+/** Code raining down both sides, all behind the body (so never over the face). */
+function dataRain(c: C, k: FxKit) {
+  const slots = k.seated ? 8 : 9;
+  STREAM_X.forEach((gx, j) => {
+    const step = 95 + j * 17;
+    const period = slots + 9;
+    const head = (Math.floor(k.t / step) + j * 5) % period;
+    for (let g = 0; g < 6; g++) {
+      const n = head - g;
+      if (n < 0 || n >= slots) continue;
+      const y = -5 + n * 4;
+      const hot = g === 0;
+      const glyph =
+        GLYPHS[Math.floor(rnd(j * 97 + n * 13 + Math.floor(k.t / (hot ? 90 : 700))) * 8)];
+      const pink = !hot && rnd(j * 31 + n * 7 + Math.floor(k.t / 1500)) < 0.2;
+      const col = hot ? "#b5ffe9" : pink ? "#f040d0" : n % 2 ? "#18c8d8" : "#22e08a";
+      const a = hot ? 1 : 0.9 - g * 0.14;
+      glyph.forEach((bits, r) => {
+        if (bits & 2) cell(c, k, gx, y + r, col, a);
+        if (bits & 1) cell(c, k, gx + 1, y + r, col, a);
+      });
+    }
+  });
+}
+
+/** Faint scanlines behind the body, a bright line rolling down and a glitch now and then. */
+function scanlines(c: C, k: FxKit) {
+  const flick = 0.75 + 0.25 * rnd(Math.floor(k.t / 70));
+  for (let gy = -3; gy <= 29; gy += 3) cell(c, k, 2, gy, "#3dffd0", 0.08 * flick, 20);
+  const roll = (Math.floor(k.t / 45) % 40) - 6;
+  cell(c, k, 2, roll, "#9ffff0", 0.28 * flick, 20);
+  cell(c, k, 2, roll - 1, "#3dffd0", 0.12 * flick, 20);
+  if (k.t % 2100 < 130) {
+    const seed = Math.floor(k.t / 2100);
+    for (let j = 0; j < 2; j++) {
+      const gy = Math.floor(rnd(seed * 5 + j) * 28);
+      const o = Math.round((rnd(seed * 3 + j) - 0.5) * 4);
+      cell(c, k, 1 + o, gy, "#ff4fd8", 0.4, 11);
+      cell(c, k, 12 - o, gy + 1, "#2de2e6", 0.4, 11);
+    }
+  }
+}
+
+/* ---------- Stage lights ---------- */
+
+/**
+ * A soft spotlight beam from a lamp at grid (ox, -5) down to the floor at x = tx,
+ * drawn row by row so its edges step on the pixel grid. Behind the body only.
+ */
+function stageBeam(c: C, k: FxKit, ox: number, tx: number, col: string, core: string, rgb: string) {
+  const floor = k.seated ? 25 : 30;
+  for (let gy = -3; gy <= floor; gy++) {
+    const q = (gy + 5) / (floor + 5);
+    const mid = ox + (tx - ox) * q;
+    const hw = 0.5 + q * 3.4;
+    const L = Math.round(mid - hw);
+    cell(c, k, L, gy, col, 0.24, Math.round(mid + hw) - L + 1);
+    const cl = Math.round(mid - hw * 0.4);
+    cell(c, k, cl, gy, core, 0.3, Math.round(mid + hw * 0.4) - cl + 1);
+  }
+  // The pool of light where it lands.
+  k.glow(k.X(tx + 0.5), k.Y(floor + 0.5), 6 * k.s, rgb, 0.3);
+  const fx = Math.round(tx);
+  cell(c, k, fx - 3, floor, core, 0.3, 7);
+  // The lamp up top.
+  const lx = Math.round(ox);
+  k.glow(k.X(lx + 0.5), k.Y(-3.5), 3 * k.s, rgb, 0.5);
+  cell(c, k, lx - 1, -5, "#5a5f78", 1, 3);
+  cell(c, k, lx, -4, "#fff6c8");
+}
+
+/** Where the sparkles twinkle (grid), all clear of the face. */
+const STAGE_SPARKS = [
+  [-1, 2],
+  [24, 5],
+  [1, 13],
+  [23, 17],
+  [-1, 24],
+  [24, 27],
+  [2, -3],
+  [21, -3],
+];
+
+/** Hearts and music notes floating up both sides; ones that would cross the face pass behind. */
+function stageFloat(c: C, k: FxKit, front: boolean) {
+  k.particles(6, 3400, (i, ph) => {
+    const isHeart = i % 2 === 0;
+    const size = isHeart ? 3 : 5;
+    const x = Math.round([-1, 20, 1, 21, 0, 20][i] + Math.sin(ph * 5 + i) * 0.8);
+    const y = Math.round(27 - ph * 30);
+    if (overFace(k, x, y, size, size) === front) return;
+    const a = fade(ph, 0.3) * (front ? 1 : 0.8);
+    if (isHeart) k.heart(k.X(x), k.Y(y), k.s, i % 4 ? "#ff5fa8" : "#ff8fc8", a);
+    else note(c, k.s, k.X(x), k.Y(y), i % 4 === 1 ? "#b07cff" : "#ff6fae", i === 3, a);
+  });
+}
+
+function stageSparkles(k: FxKit) {
+  STAGE_SPARKS.forEach(([gx, gy], j) => {
+    const tw = Math.sin(k.t / (300 + j * 37) + j * 2.1);
+    if (tw > 0.2) k.star(k.X(gx), k.Y(gy), k.s, j % 2 ? "#fff6c8" : "#ffd6ee", tw);
+  });
+}
+
 export const EFFECT: CategoryItems = {
   items: [
     { id: "bubbles", name: "Bubbles", tier: "free" },
@@ -933,6 +1379,11 @@ export const EFFECT: CategoryItems = {
     { id: "solarglow", name: "Solar Glow", tier: "coins", price: 420 },
     { id: "voltdash", name: "Volt Trail", tier: "coins", price: 500 },
     { id: "goldensurge", name: "Golden Surge", tier: "coins", price: 600 },
+    { id: "spellsparks", name: "Spell Sparks", tier: "coins", price: 380 },
+    { id: "nitroboost", name: "Nitro Boost", tier: "coins", price: 400 },
+    { id: "stormcircle", name: "Storm Circle", tier: "coins", price: 420 },
+    { id: "datastream", name: "Data Stream", tier: "coins", price: 450 },
+    { id: "stagelights", name: "Stage Lights", tier: "coins", price: 450 },
   ],
   draw: {
     bubbles: {
@@ -1247,6 +1698,65 @@ export const EFFECT: CategoryItems = {
       fxFront: (c, k) => {
         surgeRise(c, k, true);
         if (!k.seated) surgeRing(c, k, true);
+      },
+    },
+    spellsparks: {
+      animated: true,
+      // Gold and lilac sparks spiralling up from one hand, with tiny star runes floating off.
+      fxBehind: (c, k) => {
+        const side = spellSide(k);
+        k.glow(k.X(onSide(side, 21)), k.Y(12), 9 * k.s, "200,160,255", 0.12);
+        spellSparks(c, k, false);
+        spellRunes(c, k, false);
+      },
+      fxFront: (c, k) => {
+        spellHand(c, k);
+        spellSparks(c, k, true);
+        spellRunes(c, k, true);
+      },
+    },
+    nitroboost: {
+      animated: true,
+      // Blue-and-orange exhaust flames and speed lines behind the racer while walking;
+      // little exhaust puffs and backfire pops when standing still.
+      fxBehind: (c, k) => nitro(c, k, false),
+      fxFront: (c, k) => nitro(c, k, true),
+    },
+    stormcircle: {
+      animated: true,
+      // A shimmering purple-blue storm wall rising from a ring round the feet, motes drifting off.
+      fxBehind: (c, k) => {
+        k.glow(k.X(11.5), k.Y(stormY(k)), 13 * k.s, "130,100,255", 0.2);
+        stormWall(c, k, false);
+        stormMotes(c, k, false);
+      },
+      fxFront: (c, k) => {
+        if (k.seated) return;
+        stormWall(c, k, true);
+        stormMotes(c, k, true);
+      },
+    },
+    datastream: {
+      animated: true,
+      // Green-cyan and magenta code raining down both sides, scanlines flickering behind.
+      fxBehind: (c, k) => {
+        k.glow(k.X(11.5), k.Y(14), 15 * k.s, "40,255,190", 0.1);
+        scanlines(c, k);
+        dataRain(c, k);
+      },
+    },
+    stagelights: {
+      animated: true,
+      // Two soft spotlights sweeping behind the idol, with sparkles, hearts and notes.
+      fxBehind: (c, k) => {
+        const sw = k.t / 1500;
+        stageBeam(c, k, -1, 11.5 + Math.sin(sw) * 6.5, "#ff8fd0", "#ffd6ee", "255,150,210");
+        stageBeam(c, k, 24, 11.5 + Math.sin(sw + 2.2) * 6.5, "#a99cff", "#e2ddff", "170,160,255");
+        stageFloat(c, k, false);
+      },
+      fxFront: (c, k) => {
+        stageSparkles(k);
+        stageFloat(c, k, true);
       },
     },
   },

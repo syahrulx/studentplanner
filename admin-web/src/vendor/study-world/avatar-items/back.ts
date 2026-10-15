@@ -1,4 +1,4 @@
-import type { CategoryItems, Fill, Painter } from "./types";
+import type { CategoryItems, Fill, FxKit, Painter } from "./types";
 
 /** New back items (see types.ts for how drawing works). */
 
@@ -482,6 +482,377 @@ const kunaiKit = (p: Painter) => {
   }
 };
 
+/** Thick spellbook seen from behind (12×12): spine, page edge, strap and star clasp. */
+const SPELLBOOK = [
+  "dCCCCCCCCCgg",
+  "Bccccccccccw",
+  "dcccc#cccccW",
+  "dcccc#cccccw",
+  "bbb#####bbbb",
+  "dccc###ccccW",
+  "dccc#c#ccccw",
+  "Bccccccccccw",
+  "dccccccccccW",
+  "dccccccccccw",
+  "dkkkkkkkkkgW",
+  "dkkkkkkkkkgg",
+];
+/** The wand tucked under the book strap, with a twinkling tip. */
+const spellWand = (p: Painter) => {
+  const X = flipX(p);
+  along(21, 3, 15, 24, (x, y, u) => p.px(X(x), y, u > 0.85 ? "#5a3820" : "#c08a52"));
+  // Star tip that twinkles.
+  const tw = Math.sin(p.t / 210) > 0.2;
+  p.px(X(21), 2, tw ? "#ffffff" : "#ffe680");
+  [
+    [20, 2],
+    [22, 2],
+    [21, 1],
+  ].forEach(([x, y]) => p.px(X(x), y, tw ? "#ffe680" : "#f2c14e"));
+  if (tw) p.px(X(21), 0, "#fff6c8");
+};
+const spellbook = (p: Painter) => {
+  const X = flipX(p);
+  const bright = Math.sin(p.t / 380) > 0;
+  const star = bright ? "#fff3a0" : "#ffd84d";
+  if (!p.back) {
+    if (p.fx) {
+      // From the side the book's thickness shows behind the back.
+      p.R(2, 15, 1, 11, "#7b3f2c");
+      p.R(3, 15, 1, 11, (_x, y) => (y % 2 ? "#f3e6c4" : "#d9c79e"));
+      p.R(4, 15, 1, 11, "#5a2c1e");
+      p.R(2, 15, 2, 1, "#f2c14e");
+      p.R(2, 25, 2, 1, "#f2c14e");
+    }
+    spellWand(p);
+    return;
+  }
+  art(p, SPELLBOOK, 6, 14, {
+    d: "#5a2c1e",
+    B: "#f2c14e",
+    C: "#94503a",
+    c: "#7b3f2c",
+    k: "#6a3424",
+    g: "#f2c14e",
+    w: "#f3e6c4",
+    W: "#d9c79e",
+    b: "#3a2a25",
+    "#": star,
+  });
+  p.px(X(5), 18, "#3a2a25");
+  p.px(X(18), 18, "#3a2a25");
+  if (bright) p.px(X(11), 18, "#ffffff");
+  // Now and then a spark drifts off the clasp.
+  const ph = (p.t % 2400) / 600;
+  if (ph < 1) p.px(X(14 + Math.round(ph * 2)), 17 - Math.round(ph * 3), "#fff6c8");
+  spellWand(p);
+  // The strap holds the wand down.
+  p.px(X(16), 18, "#3a2a25");
+  p.px(X(17), 18, "#3a2a25");
+};
+
+/** Gold basket hilt of the cutlass (7×9), over the right shoulder. */
+const CUTLASS_HILT = [
+  "....Pp.",
+  "....kG.",
+  "...kw.G",
+  "...wk.G",
+  "..kw..G",
+  ".GGGGGG",
+  "GgGhGhG",
+  ".GhGhG.",
+  "..GGG..",
+];
+const cutlass = (p: Painter) => {
+  const X = flipX(p);
+  if (p.back) sash(p, 8, 1, 7, "#5a3820");
+  // Curved scabbard from the shoulder down to the opposite hip.
+  const n = 24;
+  for (let i = 0; i <= n; i++) {
+    const u = i / n;
+    const bend = Math.sin(u * Math.PI) * 1.6;
+    const x = Math.round(18 - 12 * u + bend * 0.8);
+    const y = Math.round(12 + 16 * u + bend * 0.6);
+    const metal = u < 0.07 || u > 0.9;
+    p.px(X(x), y, metal ? "#f2c14e" : u > 0.45 && u < 0.5 ? "#c99a32" : "#3a2a25");
+    p.px(X(x + 1), y, metal ? "#c99a32" : "#24181a");
+  }
+  // A glint runs across the guard now and then.
+  const g = Math.floor((p.t % 2600) / 90);
+  art(p, CUTLASS_HILT, 17, 3, {
+    P: "#ffe58a",
+    p: "#c99a32",
+    k: "#3a2a25",
+    w: "#7a4a2a",
+    G: "#f2c14e",
+    g: "#ffe58a",
+    h: "#7a5a1e",
+  });
+  if (g < 7) p.px(X(17 + g), g === 0 || g === 6 ? 9 : 8, "#ffffff");
+};
+
+/** Purification wand: a wooden rod with zig-zag paper streamers. */
+const shrineWand = (p: Painter) => {
+  const X = flipX(p);
+  const walking = p.frame !== 1;
+  // The rod slants from above the left shoulder down behind the back.
+  along(3, -3, 13, 25, (x, y, u) => p.px(X(x), y, u > 0.9 ? "#9a7444" : "#d2a86e"));
+  // Folded paper streamers either side of the rod: zig-zag strips stepping
+  // left and right. The lower folds sway the most.
+  [-1, 4].forEach((bx, i) => {
+    const len = i ? 9 : 12;
+    for (let j = 0; j < len; j++) {
+      const sway = Math.sin(p.t / (walking ? 130 : 260) + j * 0.5 + i * 1.7);
+      const dx = Math.round(((sway + 1) / 2) * (j / len) * (walking ? 1.8 : 1));
+      const k = j % 6;
+      const y = -2 + j;
+      const x0 = k === 0 || k === 3 ? 0 : k < 3 ? 2 : 0;
+      const w = k === 0 || k === 3 ? 4 : 2;
+      for (let x = x0; x < x0 + w; x++)
+        p.px(X(bx + x + dx), y, x === 3 || (w === 2 && x0 === 2) ? "#e1e7f0" : "#ffffff");
+    }
+  });
+  // Red tie at the top of the rod.
+  p.px(X(3), -3, "#d8343c");
+  p.px(X(2), -2, "#d8343c");
+  p.px(X(3), -2, "#a8222c");
+};
+
+/** Rounded white rocket pack with orange trim, fins and two nozzles (symmetric). */
+const rocketPack = (p: Painter) => {
+  const blink = Math.floor(p.t / 400) % 2;
+  const white = "#f6f8fc";
+  const orange = "#ff7a2f";
+  const shadeC = "#d3dae6";
+  // Shell, built row by row so it stays round at the top.
+  p.R(10, 12, 4, 1, orange);
+  p.R(8, 13, 8, 1, orange);
+  p.R(7, 14, 10, 1, "#ff9b5c");
+  p.R(6, 15, 12, 9, white);
+  p.R(16, 15, 2, 9, shadeC);
+  p.R(7, 24, 10, 1, shadeC);
+  p.R(6, 15, 1, 9, "#ffffff");
+  p.R(6, 19, 12, 2, orange);
+  p.R(6, 20, 12, 1, "#d9581a");
+  // Round porthole gauge.
+  p.R(11, 16, 2, 2, blink ? "#5ff3ff" : "#3fb8e6");
+  p.px(11, 16, "#ffffff");
+  // Swept fins either side.
+  [3, 19].forEach((x) => {
+    const out = x === 3 ? x : x + 1;
+    const inn = x === 3 ? x + 1 : x;
+    p.px(inn, 18, orange);
+    p.R(inn, 19, 1, 5, orange);
+    p.R(out, 20, 1, 4, "#d9581a");
+  });
+  // Two bell nozzles.
+  [6, 15].forEach((x) => {
+    p.R(x + 1, 24, 1, 1, "#8a94a0");
+    p.R(x, 25, 3, 1, "#5d6671");
+    p.px(x + 1, 25, "#2f3640");
+  });
+};
+
+/** Checkered flag on a pole behind the right shoulder, waving beside the head. */
+const checkerFlag = (p: Painter) => {
+  const X = flipX(p);
+  const walking = p.frame !== 1;
+  // Pole from a holder at the hip up past the head, with a gold cap.
+  p.R(X(19), -3, 1, 28, (_x, y) => (y < 6 ? "#e9edf2" : "#c3cad3"));
+  p.px(X(19), -4, "#f2c14e");
+  p.px(X(19), 25, "#3a3f4a");
+  p.px(X(18), 25, "#3a3f4a");
+  const sp = walking ? 110 : 200;
+  for (let c = 0; c < 5; c++) {
+    // Columns wave in pairs so the checks stay square; the free end moves most.
+    const k = c >> 1;
+    const ph = p.t / sp - k * 1.2;
+    const dy = k ? Math.round(Math.sin(ph) * (k > 1 ? 1 : 0.7) * (walking ? 1.4 : 1)) : 0;
+    const trough = k > 0 && Math.cos(ph) < -0.4;
+    for (let r = 0; r < 6; r++) {
+      // Charcoal rather than black, so the squares don't melt into the outline.
+      const black = (k + (r >> 1)) % 2 === 0;
+      const col = black ? (trough ? "#363a46" : "#454b5a") : trough ? "#cfd4dd" : "#ffffff";
+      p.px(X(20 + c), -2 + r + dy, col);
+    }
+  }
+};
+
+/** Teal-and-orange glider pack with the canopy folded on top. */
+const gliderPack = (p: Painter) => {
+  const teal = "#2bb3a8";
+  const tealD = "#1d8a81";
+  const orange = "#ff8a3d";
+  // Rolled canopy across the shoulders, striped.
+  const roll: Fill = (x) => (Math.floor((x + 1) / 2) % 2 ? orange : teal);
+  p.R(4, 13, 16, 3, roll);
+  p.R(3, 14, 1, 1, teal);
+  p.R(20, 14, 1, 1, teal);
+  p.R(4, 15, 16, 1, (x) => (Math.floor((x + 1) / 2) % 2 ? "#d9662a" : tealD));
+  if (!p.back) return;
+  p.R(7, 16, 10, 9, teal);
+  p.R(16, 16, 1, 9, tealD);
+  p.R(7, 24, 10, 1, tealD);
+  // Flap with orange piping and a buckle.
+  p.R(7, 16, 10, 3, tealD);
+  p.R(7, 19, 10, 1, orange);
+  p.R(11, 18, 2, 2, "#e9edf2");
+  // Side straps cinching the pack.
+  p.R(9, 20, 1, 4, "#14605a");
+  p.R(14, 20, 1, 4, "#14605a");
+};
+/** OUTLINE colour, so the canopy (drawn on the screen) matches the sprites. */
+const INK = "#2a1b18";
+
+/** Pill-shaped capsule pods for the trainer's strap: [top colour, lower colour]. */
+const PODS: [string, string][] = [
+  ["#3fc6c0", "#f4f1ea"],
+  ["#ff9b3d", "#f4f1ea"],
+  ["#9b7bff", "#f4f1ea"],
+];
+const pod = (p: Painter, x: number, y: number, i: number) => {
+  const [a, b] = PODS[i % PODS.length];
+  p.px(x, y, a);
+  p.R(x - 1, y + 1, 2, 1, a);
+  p.R(x - 1, y + 2, 2, 1, b);
+  p.px(x - 1, y + 3, b);
+};
+/** Our five-point star (5×4). */
+const STAR5 = ["..y..", "yyyyy", ".yyy.", ".y.y."];
+const capsuleSatchel = (p: Painter) => {
+  const m = mirror(p);
+  const X = flipX(p);
+  const bounce = p.frame === 0 || p.frame === 2 ? -1 : 0;
+  const bag = "#3d6fb0";
+  const bagD = "#2c5288";
+  const y0 = 19 + bounce;
+  if (p.back) sash(p, 8, 1, 8, "#3a3f63");
+  p.R(m(-1, 7), y0, 7, 8, bag);
+  p.R(m(-1, 7), y0 + 7, 7, 1, bagD);
+  p.R(m(p.back ? -1 : 5), y0 + 4, 1, 3, bagD);
+  // Rounded flap with our yellow star.
+  p.R(m(-1, 7), y0, 7, 4, bagD);
+  p.R(m(0, 5), y0 + 4, 5, 1, bagD);
+  const tw = Math.sin(p.t / 300) > 0.5;
+  art(p, STAR5, 0, y0, { y: tw ? "#fff3a0" : "#ffd84d" });
+  p.px(X(1), y0 + 6, "#f2c14e");
+};
+
+/** Fan light-stick heads (5×5): a heart and a star. */
+const HEART5 = ["hh.hh", "hHhhh", "hhhhh", ".hhh.", "..h.."];
+const STARHEAD = ["..h..", ".hHh.", "hhhhh", ".hhh.", "hh.hh"];
+/** Soft colour drift for the two sticks: pink and blue. */
+const stickHues = (t: number) => ({
+  pink: 330 + Math.sin(t / 700) * 14,
+  blue: 205 + Math.sin(t / 800 + 1.5) * 16,
+});
+const lightSticks = (p: Painter) => {
+  const { pink, blue } = stickHues(p.t);
+  const X = flipX(p);
+  const pulse = Math.sin(p.t / 450) > 0;
+  if (p.back) {
+    // Small lavender backpack with a heart patch.
+    p.R(8, 16, 8, 8, "#c9b6f0");
+    p.R(9, 15, 6, 1, "#c9b6f0");
+    p.R(15, 16, 1, 8, "#a993d8");
+    p.R(8, 23, 8, 1, "#a993d8");
+    p.R(9, 19, 6, 4, "#e9defc");
+    p.R(9, 19, 6, 1, "#a993d8");
+    p.px(11, 20, "#ff6fae");
+    p.px(13, 20, "#ff6fae");
+    p.R(11, 21, 3, 1, "#ff6fae");
+    p.px(12, 22, "#ff6fae");
+  }
+  // White handles slanting out of the bag.
+  along(9, 16, 1, 4, (x, y) => p.px(X(x), y, "#f4f1ea"));
+  along(14, 16, 22, 4, (x, y) => p.px(X(x), y, "#f4f1ea"));
+  art(p, HEART5, -1, -1, {
+    h: p.hsl(pink, 90, pulse ? 74 : 68),
+    H: "#ffffff",
+  });
+  art(p, STARHEAD, 20, -1, {
+    h: p.hsl(blue, 90, pulse ? 66 : 72),
+    H: "#ffffff",
+  });
+};
+
+/** Rocket pack flames while moving; a small blue pilot glow when standing. */
+const rocketFlame = (c: CanvasRenderingContext2D, k: FxKit) => {
+  if (k.seated) return;
+  const s = k.s;
+  const flick = Math.floor(k.t / 70) % 3;
+  [6, 15].forEach((x, i) => {
+    if (!k.moving) {
+      const a = 0.3 + Math.sin(k.t / 300 + i) * 0.1;
+      k.glow(k.X(x + 1.5), k.Y(26.5), 2.5 * s, "95,243,255", a);
+      if (Math.sin(k.t / 120 + i * 2) > 0) {
+        c.fillStyle = "#7fe7ff";
+        c.fillRect(k.X(x + 1), k.Y(26), s, s);
+      }
+      return;
+    }
+    const f = (flick + i) % 3;
+    k.glow(k.X(x + 1.5), k.Y(28), 4 * s, "255,150,60", 0.45);
+    c.fillStyle = "#ff5a2e";
+    c.fillRect(k.X(x), k.Y(26), 3 * s, (2 + f) * s);
+    c.fillRect(k.X(x + 1), k.Y(28 + f), s, s);
+    c.fillStyle = "#ffb13d";
+    c.fillRect(k.X(x), k.Y(26), 3 * s, (1 + (f > 0 ? 1 : 0)) * s);
+    c.fillRect(k.X(x + 1), k.Y(26), s, (2 + f) * s);
+    c.fillStyle = "#fff3b0";
+    c.fillRect(k.X(x + 1), k.Y(26), s, (1 + (f % 2)) * s);
+  });
+};
+
+/** The glider's little canopy, popped open and fluttering while walking. */
+const CANOPY_HALF = [3, 5, 6, 6];
+const gliderCanopy = (c: CanvasRenderingContext2D, k: FxKit) => {
+  if (!k.moving || k.seated) return;
+  const s = k.s;
+  // From the side it streams out behind (screen-left facing right, right facing left).
+  const side = k.dir === "r" ? -1 : k.dir === "l" ? 1 : 0;
+  const cx = 12 + side * 7 + Math.round(Math.sin(k.t / 320) * 0.6);
+  const top = (side ? -3 : -6) + (Math.sin(k.t / 170) > 0.3 ? 1 : 0);
+  const flap = Math.floor(k.t / 130) % 2;
+  const rects: [number, number, number, number, string][] = [];
+  CANOPY_HALF.forEach((hw, r) => {
+    for (let x = cx - hw; x < cx + hw; x++) {
+      const gore = Math.floor((x - cx + 6) / 2) % 2;
+      const col = gore ? "#ff8a3d" : r === 0 ? "#5fd6cc" : "#2bb3a8";
+      rects.push([x, top + r, 1, 1, col]);
+    }
+  });
+  // Scalloped hem that flutters.
+  for (let x = cx - 6; x < cx + 6; x++)
+    if ((Math.floor((x - cx + 6) / 2) + flap) % 2 === 0)
+      rects.push([x, top + 4, 1, 1, Math.floor((x - cx + 6) / 2) % 2 ? "#d9662a" : "#1d8a81"]);
+  // Suspension lines down to the shoulders.
+  const anchors = side < 0 ? [6, 8] : side > 0 ? [16, 18] : [6.5, 17.5];
+  c.strokeStyle = "rgba(42,27,24,.75)";
+  c.lineWidth = Math.max(1, s / 3);
+  c.beginPath();
+  c.moveTo(k.X(cx - 5.5), k.Y(top + 4));
+  c.lineTo(k.X(anchors[0]), k.Y(15));
+  c.moveTo(k.X(cx + 5.5), k.Y(top + 4));
+  c.lineTo(k.X(anchors[1]), k.Y(15));
+  c.stroke();
+  c.fillStyle = INK;
+  rects.forEach(([x, y, w, h]) => c.fillRect(k.X(x) - s, k.Y(y) - s, (w + 2) * s, (h + 2) * s));
+  rects.forEach(([x, y, w, h, col]) => {
+    c.fillStyle = col;
+    c.fillRect(k.X(x), k.Y(y), w * s, h * s);
+  });
+};
+
+/** Glows around the light-stick heads (the pink one swaps sides from behind). */
+const stickGlow = (_c: CanvasRenderingContext2D, k: FxKit) => {
+  const { pink, blue } = stickHues(k.t);
+  const flip = (k.dir === "b") !== (k.dir === "l");
+  const a = 0.28 + Math.sin(k.t / 450) * 0.08;
+  k.glow(k.X(flip ? 22.5 : 1.5), k.Y(1.5), 4.5 * k.s, hueRgb(pink), a);
+  k.glow(k.X(flip ? 1.5 : 22.5), k.Y(1.5), 4.5 * k.s, hueRgb(blue), a);
+};
+
 export const BACK: CategoryItems = {
   items: [
     { id: "tote", name: "Tote bag", tier: "free" },
@@ -506,6 +877,14 @@ export const BACK: CategoryItems = {
     { id: "pickaxe", name: "Pickaxe", tier: "coins", price: 150 },
     { id: "kunaipouch", name: "Kunai Pouch", tier: "coins", price: 160 },
     { id: "moonblade", name: "Moon Blade", tier: "coins", price: 380 },
+    { id: "spellbook", name: "Spellbook", tier: "coins", price: 160 },
+    { id: "cutlass", name: "Cutlass", tier: "coins", price: 200 },
+    { id: "shrinewand", name: "Shrine Wand", tier: "coins", price: 150 },
+    { id: "rocketpack", name: "Rocket Pack", tier: "coins", price: 350 },
+    { id: "checkerflag", name: "Checkered Flag", tier: "coins", price: 150 },
+    { id: "glider", name: "Glider", tier: "coins", price: 380 },
+    { id: "capsulesatchel", name: "Capsule Satchel", tier: "coins", price: 150 },
+    { id: "lightsticks", name: "Light Sticks", tier: "coins", price: 150 },
   ],
   draw: {
     tote: {
@@ -1192,6 +1571,85 @@ export const BACK: CategoryItems = {
       animated: true,
       behind: (p) => moonBlade(p),
       front: (p) => sash(p, 8, 1, 7, "#2a2340"),
+    },
+    spellbook: {
+      animated: true,
+      behind: (p) => spellbook(p),
+      front: (p) => {
+        p.R(8, 16, 1, 5, "#5a3820");
+        p.R(15, 16, 1, 5, "#5a3820");
+        p.R(8, 19, 8, 1, "#5a3820");
+        p.R(11, 19, 2, 1, "#f2c14e");
+      },
+    },
+    cutlass: {
+      animated: true,
+      behind: (p) => cutlass(p),
+      front: (p) => {
+        sash(p, 15, -1, 8, "#5a3820");
+        p.px(12, 19, "#f2c14e");
+      },
+    },
+    shrinewand: {
+      animated: true,
+      behind: (p) => shrineWand(p),
+      // Twisted red-and-white cord.
+      front: (p) => {
+        for (let i = 0; i < 7; i++) p.px(8 + i, 16 + i, i % 2 ? "#f4f1ea" : "#d8343c");
+      },
+    },
+    rocketpack: {
+      animated: true,
+      behind: (p) => rocketPack(p),
+      front: (p) => {
+        p.R(8, 16, 1, 6, "#5d6671");
+        p.R(15, 16, 1, 6, "#5d6671");
+        p.R(8, 20, 8, 1, "#ff7a2f");
+        p.R(11, 20, 2, 1, Math.floor(p.t / 400) % 2 ? "#5ff3ff" : "#3fb8e6");
+      },
+      // From behind the flames are in front of the legs.
+      fxBehind: (c, k) => {
+        if (k.dir !== "b") rocketFlame(c, k);
+      },
+      fxFront: (c, k) => {
+        if (k.dir === "b") rocketFlame(c, k);
+      },
+    },
+    checkerflag: {
+      animated: true,
+      behind: (p) => checkerFlag(p),
+      front: (p) => sash(p, 15, -1, 8, "#2c2c36"),
+    },
+    glider: {
+      animated: true,
+      behind: (p) => gliderPack(p),
+      front: (p) => {
+        p.R(8, 16, 1, 6, "#14605a");
+        p.R(15, 16, 1, 6, "#14605a");
+        p.R(8, 20, 8, 1, "#14605a");
+        p.R(11, 20, 2, 1, "#e9edf2");
+        // Orange rip-cord handle on the strap.
+        p.R(16, 18, 1, 2, "#ff8a3d");
+      },
+      fxBehind: gliderCanopy,
+    },
+    capsulesatchel: {
+      animated: true,
+      behind: (p) => capsuleSatchel(p),
+      front: (p) => {
+        sash(p, 15, -1, 8, "#3a3f63");
+        pod(p, 14, 17, 0);
+        pod(p, 11, 20, 1);
+      },
+    },
+    lightsticks: {
+      animated: true,
+      behind: (p) => lightSticks(p),
+      front: (p) => {
+        p.R(8, 16, 1, 5, "#c9b6f0");
+        p.R(15, 16, 1, 5, "#c9b6f0");
+      },
+      fxBehind: stickGlow,
     },
   },
 };
