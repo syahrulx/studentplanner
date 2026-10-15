@@ -1,6 +1,6 @@
 {
   "name": "gradeup-mobile",
-  "main": "expo-router/entry",
+  "main": "./index.ts",
   "version": "1.9.0",
   "engines": {
     "node": "^22.0.0 || ^24.0.0"

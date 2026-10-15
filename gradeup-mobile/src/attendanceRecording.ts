@@ -263,5 +263,9 @@ export async function handleAttendanceNotificationResponse(
     source: 'notification',
   });
 
+  // iOS removes a notification once an action is pressed; Android leaves it
+  // in the shade, so the button looked like it did nothing. Remove it here.
+  await Notifications.dismissNotificationAsync(response.notification.request.identifier).catch(() => {});
+
   return { handled: true };
 }
