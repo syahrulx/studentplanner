@@ -18,6 +18,8 @@ import { View, Text, Pressable, Modal, StyleSheet, Platform } from 'react-native
 import { Image } from 'expo-image';
 import Feather from '@expo/vector-icons/Feather';
 import { useTheme } from '@/hooks/useTheme';
+import { useRentamanAvatar } from '@/hooks/useRentamanAvatar';
+import { RentamanAvatarView, rentamanBox } from '@/components/RentamanAvatarView';
 import { useProfileCard } from '@/hooks/useProfileCard';
 import { Avatar } from '@/components/Avatar';
 import { ProfileBannerView } from '@/components/ProfileBannerView';
@@ -78,6 +80,8 @@ interface Props {
 // has to feel like to be worth paying for.
 const BANNER_HEIGHT = 108;
 const AVATAR_SIZE = 76;
+/** How tall the RenTaman avatar stands, whatever it wears. */
+const RENTAMAN_H = 104;
 
 export function FriendPeek({ person, onClose, onOpenProfile }: Props) {
   const theme = useTheme();
@@ -122,6 +126,12 @@ export function FriendPeek({ person, onClose, onOpenProfile }: Props) {
    */
   const showPhoto = isFieldVisible('photo', hidden);
 
+  // Their RenTaman avatar, only if they switched it on (off by default; the
+  // database enforces the same rule). Nothing at all is drawn otherwise: an
+  // empty spot would only say something is missing.
+  const { avatar: rentamanRow } = useRentamanAvatar(person ? person.id : null);
+  const rentaman = rentamanRow?.shown ? rentamanRow : null;
+
   const hasValue = (v?: string) => {
     const t = (v ?? '').trim();
     return t.length > 0 && t !== '-' && t !== '--' && t !== 'N/A';
@@ -165,6 +175,15 @@ export function FriendPeek({ person, onClose, onOpenProfile }: Props) {
             height={BANNER_HEIGHT}
           />
 
+          {rentaman ? (
+            <View
+              style={[s.rentaman, { top: BANNER_HEIGHT + AVATAR_SIZE / 2 + 4 - rentamanBox(rentaman.look, RENTAMAN_H).h }]}
+              pointerEvents="none"
+            >
+              <RentamanAvatarView look={rentaman.look} height={RENTAMAN_H} />
+            </View>
+          ) : null}
+
           <Pressable style={s.closeBtn} onPress={onClose} hitSlop={10} accessibilityLabel="Close">
             <Feather name="x" size={18} color="#fff" />
           </Pressable>
@@ -191,6 +210,11 @@ export function FriendPeek({ person, onClose, onOpenProfile }: Props) {
             <Text style={[s.name, { color: theme.text }]} numberOfLines={2}>
               {person?.name || ''}
             </Text>
+            {rentaman?.nickname ? (
+              <Text style={[s.rentamanName, { color: theme.primary }]} numberOfLines={1}>
+                RenTaman · {rentaman.nickname}
+              </Text>
+            ) : null}
             {person?.statusLine ? (
               <Text style={[s.status, { color: theme.textSecondary }]} numberOfLines={1}>
                 {person.statusLine}
@@ -323,6 +347,15 @@ const s = StyleSheet.create({
     marginBottom: 10,
   },
   name: { fontSize: 19, fontWeight: '800' },
+  rentaman: {
+    position: 'absolute',
+    right: 44,
+    // top is set inline: feet level with the bottom of the picture (it
+    // straddles the banner edge with a 4 pt ring), so the two stand on the
+    // same line. In from the edge so the card is not empty mid-way.
+    zIndex: 2,
+  },
+  rentamanName: { fontSize: 12, fontWeight: '700', marginTop: 1 },
   status: { fontSize: 13, fontWeight: '600', marginTop: 2 },
   presence: { marginTop: 10, gap: 5 },
   presenceRow: { flexDirection: 'row', alignItems: 'center' },
