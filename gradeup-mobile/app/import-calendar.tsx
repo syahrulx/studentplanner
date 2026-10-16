@@ -9,6 +9,7 @@ import {
   Alert,
   FlatList,
   Platform,
+  Switch,
 } from 'react-native';
 import { router } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
@@ -26,6 +27,9 @@ import {
 } from '@/src/lib/calendarImport';
 import type { Calendar as DeviceCalendar, Event as DeviceEvent } from 'expo-calendar';
 import { isAtLeastPlus } from '@/src/lib/flashcardGenerationLimits';
+import { isCalendarAutoSyncOn, rememberImportedTasks, setCalendarAutoSyncOn } from '@/src/lib/calendarSyncRunner';
+import { supabase } from '@/src/lib/supabase';
+import type { Task } from '@/src/types';
 
 type RangePreset = 'week' | 'month' | 'semester';
 
@@ -77,6 +81,16 @@ export default function ImportCalendarScreen() {
   const [loadingEvents, setLoadingEvents] = useState(false);
   const [importing, setImporting] = useState(false);
   const [selectedEventIds, setSelectedEventIds] = useState<Set<string>>(new Set());
+  const [autoSync, setAutoSync] = useState(true);
+
+  useEffect(() => {
+    void isCalendarAutoSyncOn().then(setAutoSync);
+  }, []);
+
+  const toggleAutoSync = (on: boolean) => {
+    setAutoSync(on);
+    void setCalendarAutoSyncOn(on).catch(() => setAutoSync(!on));
+  };
 
   const semesterRange = useMemo(() => {
     if (!academicCalendar?.isActive) return null;
@@ -228,11 +242,17 @@ export default function ImportCalendarScreen() {
       return;
     }
     try {
+      const imported: Task[] = [];
       for (const ev of toImport) {
         const calTitle = calendarTitleById.get(ev.calendarId) ?? 'Calendar';
         const task = calendarEventToTask(ev, ev.calendarId, calTitle);
         addTask(task);
+        imported.push(task);
       }
+      // What the phone said at import, so auto-sync can tell a phone change from an edit here.
+      const { data } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+      const uid = data.session?.user?.id;
+      if (uid) await rememberImportedTasks(uid, imported).catch(() => {});
       Alert.alert('', T('importCalendarDone'), [
         { text: T('done'), onPress: () => router.back() },
       ]);
@@ -440,6 +460,14 @@ export default function ImportCalendarScreen() {
                 ) : null}
               </View>
             )}
+          </View>
+
+          <View style={[styles.calRow, { backgroundColor: theme.card, borderBottomColor: theme.border, marginTop: 20, gap: 12 }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.calTitle, { color: theme.text, flex: 0 }]}>{T('importCalendarAutoSync')}</Text>
+              <Text style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }}>{T('importCalendarAutoSyncSub')}</Text>
+            </View>
+            <Switch value={autoSync} onValueChange={toggleAutoSync} trackColor={{ true: theme.primary }} />
           </View>
 
           <Pressable

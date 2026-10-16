@@ -39,6 +39,13 @@ import type ViewShot from 'react-native-view-shot';
 import { ExportCanvas, saveExportCanvas, shareExportCanvas } from '@/components/ViewShotCompat';
 import BackgroundPicker from '@/components/lockScreen/BackgroundPicker';
 import LayoutPanel from '@/components/lockScreen/LayoutPanel';
+import {
+  LandscapeLayoutPanel,
+  LandscapePreview,
+  LandscapeTemplatePanel,
+  ScreenShapeRow,
+  useLandscapeOptions,
+} from '@/components/lockScreen/LandscapeStudio';
 import { lockBackgroundGradient } from '@/components/lockScreen/LockBackground';
 import LockCanvas from '@/components/lockScreen/LockCanvas';
 import LockFullPreview from '@/components/lockScreen/LockFullPreview';
@@ -71,6 +78,7 @@ import {
   fmtTimeOfDay,
 } from '@/src/lib/lockScreen/lockScreenFormat';
 import { getLockCanvasSize } from '@/src/lib/lockScreen/lockScreenGeometry';
+import { landscapeLayout } from '@/src/lib/lockScreen/lockLandscape';
 import { lockScreenUnsupportedReason } from '@/src/lib/lockScreen/lockScreenHealth';
 import { buildLockScreenModels } from '@/src/lib/lockScreen/lockScreenModel';
 import {
@@ -370,6 +378,15 @@ export default function LockScreenStudio() {
   const selectedModel = isBackup ? models.fallback : (dayModels[dayIndex] ?? todayModel);
   const selectedDateISO = isBackup ? null : models.dates[dayIndex];
 
+  // ── Tablet / laptop: a separate landscape picture, saved only (lockLandscape.ts) ──
+  const [landOpts, updateLandOpts] = useLandscapeOptions();
+  const isLandscape = landOpts.shape !== 'phone';
+  // Undated templates, so any day draws the same picture: today's.
+  const landLayout = useMemo(
+    () => (isLandscape ? landscapeLayout(todayModel, config, landOpts) : null),
+    [isLandscape, todayModel, config, landOpts],
+  );
+
   const dayChips = useMemo<DayChipItem[]>(() => {
     const chips = models.dates.map((dateISO, i) => {
       const d = dateFromISO(dateISO);
@@ -585,7 +602,7 @@ export default function LockScreenStudio() {
     exportBusy.current = true;
     setSaveState('busy');
     try {
-      await drawForExport(selectedModel);
+      await drawForExport(isLandscape ? todayModel : selectedModel);
       const result = await saveExportCanvas(exportRef.current, { format: 'jpg', quality: SAVE_QUALITY });
       if (!mounted.current) return;
       if (result === 'saved') {
@@ -612,14 +629,14 @@ export default function LockScreenStudio() {
       exportBusy.current = false;
       if (mounted.current) setExportJob(null);
     }
-  }, [drawForExport, selectedModel, isIOS, T, showToast, timers]);
+  }, [drawForExport, selectedModel, todayModel, isLandscape, isIOS, T, showToast, timers]);
 
   const sharePicture = useCallback(async () => {
     if (exportBusy.current) return;
     exportBusy.current = true;
     setShareBusy(true);
     try {
-      await drawForExport(selectedModel);
+      await drawForExport(isLandscape ? todayModel : selectedModel);
       const result = await shareExportCanvas(exportRef.current);
       if (result === 'error') warnHaptic();
     } finally {
@@ -629,7 +646,7 @@ export default function LockScreenStudio() {
         setExportJob(null);
       }
     }
-  }, [drawForExport, selectedModel]);
+  }, [drawForExport, selectedModel, todayModel, isLandscape]);
 
   const runAction = useCallback(
     (action: CtaAction) => {
@@ -800,6 +817,9 @@ export default function LockScreenStudio() {
   if (toast) {
     captionKey = `toast-${toast.id}`;
     captionText = toast.text;
+  } else if (isLandscape) {
+    captionKey = 'landscape';
+    captionText = T('lsLandCaption');
   } else if (isBackup) {
     captionKey = 'backup';
     captionText = T('lsBackupCaption');
@@ -811,8 +831,9 @@ export default function LockScreenStudio() {
     captionText = T('lsScrubCaption');
   }
 
-  const primary = PRIMARY_ACTION[health.kind];
-  const secondary = SECONDARY_ACTION[health.kind];
+  // Tablets and laptops have no automation: their picture is only saved or shared.
+  const primary: CtaAction = isLandscape ? 'save' : PRIMARY_ACTION[health.kind];
+  const secondary: CtaAction = isLandscape ? 'share' : SECONDARY_ACTION[health.kind];
   const statusOf = (action: CtaAction): 'busy' | 'done' | null => {
     if (action === 'update') return running ? 'busy' : null;
     if (action === 'save') return saveState === 'idle' ? null : saveState;
@@ -831,6 +852,8 @@ export default function LockScreenStudio() {
   const ctaPadBottom = subCaption ? Math.max(bottomPad - SUB_CAPTION_H, 12) : bottomPad;
 
   const panelProps = { config, update: edit, T, reduceMotion };
+  const exW = landLayout ? landLayout.W : W;
+  const exH = landLayout ? landLayout.H : H;
 
   return (
     <View style={styles.root}>
@@ -884,7 +907,18 @@ export default function LockScreenStudio() {
 
       {/* 3 · Preview, with banners floating over its top edge so the frame never jumps */}
       <Animated.View style={[styles.previewWrap, { minHeight: previewMin }, entryStyle]}>
-        {configLoaded ? (
+        {configLoaded && landLayout ? (
+          <LandscapePreview
+            layout={landLayout}
+            model={todayModel}
+            config={config}
+            theme={theme}
+            darkMinimal={darkMinimal}
+            T={T}
+            shape={landOpts.shape}
+            widgetsLeft={landOpts.widgetsLeft}
+          />
+        ) : configLoaded ? (
           <LockPreview
             style={styles.fill}
             model={selectedModel}
@@ -936,17 +970,27 @@ export default function LockScreenStudio() {
       </View>
 
       {/* 5 · Day scrubber */}
-      <DayScrubber chips={dayChips} selected={dayIndex} onSelect={selectDay} reduceMotion={reduceMotion} />
+      {/* The landscape picture is undated: no day to pick. */}
+      {isLandscape ? null : (
+        <DayScrubber chips={dayChips} selected={dayIndex} onSelect={selectDay} reduceMotion={reduceMotion} />
+      )}
 
       {/* 6 · Tabs, 7 · Tray */}
       <StudioTabs value={tab} onChange={setTab} T={T} reduceMotion={reduceMotion} style={styles.tabs} />
       <StudioTray tab={tab} reduceMotion={reduceMotion} style={styles.tray}>
-        {!configLoaded ? null : tab === 'template' ? (
+        {!configLoaded ? null : isLandscape && tab === 'template' ? (
+          <LandscapeTemplatePanel opts={landOpts} onChange={updateLandOpts} T={T} reduceMotion={reduceMotion} />
+        ) : isLandscape && tab === 'layout' ? (
+          <LandscapeLayoutPanel opts={landOpts} onChange={updateLandOpts} T={T} reduceMotion={reduceMotion} accent={ink.accent} />
+        ) : tab === 'template' ? (
           <TemplatePicker {...panelProps} model={todayModel} theme={theme} darkMinimal={darkMinimal} W={W} H={H} s={s} />
         ) : tab === 'background' ? (
           <BackgroundPicker {...panelProps} theme={theme} />
         ) : tab === 'layout' ? (
-          <LayoutPanel {...panelProps} accent={chromeAccent} />
+          <>
+            <ScreenShapeRow opts={landOpts} onChange={updateLandOpts} T={T} reduceMotion={reduceMotion} />
+            <LayoutPanel {...panelProps} accent={chromeAccent} />
+          </>
         ) : (
           <ShowPanel
             {...panelProps}
@@ -996,16 +1040,17 @@ export default function LockScreenStudio() {
           pointerEvents="none"
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
-          style={[styles.exportHost, { left: -(W + 200), width: W, height: H }]}
+          style={[styles.exportHost, { left: -(exW + 200), width: exW, height: exH }]}
         >
-          <ExportCanvas ref={exportRef} format="jpg" quality={SAVE_QUALITY} style={{ width: W, height: H }}>
+          <ExportCanvas ref={exportRef} format="jpg" quality={SAVE_QUALITY} style={{ width: exW, height: exH }}>
             <LockCanvas
               key={exportJob.id}
               model={exportJob.model}
               config={config}
-              W={W}
-              H={H}
-              s={s}
+              W={exW}
+              H={exH}
+              s={landLayout ? landLayout.s : s}
+              landscape={landLayout ?? undefined}
               theme={theme}
               darkMinimal={darkMinimal}
               T={T}

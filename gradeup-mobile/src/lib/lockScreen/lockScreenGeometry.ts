@@ -589,8 +589,10 @@ export function clampTopFrac(
   config: LockScreenConfig,
   panelMaxH: number,
   H: number,
+  /** Landscape pictures pass their own; phones never do (see lockLandscape.ts). */
+  zone: LockSafeZone = lockSafeZone(config.top),
 ): number {
-  const { minTop, maxBottom } = lockSafeZone(config.top);
+  const { minTop, maxBottom } = zone;
   const value = Number.isFinite(frac) ? frac : recommendedTopFrac(config.top);
   return Math.max(minTop, Math.min(value, maxBottom - panelMaxH / H));
 }
@@ -600,16 +602,18 @@ export function fitModel(
   config: LockScreenConfig,
   H: number,
   s: number,
+  /** Landscape pictures pass their own; phones never do (see lockLandscape.ts). */
+  zone: LockSafeZone = lockSafeZone(config.top),
 ): LockFit {
   const { template } = config;
-  const { maxBottom } = lockSafeZone(config.top);
+  const { maxBottom } = zone;
 
   // The stored position was clamped against the tallest day when it was
   // dragged, but data can grow since. Only reserve room for this day's leanest
   // layout, so the card holds its place and loses rows rather than jumping up.
   const leanest = fitLayout(template, model, config, 0);
   const frac = config.topFrac ?? recommendedTopFrac(config.top);
-  const topPx = H * clampTopFrac(frac, config, leanest.height * s, H);
+  const topPx = H * clampTopFrac(frac, config, leanest.height * s, H, zone);
 
   const layout = fitLayout(template, model, config, (maxBottom * H - topPx + FIT_SLACK_PT) / s);
 

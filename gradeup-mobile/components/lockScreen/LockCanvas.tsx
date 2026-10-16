@@ -7,11 +7,13 @@ import type { ThemePalette } from '@/constants/Themes';
 import type { TranslationKey } from '@/src/i18n';
 import { LOCK_METRICS, fitModel } from '@/src/lib/lockScreen/lockScreenGeometry';
 import { resolveLockInk, type LockInk } from '@/src/lib/lockScreen/lockScreenPalette';
+import type { LandscapeLayout } from '@/src/lib/lockScreen/lockLandscape';
 import type { LockScreenConfig, LockScreenDayModel } from '@/src/lib/lockScreen/types';
 
 import LockBackground from './LockBackground';
 import TimetableTemplate from './templates/TimetableTemplate';
 import GridTemplate from './templates/GridTemplate';
+import TimetableColumnsTemplate from './templates/TimetableColumnsTemplate';
 import TodayTemplate from './templates/TodayTemplate';
 import WeekTemplate, { type LockTemplateProps } from './templates/WeekTemplate';
 
@@ -59,6 +61,12 @@ export interface LockCanvasProps {
   /** Offscreen capture: no animated styles, no touches. */
   forCapture?: boolean;
   showBackground?: boolean;
+  /**
+   * A tablet or laptop picture from the Studio (lockLandscape.ts): the card's
+   * box and rows come from here instead of fitModel. Never set by the render
+   * host, so the phone picture can't change because of it.
+   */
+  landscape?: LandscapeLayout;
 }
 
 interface PanelFrame {
@@ -221,6 +229,7 @@ export function LockCanvas({
   onReady,
   forCapture = false,
   showBackground = true,
+  landscape,
 }: LockCanvasProps) {
   // With an explicit top, fit to that spot so the rows drawn are the rows that fit there.
   const fitConfig = useMemo(
@@ -232,7 +241,7 @@ export function LockCanvas({
     () => resolveLockInk(config.panel, theme, darkMinimal),
     [config.panel, theme, darkMinimal],
   );
-  const frame = panelFrame(W, s);
+  const frame = landscape ? { ...panelFrame(W, s), left: landscape.left, width: landscape.width } : panelFrame(W, s);
 
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
@@ -264,8 +273,16 @@ export function LockCanvas({
   }, [showBackground, handleBackgroundReady]);
 
   const templateProps: LockTemplateProps = { fit, source: model, config, ink, W, s, T };
-  const body =
-    config.template === 'week' ? (
+  // Templates size their columns from W as if the card spanned it less the
+  // phone's side insets, so a narrower landscape card passes the W that gives its width.
+  const landscapeW = landscape ? landscape.width + 2 * LOCK_METRICS.panel.insetX * s : W;
+  const body = landscape ? (
+    landscape.template === 'grid' && landscape.fit ? (
+      <GridTemplate {...templateProps} fit={landscape.fit} W={landscapeW} />
+    ) : (
+      <TimetableColumnsTemplate model={model} config={config} ink={ink} s={s} T={T} rows={landscape.rows} />
+    )
+  ) : config.template === 'week' ? (
       <WeekTemplate {...templateProps} />
     ) : config.template === 'timetable' ? (
       <TimetableTemplate {...templateProps} />
@@ -277,8 +294,8 @@ export function LockCanvas({
 
   const panelProps: PanelProps = {
     frame,
-    top: topPx ?? fit.topPx,
-    height: fit.panelH,
+    top: landscape ? landscape.topPx : topPx ?? fit.topPx,
+    height: landscape ? landscape.panelH : fit.panelH,
     ink,
     sheen: config.panel !== 'light',
     s,

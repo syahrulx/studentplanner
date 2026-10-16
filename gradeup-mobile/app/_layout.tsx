@@ -27,6 +27,7 @@ LogBox.ignoreLogs([
 ]);
 
 import { AppProvider } from '@/src/context/AppContext';
+import { CalendarAutoSync } from '@/components/CalendarAutoSync';
 import { CommunityProvider } from '@/src/context/CommunityContext';
 import { QuizProvider } from '@/src/context/QuizContext';
 import { useTheme, useThemeId } from '@/hooks/useTheme';
@@ -390,6 +391,7 @@ function RootLayoutNav() {
           <ThemeAwareLayout />
           <SmartCaptureLauncher />
           <LockScreenRenderHost />
+          <CalendarAutoSync />
           <AppUpdateGate />
           <WhatsNewPromptModal />
           <FeedbackSurveyPrompt />
