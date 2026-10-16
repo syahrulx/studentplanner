@@ -31,6 +31,9 @@ import { captureError } from '@/src/lib/monitoring';
 import { Avatar } from '@/components/Avatar';
 import { ProfileBannerView } from '@/components/ProfileBannerView';
 import { FriendPeek, type FriendPeekPerson } from '@/components/FriendPeek';
+import { RentamanAvatarView } from '@/components/RentamanAvatarView';
+import { rememberRentamanShown, useRentamanAvatar } from '@/hooks/useRentamanAvatar';
+import { setRentamanShown } from '@/src/lib/rentamanApi';
 import {
   PROFILE_BANNERS,
   resolveProfileBanner,
@@ -51,6 +54,24 @@ export default function ProfileCardScreen() {
 
   const [banner, setBanner] = useState<string>('theme');
   const [hidden, setHidden] = useState<string[]>([]);
+  const { avatar: rentaman, loading: rentamanLoading } = useRentamanAvatar(user.id);
+  const [rentamanBusy, setRentamanBusy] = useState(false);
+
+  /** Off by default. On: shown on your profile and on your card for others. */
+  const toggleRentaman = async (on: boolean) => {
+    if (!user.id || !rentaman) return;
+    setRentamanBusy(true);
+    rememberRentamanShown(user.id, on);
+    try {
+      await setRentamanShown(user.id, on);
+    } catch (e) {
+      rememberRentamanShown(user.id, !on);
+      captureError(e, { where: 'profileCard.rentaman' });
+      Alert.alert('Not saved', 'Your avatar setting could not be saved. Check your connection and try again.');
+    } finally {
+      setRentamanBusy(false);
+    }
+  };
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState<FriendPeekPerson | null>(null);
@@ -337,6 +358,40 @@ export default function ProfileCardScreen() {
         </View>
 
         <View style={s.sectionRow}>
+          <Text style={[s.section, { color: theme.textSecondary }]}>RENTAMAN</Text>
+        </View>
+        <View style={[s.cardGroup, { backgroundColor: theme.card }]}>
+          {rentamanLoading ? (
+            <ActivityIndicator color={theme.primary} style={{ paddingVertical: 18 }} />
+          ) : rentaman ? (
+            <View style={[s.fieldRow, { alignItems: 'center', gap: 12 }]}>
+              <View style={s.rentamanStage}>
+                <RentamanAvatarView look={rentaman.look} height={64} maxWidth={54} showPet={false} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.fieldLabel, { color: theme.text }]}>Show my RenTaman avatar</Text>
+                <Text style={[s.fieldSummary, { color: theme.textSecondary }]}>
+                  On your profile, and on your card when other students tap your name.
+                </Text>
+              </View>
+              <Switch
+                value={rentaman.shown}
+                disabled={rentamanBusy}
+                onValueChange={(v) => void toggleRentaman(v)}
+                trackColor={{ true: theme.primary }}
+                accessibilityLabel="Show my RenTaman avatar"
+              />
+            </View>
+          ) : (
+            <View style={s.fieldRow}>
+              <Text style={[s.fieldSummary, { color: theme.textSecondary, flex: 1 }]}>
+                You don't have a RenTaman avatar yet.
+              </Text>
+            </View>
+          )}
+        </View>
+
+        <View style={s.sectionRow}>
           <Text style={[s.section, { color: theme.textSecondary }]}>WHAT YOUR CARD SHOWS</Text>
           <Pressable
             accessibilityRole="button"
@@ -402,6 +457,16 @@ export default function ProfileCardScreen() {
 }
 
 const s = StyleSheet.create({
+  rentamanStage: {
+    width: 62,
+    height: 76,
+    borderRadius: 12,
+    backgroundColor: '#d6ecff',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: 3,
+    overflow: 'hidden',
+  },
   container: { flex: 1 },
   center: { alignItems: 'center', justifyContent: 'center' },
   header: {

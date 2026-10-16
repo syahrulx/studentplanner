@@ -83,7 +83,8 @@ export const STUDIO_TRAY_HEIGHT = 156;
 export const STUDIO_TRAY_HEIGHT_FOR: Record<StudioTabId, number> = {
   template: STUDIO_TRAY_HEIGHT,
   background: 210,
-  layout: STUDIO_TRAY_HEIGHT,
+  // Screen (phone / tablet / laptop) sits above the phone's layout rows.
+  layout: 210,
   show: STUDIO_TRAY_HEIGHT,
 };
 export const STUDIO_TRAY_PAD_X = 16;

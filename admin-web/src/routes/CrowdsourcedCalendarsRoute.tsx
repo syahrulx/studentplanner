@@ -267,6 +267,37 @@ export function CrowdsourcedCalendarsRoute() {
     });
   };
 
+  // Pending and the same as HEA: students already get these dates from HEA
+  // automatically, so approving would only add a duplicate choice.
+  const sameAsHea = (row: UitmCalendarContributionRow) => row.status === 'pending' && heaChecks.get(row.id)?.kind === 'match';
+
+  const rejectSelectedUitm = () => {
+    const chosen = uitmContributions.filter((r) => selectedUitmIds.includes(r.id) && r.status === 'pending');
+    if (!chosen.length) return;
+    requestSafeAction({
+      title: `Reject ${chosen.length} pending UiTM submission${chosen.length === 1 ? '' : 's'}`,
+      operation: 'Reject submissions',
+      affectedCount: chosen.length,
+      subject: `${chosen.filter(sameAsHea).length} of them are the same as HEA`,
+      warning: 'Only marks them as rejected. The students who sent them are not told, and no student calendar changes. Approved and already rejected ones you ticked are left alone.',
+      onConfirm: async () => {
+        let done = 0;
+        for (const row of chosen) {
+          try {
+            await reviewUitmCalendarContribution(row.id, 'rejected');
+            done += 1;
+          } catch {
+            // Counted as failed below; the rest still go through.
+          }
+        }
+        setSelectedUitmIds([]);
+        await refreshHistory();
+        setOkMsg(`${done} UiTM submission${done === 1 ? '' : 's'} rejected.`);
+        return { affected: done, failed: chosen.length - done };
+      },
+    });
+  };
+
   const reviewUitmContribution = async (row: UitmCalendarContributionRow, status: 'approved' | 'rejected') => {
     const action = status === 'approved' ? 'Approve' : 'Reject';
     const ok = window.confirm(
@@ -320,6 +351,8 @@ export function CrowdsourcedCalendarsRoute() {
   const uitmCount = (st: 'pending' | 'approved' | 'rejected' | 'all') =>
     st === 'all' ? uitmContributions.length : uitmContributions.filter((r) => r.status === st).length;
   const suggestedRejectRows = visibleUitm.filter((r) => uitmVerdicts.get(r.id)?.verdict === 'reject');
+  const sameAsHeaRows = visibleUitm.filter(sameAsHea);
+  const selectedPendingCount = uitmContributions.filter((r) => selectedUitmIds.includes(r.id) && r.status === 'pending').length;
   const loading = busy && offers.length === 0 && uitmContributions.length === 0;
 
   return (
@@ -387,7 +420,15 @@ export function CrowdsourcedCalendarsRoute() {
                   Tick suggested “Reject” ({suggestedRejectRows.length})
                 </button>
               ) : null}
-              <button type="button" disabled={selectedUitmIds.length === 0} onClick={deleteSelectedUitm} className={`ml-auto ${BTN_DANGER}`}>
+              {sameAsHeaRows.length ? (
+                <button type="button" onClick={() => setSelectedUitmIds(sameAsHeaRows.map((r) => r.id))} className={BTN_SECONDARY}>
+                  Tick “Same as HEA” ({sameAsHeaRows.length})
+                </button>
+              ) : null}
+              <button type="button" disabled={selectedPendingCount === 0} onClick={rejectSelectedUitm} className={`ml-auto ${BTN_DANGER_SOFT}`}>
+                Reject selected ({selectedPendingCount})
+              </button>
+              <button type="button" disabled={selectedUitmIds.length === 0} onClick={deleteSelectedUitm} className={BTN_DANGER}>
                 Delete selected ({selectedUitmIds.length})
               </button>
             </div>
@@ -429,7 +470,12 @@ export function CrowdsourcedCalendarsRoute() {
                         {row.status.charAt(0).toUpperCase() + row.status.slice(1)}
                       </Chip>
                     </div>
-                    {v ? (
+                    {sameAsHea(row) ? (
+                      <div className="flex flex-wrap items-baseline gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                        <Chip tone="neutral">Not needed</Chip>
+                        <span className="min-w-0">Same as HEA, and students already get the HEA calendar automatically. Approving only adds a duplicate choice. Reject to clear it.</span>
+                      </div>
+                    ) : v ? (
                       <div className="flex flex-wrap items-baseline gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
                         <Chip tone={v.verdict === 'approve' ? 'success' : v.verdict === 'reject' ? 'danger' : 'warning'}>
                           {v.verdict === 'approve' ? 'Suggested: Approve' : v.verdict === 'reject' ? 'Suggested: Reject' : 'Check first'}

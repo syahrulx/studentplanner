@@ -22,6 +22,8 @@ import { useTheme } from '@/hooks/useTheme';
 import { useProfileCard } from '@/hooks/useProfileCard';
 import { ProfileBannerView } from '@/components/ProfileBannerView';
 import { AttendanceStatsSection } from '@/components/AttendanceStatsSection';
+import { RentamanAvatarView, rentamanBox } from '@/components/RentamanAvatarView';
+import { useRentamanAvatar } from '@/hooks/useRentamanAvatar';
 import { resolveProfileBanner } from '@/src/lib/profileBanners';
 import Feather from '@expo/vector-icons/Feather';
 import { useTranslations } from '@/src/i18n';
@@ -46,6 +48,8 @@ import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 /** The banner strip above the name. */
 const HERO_BANNER_H = 104;
+/** How tall the RenTaman avatar stands on the profile hero. */
+const HERO_RENTAMAN_H = 108;
 const AVATAR_SIZE = 88;
 /** The white ring that separates the photo from the banner behind it. */
 const AVATAR_RING = 4;
@@ -61,6 +65,9 @@ export default function Profile() {
   const { locationVisibility, setLocationVisibility, circles, userId } = useCommunity();
   const theme = useTheme();
   const myCard = useProfileCard(user.id);
+  // Only when the student switched it on in Your profile card (off by default).
+  const { avatar: rentamanRow } = useRentamanAvatar(user.id);
+  const rentaman = rentamanRow?.shown ? rentamanRow : null;
   const myBanner = resolveProfileBanner(myCard?.banner, user.subscriptionPlan, user.id);
   const T = useTranslations(language);
   const totalWeeks = academicCalendar?.totalWeeks ?? 14;
@@ -501,6 +508,18 @@ export default function Profile() {
           themeColor={theme.primary}
           height={HERO_BANNER_H}
         />
+        {rentaman ? (
+          // On the right of the banner, standing level with the profile picture.
+          <View
+            style={[
+              styles.heroRentaman,
+              { top: HERO_BANNER_H + AVATAR_SIZE / 2 + AVATAR_RING - rentamanBox(rentaman.look, HERO_RENTAMAN_H).h },
+            ]}
+            pointerEvents="none"
+          >
+            <RentamanAvatarView look={rentaman.look} height={HERO_RENTAMAN_H} />
+          </View>
+        ) : null}
         <View style={styles.heroContent}>
           <View style={styles.avatarWrap}>
             <View style={styles.avatar}>
@@ -680,6 +699,25 @@ export default function Profile() {
             <Text style={[styles.privacyLabel, { color: theme.text }]}>Your profile card</Text>
             <Text style={[styles.privacyDesc, { color: theme.textSecondary }]}>
               Pick a banner, and choose what other students see.
+            </Text>
+          </View>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </Pressable>
+      </View>
+
+      <View style={[styles.cardGroup, { backgroundColor: theme.card, marginTop: 10 }]}>
+        <Pressable
+          style={({ pressed }) => [styles.privacyRow, pressed && { backgroundColor: theme.backgroundSecondary }]}
+          onPress={() => router.push('/snap-memories' as any)}
+          accessibilityRole="button"
+        >
+          <View style={{ width: 28, alignItems: 'center', marginRight: 12 }}>
+            <Feather name="clock" size={22} color={theme.primary} />
+          </View>
+          <View style={styles.privacyBody}>
+            <Text style={[styles.privacyLabel, { color: theme.text }]}>Snap memories</Text>
+            <Text style={[styles.privacyDesc, { color: theme.textSecondary }]}>
+              Your past snaps by month, and a photo dump to share.
             </Text>
           </View>
           <Feather name="chevron-right" size={20} color={theme.textSecondary} />
@@ -1176,6 +1214,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   privacyEmoji: { fontSize: 24, marginRight: 12 },
+  // Feet level with the bottom of the profile picture, which straddles the
+  // banner's edge: the two stand on the same line (top is set inline, as it
+  // depends on the outfit). In from the edge so the hero is not empty mid-way.
+  heroRentaman: {
+    position: 'absolute',
+    right: 46,
+    zIndex: 2,
+  },
   privacyBody: { flex: 1 },
   privacyLabel: { fontSize: 16, fontWeight: '400', marginBottom: 2 },
   privacyDesc: { fontSize: 13, fontWeight: '400' },

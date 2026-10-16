@@ -635,11 +635,22 @@ export default function SnapCamera() {
               <Pressable onPress={handleClose} style={s.roundBtn} hitSlop={8} accessibilityLabel="Close">
                 <Feather name="x" size={22} color="#fff" />
               </Pressable>
-              {!atLimit && snapsLeft !== null ? (
-                <View style={s.topPill}>
-                  <Text style={s.topPillText}>{snapsLeft} left today</Text>
-                </View>
-              ) : <View />}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginRight: 52 }}>
+                {!atLimit && snapsLeft !== null ? (
+                  <View style={[s.topPill, { marginRight: 0 }]}>
+                    <Text style={s.topPillText}>{snapsLeft} left today</Text>
+                  </View>
+                ) : null}
+                <Pressable
+                  onPress={() => router.push('/snap-memories' as any)}
+                  style={[s.topPill, { marginRight: 0, flexDirection: 'row', alignItems: 'center', gap: 5 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Memories"
+                >
+                  <Feather name="clock" size={13} color="#fff" />
+                  <Text style={s.topPillText}>Memories</Text>
+                </Pressable>
+              </View>
             </View>
 
             <View style={[s.rail, { top: insets.top + 60 }]}>
@@ -666,10 +677,14 @@ export default function SnapCamera() {
               colors={['transparent', 'rgba(0,0,0,0.7)']}
               style={s.scrim}
             />
+            {/* The safe-area gap sits on an inner View: KeyboardAvoidingView in
+                'padding' mode overwrites its own paddingBottom (0 with the
+                keyboard closed), which put the buttons on the bottom edge. */}
             <KeyboardAvoidingScreen
               behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              style={[s.bottom, { paddingBottom: insets.bottom + 12 }]}
+              style={s.bottom}
             >
+              <View style={{ gap: 10, paddingBottom: insets.bottom + 12 }}>
               {/* The caption stays as well as text on the photo: it travels with
                   the snap as words, so it reads even where the photo is small. */}
               <View style={s.captionWrap}>
@@ -718,6 +733,7 @@ export default function SnapCamera() {
                 >
                   {posting ? <ActivityIndicator size="small" color="#000" /> : <Feather name="send" size={22} color="#000" />}
                 </Pressable>
+              </View>
               </View>
             </KeyboardAvoidingScreen>
           </>
